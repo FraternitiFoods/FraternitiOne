@@ -7,7 +7,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  /* Was `var(--font-sans)` — self-referential, so it silently resolved to
+     invalid/browser-default (serif) the whole time; every screenshot so far
+     was never actually rendering Geist Sans. Pointing this at the real font
+     variable name fixes that and switches the app to Montserrat. */
+  --font-sans: var(--font-montserrat);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
