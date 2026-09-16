@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fraterniti
+      POSTGRES_PASSWORD: fraterniti_dev
+      POSTGRES_DB: fraterniti_one
+    ports:
+      # Host 5433, not 5432 — this machine already has a native Postgres
+      # service bound to 5432; mapping there would silently connect to the
+      # wrong server instead of this container.
+      - "5433:5432"
+    volumes:
+      - fraterniti_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraterniti -d fraterniti_one"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fraterniti_pgdata:

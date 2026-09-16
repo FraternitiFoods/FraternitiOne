@@ -1,0 +1,338 @@
+// Fraterniti One — Phase 1 data model.
+// Grounded in plan.md section 4 (approved 2026-09-15 by Apoorv) and
+// SRD sections 2 (roles), 3 (lifecycle stages), 7 (status masters), 8 (core entities).
+// Phase 2+ entities (Milestone, Approval, Payment, Vendor/PO, DPR, Issue/Dependency,
+// Employee/Hiring, MarketingActivity) are intentionally NOT modeled yet — see plan.md section 2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// SRD section 2 — User Roles and Permissions.
+enum Role {
+  FRANCHISEE
+  SALES
+  LEGAL
+  INTERIORS
+  PROJECT_MANAGER
+  ACCOUNTS
+  HR
+  CULINARY
+  MARKETING
+  OPERATIONS
+  MANAGEMENT
+  ADMIN
+}
+
+/// Department taxonomy, used both for Task.module (SRD section 8: "task_id,
+/// project_id, module, ...") and Document.category (SRD section 5: "Folder
+/// taxonomy by department"). PROPERTY/PROCUREMENT/GENERAL/FRANCHISEE are
+/// included alongside the department-shaped roles above because SRD section 3
+/// names "Property/Site" and "Culinary & Procurement" as distinct lifecycle
+/// stages/work areas even though they don't each have their own Role.
+enum Department {
+  SALES
+  LEGAL
+  PROPERTY
+  INTERIORS
+  PROJECTS
+  ACCOUNTS
+  HR
+  CULINARY
+  PROCUREMENT
+  MARKETING
+  OPERATIONS
+  FRANCHISEE
+  GENERAL
+}
+
+/// SRD section 3 — End-to-End Franchise Lifecycle. Stages 6-9 run in parallel
+/// with the main path per the SRD ("Accounts, reporting, communication and
+/// document management are horizontal services across all lifecycle stages");
+/// FranchiseProject.lifecycleStage still models a single current-stage value
+/// for Phase 1 per SRD section 8 (one `lifecycle_stage` field).
+enum LifecycleStage {
+  SALES_LOI
+  LEGAL_COMPLIANCE
+  PROPERTY_SITE
+  INTERIORS_DESIGN
+  PROJECT_EXECUTION
+  ACCOUNTS
+  HR
+  CULINARY_PROCUREMENT
+  MARKETING
+  PRE_OPENING_READINESS
+  TRAINING_TRIAL_RUNS
+  GRAND_OPENING
+  POST_OPENING_TRANSITION
+}
+
+/// SRD section 7 — Status, SLA and Escalation Model: "Project Health".
+/// Manually set for Phase 1; automatic readiness-score-driven health is
+/// Phase 4 (plan.md section 2).
+enum ProjectHealth {
+  GREEN
+  AMBER
+  RED
+  CRITICAL
+}
+
+/// SRD section 7 — Status, SLA and Escalation Model: "Task".
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  AWAITING_FRANCHISEE
+  AWAITING_INTERNAL
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+/// Not explicitly enumerated for Task in the SRD. Reused from the Blocker
+/// priority scale (SRD section 6, Delay & Dependency Engine: "Critical, High,
+/// Medium, Low") as the closest documented precedent — flagged as an
+/// inference, not a verbatim spec value. Easy to change later since it's a
+/// single enum.
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// SRD section 7 — Status, SLA and Escalation Model: "Document".
+enum DocumentStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  SUPERSEDED
+}
+
+/// SRD section 8: AuditEvent "action". Kept intentionally small for Phase 1 —
+/// extend as new mutation types are added.
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// SRD section 8: "User / Organisation — user_id, organisation, role,
+/// permissions, contact, project access". Organisation/multi-org access is
+/// out of scope for Phase 1 (single-brand, plan.md section 5 decisions).
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         Role
+  department   Department?
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  sessions           Session[]
+  ownedProjects      FranchiseProject[] @relation("ProjectOwner")
+  franchiseeProjects FranchiseProject[] @relation("ProjectFranchisee")
+  tasksOwned         Task[]             @relation("TaskOwner")
+  tasksCreated       Task[]             @relation("TaskCreatedBy")
+  taskComments       TaskComment[]
+  documentsOwned     Document[]         @relation("DocumentOwner")
+  auditEvents        AuditEvent[]
+}
+
+/// Database-backed session (decision: session-based auth, plan.md section 5).
+/// The cookie holds an opaque random token; only its SHA-256 hash is stored
+/// here, so a database leak alone can't be replayed as a valid session.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// SRD section 8: "FranchiseProject — project_id, brand, format,
+/// franchisee_id, location, target_opening, forecast_opening,
+/// lifecycle_stage, health". The one entity everything else attaches to
+/// (plan.md section 4) — every other Phase 1 model carries a projectId.
+model FranchiseProject {
+  id              String         @id @default(cuid())
+  /// Autoincrementing sequence backing the human-readable project code
+  /// (formatted at the application layer, e.g. "FR-00001"), kept separate
+  /// from the cuid primary key used in URLs.
+  seq             Int            @unique @default(autoincrement())
+  /// Single-brand hardcode for Phase 1 (plan.md section 5 decision) — plain
+  /// string field, not a Brand entity, so it normalizes later without
+  /// breaking this relationship.
+  brand           String         @default("Tulsi")
+  format          String
+  franchiseeId    String
+  franchisee      User           @relation("ProjectFranchisee", fields: [franchiseeId], references: [id])
+  location        String
+  lifecycleStage  LifecycleStage @default(SALES_LOI)
+  health          ProjectHealth  @default(GREEN)
+  targetOpening   DateTime
+  forecastOpening DateTime?
+  /// FR-002: "current owner and next action visible on ... dashboards".
+  ownerId         String
+  owner           User           @relation("ProjectOwner", fields: [ownerId], references: [id])
+  nextAction      String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tasks       Task[]
+  documents   Document[]
+  auditEvents AuditEvent[]
+
+  @@index([franchiseeId])
+  @@index([ownerId])
+}
+
+/// SRD section 8: "Task — task_id, project_id, module, owner, due, priority,
+/// status, dependency, completion evidence". FR-003.
+model Task {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Department this task belongs to — added to the data model per Apoorv's
+  /// 2026-09-15 review (plan.md section 4), and confirmed present in SRD
+  /// section 8's own Task field list ("module").
+  module      Department
+  title       String
+  description String?
+  ownerId     String
+  owner       User             @relation("TaskOwner", fields: [ownerId], references: [id])
+  createdById String
+  createdBy   User             @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  dueDate     DateTime?
+  priority    TaskPriority     @default(MEDIUM)
+  status      TaskStatus       @default(NOT_STARTED)
+
+  /// Self-referencing dependency link (SRD: "dependency").
+  dependsOnId String?
+  dependsOn   Task?   @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  dependents  Task[]  @relation("TaskDependency")
+
+  /// SRD: "completion evidence" — free-text note/link recorded on completion.
+  completionEvidence String?
+  completedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments TaskComment[]
+
+  @@index([projectId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+/// FR-003 acceptance criteria mentions comments as part of the task
+/// workflow; SRD section 5 (Communication) treats task-linked comments as
+/// part of that workflow too. Minimal model — no threading/mentions yet.
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+/// SRD section 8: "Document — document_id, project, category, version, file,
+/// status, owner, approval_ref". FR-005. Schema included now since the data
+/// model is approved as a whole, but the create/upload UI is a separate
+/// Phase 1 ticket per plan.md step 4 (not part of the initial vertical
+/// slice) — see plan.md section 7.
+model Document {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category    Department
+  title       String
+  version     Int              @default(1)
+  /// Object key in the R2 bucket (plan.md section 5 decision). No signed
+  /// URL is stored — generated on demand so access stays controlled.
+  fileKey     String
+  fileName    String
+  fileSize    Int
+  mimeType    String
+  status      DocumentStatus   @default(DRAFT)
+  ownerId     String
+  owner       User             @relation("DocumentOwner", fields: [ownerId], references: [id])
+  /// SRD: "approval_ref" — free-text stub until the Phase 2 approval engine
+  /// exists (plan.md section 2).
+  approvalRef String?
+
+  /// Version history (SRD FR-005: "Latest approved version clearly
+  /// identified"): each new version points back at the one it supersedes.
+  supersedesId String?   @unique
+  supersedes   Document? @relation("DocumentVersion", fields: [supersedesId], references: [id])
+  supersededBy Document? @relation("DocumentVersion")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([category])
+}
+
+/// SRD section 8: "AuditEvent — event_id, user, project, object, action,
+/// old/new, timestamp, source". FR-010 — full audit log, not optional
+/// (plan.md section 4 "cause -> effect that must hold").
+///
+/// actorEmail/actorName/actorRole are a denormalized snapshot taken at write
+/// time, in addition to the actorId FK: NFR-06 requires an *immutable* event
+/// history, which the FK alone can't guarantee once a user record changes or
+/// is deactivated.
+model AuditEvent {
+  id        String            @id @default(cuid())
+  projectId String?
+  project   FranchiseProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  actorId    String?
+  actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String
+  actorName  String
+  actorRole  Role
+
+  entityType String
+  entityId   String
+  action     AuditAction
+
+  oldValue  Json?
+  newValue  Json?
+  /// SRD: "reference" — free-text pointer (e.g. a related record or note).
+  reference String?
+  source    String  @default("web")
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
