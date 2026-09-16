@@ -19,6 +19,7 @@ import {
   formatDate,
   formatDateTime,
 } from "@/lib/format";
+import { TASK_PRIORITY_BADGE_CLASS, TASK_STATUS_BADGE_CLASS } from "@/lib/badge-colors";
 import type { TaskPriority, TaskStatus } from "@prisma/client";
 
 const STATUS_OPTIONS: TaskStatus[] = [
@@ -30,13 +31,6 @@ const STATUS_OPTIONS: TaskStatus[] = [
   "COMPLETED",
   "CANCELLED",
 ];
-
-const PRIORITY_BADGE_VARIANT: Record<TaskPriority, "default" | "secondary" | "destructive"> = {
-  LOW: "secondary",
-  MEDIUM: "default",
-  HIGH: "default",
-  CRITICAL: "destructive",
-};
 
 export type TaskCardData = {
   id: string;
@@ -75,13 +69,13 @@ export function TaskCard({
   const [commentState, commentFormAction, commentPending] = commentAction;
 
   return (
-    <div className="rounded-lg border p-4 space-y-3">
+    <div className="rounded-lg bg-card p-4 space-y-3 ring-1 ring-foreground/10">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium">{task.title}</span>
             <Badge variant="outline">{DEPARTMENT_LABELS[task.module as keyof typeof DEPARTMENT_LABELS] ?? task.module}</Badge>
-            <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]}>
+            <Badge variant="outline" className={TASK_PRIORITY_BADGE_CLASS[task.priority]}>
               {TASK_PRIORITY_LABELS[task.priority]}
             </Badge>
           </div>
@@ -101,7 +95,7 @@ export function TaskCard({
             </p>
           )}
         </div>
-        <Badge variant={task.status === "COMPLETED" ? "secondary" : "outline"}>
+        <Badge variant="outline" className={TASK_STATUS_BADGE_CLASS[task.status]}>
           {TASK_STATUS_LABELS[task.status]}
         </Badge>
       </div>

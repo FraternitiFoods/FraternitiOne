@@ -134,6 +134,25 @@ sign-off (section 4) are resolved as of 2026-09-15.
      is Base UI-based (not Radix), and Base UI's `<Select.Value>` shows the
      raw selected `value` unless given an explicit value→label render
      function — every `<SelectValue>` in the app now passes one.
+3a. **UI/UX pass — match SRD wireframe pack visually** — done 2026-09-16, at
+    Apoorv's explicit request. Existing Phase 1 pages (dashboard, projects,
+    project detail, audit log, login) were restyled to match the wireframe
+    pack's look: dark navy left sidebar with the exact wireframe nav item
+    list (items with no Phase 1 page yet — Lifecycle, Actions, Documents,
+    Payments, People, Culinary, Marketing — render disabled/"Soon" rather
+    than linking to non-existent pages), violet brand accent, top-right
+    "FRANCHISEE PORTAL"/"INTERNAL" pill (wireframes 01-18 vs 19-24), stat-card
+    rows, and a 13-stage lifecycle timeline grid on the project detail page
+    (wireframe 02). No new fake data was introduced — every number shown
+    (progress %, readiness, days to launch, per-module progress bars, "Latest
+    Updates"/"Live Department Feed") is computed from real Task/AuditEvent
+    rows, same placeholder-formula caveats as before (see step 3 above).
+    Bugs found and fixed during verification: `humanize()` (built for
+    SCREAMING_SNAKE_CASE enum values) was mangling AuditEvent.entityType
+    (stored PascalCase, e.g. "FranchiseProject") into "Franchiseproject" —
+    added `splitPascalCase()` instead; and a Base UI console warning on the
+    "New Project" button (`nativeButton` expects a real `<button>`, but it
+    renders a `<Link>`) — fixed with `nativeButton={false}`.
 4. **Build out remaining Phase 1 FR items** (section 3) as separate tickets,
    one FR at a time — do not build multiple FRs in one pass. Document
    create/upload UI (FR-005) is next: the Prisma schema already has the

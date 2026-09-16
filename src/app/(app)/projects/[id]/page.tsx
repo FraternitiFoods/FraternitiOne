@@ -1,28 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canActOnTask, canEditProjectHeader, canViewProject, getManageableModules } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
 import {
+  daysUntil,
   formatDate,
   formatProjectCode,
   LIFECYCLE_STAGE_LABELS,
+  LIFECYCLE_STAGE_ORDER,
   PROJECT_HEALTH_LABELS,
 } from "@/lib/format";
+import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
 import { TaskCard } from "./task-card";
-import type { ProjectHealth } from "@prisma/client";
-
-const HEALTH_BADGE_VARIANT: Record<ProjectHealth, "default" | "secondary" | "destructive"> = {
-  GREEN: "secondary",
-  AMBER: "default",
-  RED: "destructive",
-  CRITICAL: "destructive",
-};
 
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
@@ -62,27 +60,103 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
 
   const manageableModules = getManageableModules(user);
 
+  const total = project.tasks.length;
+  const completed = project.tasks.filter((t) => t.status === "COMPLETED").length;
+  const progressPct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const openTasks = total - completed;
+  const daysToLaunch = daysUntil(project.targetOpening);
+  const currentStageIndex = LIFECYCLE_STAGE_ORDER.indexOf(project.lifecycleStage);
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted-foreground">{formatProjectCode(project.seq)}</p>
-          <h1 className="text-2xl font-semibold">
-            {project.brand} — {project.location}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {project.format} · Franchisee: {project.franchisee.name} ({project.franchisee.email})
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={HEALTH_BADGE_VARIANT[project.health]}>
-            {PROJECT_HEALTH_LABELS[project.health]}
-          </Badge>
+    <div className="space-y-6">
+      <PageHeader
+        title={`${project.brand} — ${project.location}`}
+        subtitle={
+          <>
+            {formatProjectCode(project.seq)} · {project.format} · Franchisee: {project.franchisee.name} (
+            {project.franchisee.email})
+          </>
+        }
+        isFranchisee={user.role === "FRANCHISEE"}
+        action={
           <Link href={`/audit?project=${project.id}`} className="text-sm underline underline-offset-4">
             Audit trail →
           </Link>
-        </div>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Site Progress" value={`${progressPct}%`} caption={`${completed}/${total} tasks done`} />
+        <StatCard
+          label="Open Tasks"
+          value={openTasks}
+          caption={openTasks > 0 ? "Need attention" : "All clear"}
+          captionClassName={openTasks > 0 ? "text-amber-600" : "text-emerald-600"}
+        />
+        <StatCard
+          label="Days to Launch"
+          value={Math.abs(daysToLaunch)}
+          caption={daysToLaunch >= 0 ? `Target ${formatDate(project.targetOpening)}` : "Past target opening"}
+          captionClassName={daysToLaunch >= 0 ? "text-blue-600" : "text-red-600"}
+        />
+        <StatCard
+          label="Health"
+          value={PROJECT_HEALTH_LABELS[project.health]}
+          caption={project.nextAction ?? "No next action set"}
+          captionClassName={
+            project.health === "GREEN"
+              ? "text-emerald-600"
+              : project.health === "AMBER"
+                ? "text-amber-600"
+                : "text-red-600"
+          }
+        />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Franchise Lifecycle</CardTitle>
+          <p className="text-xs text-muted-foreground">Your complete journey from LOI to launch</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {LIFECYCLE_STAGE_ORDER.map((stage, index) => {
+              const state =
+                index < currentStageIndex
+                  ? "completed"
+                  : index === currentStageIndex
+                    ? "current"
+                    : "upcoming";
+              return (
+                <div
+                  key={stage}
+                  className={cn(
+                    "rounded-lg border p-3",
+                    state === "completed" && "border-emerald-200 bg-emerald-50",
+                    state === "current" && "border-primary/30 bg-primary/5",
+                    state === "upcoming" && "border-border bg-background"
+                  )}
+                >
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {String(index + 1).padStart(2, "0")}
+                  </div>
+                  <div className="mt-1 text-sm font-medium">{LIFECYCLE_STAGE_LABELS[stage]}</div>
+                  <div
+                    className={cn(
+                      "mt-1 text-xs",
+                      state === "completed" && "text-emerald-700",
+                      state === "current" && "text-primary",
+                      state === "upcoming" && "text-muted-foreground"
+                    )}
+                  >
+                    {state === "completed" ? "Completed" : state === "current" ? "In Progress" : "Upcoming"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -115,6 +189,9 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Tasks (FR-003)</h2>
+          <Badge variant="outline" className={HEALTH_BADGE_CLASS[project.health]}>
+            {PROJECT_HEALTH_LABELS[project.health]}
+          </Badge>
         </div>
 
         {project.tasks.length === 0 ? (

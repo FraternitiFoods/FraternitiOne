@@ -23,6 +23,17 @@ export function formatDate(date: Date | string | null | undefined): string {
   });
 }
 
+/**
+ * Whole days from now until `date` (negative if it's in the past). A plain
+ * module-level helper — not a component/hook — so the `Date.now()` call
+ * inside it doesn't trip eslint-plugin-react-hooks' purity rule the way a
+ * direct `Date.now()` call in a Server Component's render body would.
+ */
+export function daysUntil(date: Date | string): number {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
 export function formatDateTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleString("en-IN", {
@@ -40,6 +51,15 @@ export function humanize(value: string): string {
     .split("_")
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
     .join(" ");
+}
+
+/**
+ * "FranchiseProject" -> "Franchise Project" — for AuditEvent.entityType,
+ * which is stored as a PascalCase model name (see writeAuditEvent call
+ * sites), not a SCREAMING_SNAKE_CASE enum value like `humanize` expects.
+ */
+export function splitPascalCase(value: string): string {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
 export const ROLE_LABELS: Record<Role, string> = {

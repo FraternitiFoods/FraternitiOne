@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/page-header";
 import {
   Table,
   TableBody,
@@ -10,7 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDateTime, formatProjectCode, ROLE_LABELS } from "@/lib/format";
+import { formatDateTime, formatProjectCode, humanize, ROLE_LABELS, splitPascalCase } from "@/lib/format";
+import { AUDIT_ACTION_BADGE_CLASS } from "@/lib/badge-colors";
 import type { Prisma } from "@prisma/client";
 
 export default async function AuditPage(props: PageProps<"/audit">) {
@@ -47,32 +49,33 @@ export default async function AuditPage(props: PageProps<"/audit">) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Activity & Audit Log</h1>
-        <p className="text-sm text-muted-foreground">
-          {project
-            ? (
-              <>
-                Scoped to {formatProjectCode(project.seq)} — {project.brand}, {project.location}.{" "}
-                <Link href="/audit" className="underline underline-offset-4">
-                  View full log
-                </Link>
-              </>
-            )
-            : "Actor, timestamp, old/new value and reference for every critical change (FR-010)."}
-        </p>
-      </div>
+      <PageHeader
+        title="Activity & Audit Log"
+        subtitle={
+          project ? (
+            <>
+              Scoped to {formatProjectCode(project.seq)} — {project.brand}, {project.location}.{" "}
+              <Link href="/audit" className="underline underline-offset-4">
+                View full log
+              </Link>
+            </>
+          ) : (
+            "Immutable history of approvals, edits, payments and status changes (FR-010)."
+          )
+        }
+        isFranchisee={user.role === "FRANCHISEE"}
+      />
 
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>When</TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Time</TableHead>
               <TableHead>Actor</TableHead>
               <TableHead>Action</TableHead>
               <TableHead>Entity</TableHead>
               <TableHead>Project</TableHead>
-              <TableHead>Change</TableHead>
+              <TableHead>Reference</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -85,18 +88,20 @@ export default async function AuditPage(props: PageProps<"/audit">) {
             )}
             {events.map((event) => (
               <TableRow key={event.id}>
-                <TableCell className="whitespace-nowrap text-xs">
+                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                   {formatDateTime(event.createdAt)}
                 </TableCell>
                 <TableCell className="text-xs">
-                  <div>{event.actorName}</div>
+                  <div className="font-medium text-foreground">{event.actorName}</div>
                   <div className="text-muted-foreground">{ROLE_LABELS[event.actorRole]}</div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{event.action}</Badge>
+                  <Badge variant="outline" className={AUDIT_ACTION_BADGE_CLASS[event.action]}>
+                    {humanize(event.action)}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-xs">
-                  {event.entityType}
+                  {splitPascalCase(event.entityType)}
                   <div className="text-muted-foreground">{event.entityId.slice(0, 10)}…</div>
                 </TableCell>
                 <TableCell className="text-xs">
