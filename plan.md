@@ -158,13 +158,48 @@ sign-off (section 4) are resolved as of 2026-09-15.
     added `splitPascalCase()` instead; and a Base UI console warning on the
     "New Project" button (`nativeButton` expects a real `<button>`, but it
     renders a `<Link>`) — fixed with `nativeButton={false}`.
-4. **Build out remaining Phase 1 FR items** (section 3) as separate tickets,
-   one FR at a time — do not build multiple FRs in one pass. Document
-   create/upload UI (FR-005) is next: the Prisma schema already has the
-   `Document` model, but no pages/actions exist for it yet.
+4. ~~Build out remaining Phase 1 FR items~~ — **FR-005 (Document Vault) done
+   2026-09-17**, the last FR-table item (section 3) that wasn't yet built.
+   Every Phase 1 FR (001, 002, 003, 005, 010) now has real pages/actions
+   behind it — none left in this list as of this date. What shipped:
+   - **Storage**: `src/lib/storage.ts` wired to Backblaze B2 (provider
+     decision in section 5) — upload, and time-limited signed download URLs
+     regenerated fresh per request (NFR-05: no public bucket URLs), not
+     pre-signed at page-render time, so authorization is re-checked on every
+     download attempt.
+   - **Upload**: category-scoped upload form (Legal/Interiors/etc., gated by
+     the same role→department matrix as Tasks) on each project's detail
+     page. Creates a `Document` row and an `AuditEvent` in one transaction.
+   - **List view**: a portfolio-wide `/documents` page (sidebar "Documents"
+     link, previously disabled/"Soon", now live) — grouped by category, one
+     row per lineage (current head only; superseded versions are collapsed
+     into history, not hidden entirely), with a "Latest approved" badge and
+     a client-side search box (title/file name/project — no server
+     round-trip, Phase 1 document counts don't need real full-text search).
+   - **Version history**: uploading a new version sets `supersedesId` on the
+     new row and flips the previous row's status to `SUPERSEDED`, rather
+     than deleting it — both changes write their own `AuditEvent`.
+   - Verified live against the real B2 bucket and DB (upload/download
+     round-trip, authorization allow/deny paths, version-chain state after a
+     new upload), not just type-checked; the actual upload/version/search UI
+     flows were click-tested in a real browser by Apoorv.
+   - Bugs found and fixed during verification: (1) B2's own
+     `b2-content-disposition` validator is stricter than RFC 6266 — it
+     rejects punctuation like `(` even inside a quoted `filename` param, and
+     separately JS's `encodeURIComponent` doesn't escape `! * ' ( )` at all,
+     so a literal `(` in a real uploaded filename broke every download until
+     both were fixed. (2) A redirect loop (`ERR_TOO_MANY_REDIRECTS`) on
+     `/dashboard` in a session with a stale cookie: `proxy.ts`'s optimistic
+     cookie-presence check let the request through, but `requireUser()`
+     couldn't clear the invalid cookie itself (Next.js only allows
+     `cookies().delete()` in a Server Function/Route Handler, not during
+     Server Component render) — fixed by redirecting to a dedicated
+     `/api/auth/clear-session` Route Handler that clears the session before
+     bouncing to `/login`.
 5. **Test/review each ticket** before starting the next one.
-6. **Load one real site's data** (e.g. an active Tulsi site) once Phase 1 is
-   stable, instead of continuing with dummy data.
+6. **Load one real site's data** (e.g. an active Tulsi site) — now the
+   natural next step, since every Phase 1 FR is built and dummy/seed data is
+   the main thing standing between this and a real pilot.
 
 ## 8. Reference
 
