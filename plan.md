@@ -94,9 +94,14 @@ Accounts). Added per Apoorv's review — not in the original draft diagram.
 - **Auth mechanism**: Session-based auth, email + password. No SSO for
   Phase 1.
 - **UI framework / styling**: Tailwind CSS + shadcn/ui.
-- **File/document storage**: Cloudflare R2 (S3-compatible object storage),
+- **File/document storage**: Backblaze B2 (S3-compatible object storage),
   for document vault + version history (FR-005). Not Railway local volume —
-  durability matters for a document vault.
+  durability matters for a document vault. Originally planned as Cloudflare
+  R2 (decided 2026-09-15); switched to B2 on 2026-09-17 because R2 requires
+  a credit card on file to activate even for free-tier usage and Apoorv
+  declined to provide one — B2's free tier (10GB, no egress-heavy limits)
+  does not require a card. Both are S3-compatible, so `src/lib/storage.ts`
+  is the only code that's provider-specific; swapping again later is cheap.
 - **Multi-brand support**: Hardcode single brand for Phase 1. `brand` stays
   a plain string field on `FranchiseProject`, not a separate `Brand` entity.
   Can be normalized into its own table later without breaking the
