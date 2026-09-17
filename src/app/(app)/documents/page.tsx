@@ -1,37 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import {
-  DEPARTMENT_LABELS,
-  DOCUMENT_STATUS_LABELS,
-  formatDate,
-  formatFileSize,
-  formatProjectCode,
-} from "@/lib/format";
-import { DOCUMENT_STATUS_BADGE_CLASS } from "@/lib/badge-colors";
-import type { Department, Prisma } from "@prisma/client";
-
-// Fixed display order for category sections — same list `getManageableModules`
-// draws from, just not filtered to "what I can manage" since this page is a
-// read view across every department's documents on a project the user can see.
-const CATEGORY_ORDER: Department[] = [
-  "SALES",
-  "LEGAL",
-  "PROPERTY",
-  "INTERIORS",
-  "PROJECTS",
-  "ACCOUNTS",
-  "HR",
-  "CULINARY",
-  "PROCUREMENT",
-  "MARKETING",
-  "OPERATIONS",
-  "FRANCHISEE",
-  "GENERAL",
-];
+import { formatProjectCode } from "@/lib/format";
+import type { Prisma } from "@prisma/client";
+import { DocumentVaultBrowser, type DocumentVaultRow } from "./document-vault-browser";
 
 export default async function DocumentsPage(props: PageProps<"/documents">) {
   const user = await requireUser();
@@ -73,15 +46,20 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
       : Promise.resolve(null),
   ]);
 
-  const byCategory = new Map<Department, typeof documents>();
-  for (const document of documents) {
-    const bucket = byCategory.get(document.category);
-    if (bucket) {
-      bucket.push(document);
-    } else {
-      byCategory.set(document.category, [document]);
-    }
-  }
+  // Grouping/search live in the client component; the server side only owns
+  // the authorization-sensitive query and hands over plain, serializable rows.
+  const rows: DocumentVaultRow[] = documents.map((document) => ({
+    id: document.id,
+    category: document.category,
+    title: document.title,
+    version: document.version,
+    status: document.status,
+    fileName: document.fileName,
+    fileSize: document.fileSize,
+    createdAt: document.createdAt.toISOString(),
+    owner: document.owner,
+    project: document.project,
+  }));
 
   return (
     <div className="space-y-6">
@@ -102,66 +80,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
         isFranchisee={user.role === "FRANCHISEE"}
       />
 
-      {documents.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No documents yet.</p>
-      ) : (
-        <div className="space-y-6">
-          {CATEGORY_ORDER.filter((category) => byCategory.has(category)).map((category) => (
-            <Card key={category}>
-              <CardHeader>
-                <CardTitle className="text-base">{DEPARTMENT_LABELS[category]}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {byCategory.get(category)!.map((document) => (
-                  <div
-                    key={document.id}
-                    className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-card p-3 ring-1 ring-foreground/10"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{document.title}</span>
-                        <Badge variant="outline">v{document.version}</Badge>
-                        {document.status === "APPROVED" && (
-                          <Badge
-                            variant="outline"
-                            className="border-transparent bg-emerald-100 text-emerald-700"
-                          >
-                            Latest approved
-                          </Badge>
-                        )}
-                      </div>
-                      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>
-                          {formatProjectCode(document.project.seq)} — {document.project.brand},{" "}
-                          {document.project.location}
-                        </span>
-                        <span>{document.fileName}</span>
-                        <span>{formatFileSize(document.fileSize)}</span>
-                        <span>Uploaded by {document.owner.name}</span>
-                        <span>{formatDate(document.createdAt)}</span>
-                      </dl>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Badge
-                        variant="outline"
-                        className={DOCUMENT_STATUS_BADGE_CLASS[document.status]}
-                      >
-                        {DOCUMENT_STATUS_LABELS[document.status]}
-                      </Badge>
-                      <a
-                        href={`/projects/${document.project.id}/documents/${document.id}/download`}
-                        className="text-sm underline underline-offset-4"
-                      >
-                        Download
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <DocumentVaultBrowser documents={rows} />
     </div>
   );
 }
