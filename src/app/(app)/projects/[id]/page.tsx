@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canActOnTask, canEditProjectHeader, canViewProject, getManageableModules } from "@/lib/permissions";
+import {
+  canActOnDocument,
+  canActOnTask,
+  canEditProjectHeader,
+  canViewProject,
+  getManageableModules,
+} from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +27,8 @@ import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
 import { TaskCard } from "./task-card";
+import { DocumentUploadForm } from "./document-upload-form";
+import { DocumentCard } from "./document-card";
 
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
@@ -42,6 +50,10 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           },
         },
         orderBy: { createdAt: "asc" },
+      },
+      documents: {
+        include: { owner: { select: { name: true } } },
+        orderBy: [{ category: "asc" }, { createdAt: "desc" }],
       },
     },
   });
@@ -241,6 +253,49 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   people={people}
                   existingTasks={project.tasks.map((t) => ({ id: t.id, title: t.title }))}
                 />
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Documents (FR-005)</h2>
+
+        {project.documents.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No documents yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {project.documents.map((document) => (
+              <DocumentCard
+                key={document.id}
+                projectId={project.id}
+                canAct={canActOnDocument(user, document, project)}
+                document={{
+                  id: document.id,
+                  category: document.category,
+                  title: document.title,
+                  version: document.version,
+                  status: document.status,
+                  fileName: document.fileName,
+                  fileSize: document.fileSize,
+                  createdAt: document.createdAt.toISOString(),
+                  owner: document.owner,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {manageableModules.length > 0 && (
+          <>
+            <Separator />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Upload a document</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DocumentUploadForm projectId={project.id} categories={manageableModules} />
               </CardContent>
             </Card>
           </>

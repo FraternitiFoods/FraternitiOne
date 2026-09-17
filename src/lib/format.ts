@@ -34,6 +34,19 @@ export function daysUntil(date: Date | string): number {
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
+/** 1536000 -> "1.5 MB". Used for Document.fileSize. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
 export function formatDateTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleString("en-IN", {

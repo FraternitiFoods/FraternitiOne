@@ -70,10 +70,26 @@ export async function uploadDocument(params: {
  * characters): the quoted `filename` fallback is stripped to safe ASCII, and
  * the RFC 5987 `filename*` form carries the real (possibly non-ASCII) name
  * for clients that support it.
+ *
+ * B2's own `b2-content-disposition` validator is stricter than RFC 6266 — it
+ * rejects punctuation like `(` `)` `,` even inside the quoted `filename`
+ * param instead of treating quoted-string as opaque. So the ASCII fallback
+ * is restricted to a conservative token-safe charset, not just "printable
+ * ASCII minus quote/backslash".
+ *
+ * The `filename*` (RFC 5987) part needs its own escaping on top of
+ * `encodeURIComponent`: JS's `encodeURIComponent` follows the old RFC 2396
+ * unreserved set and leaves `! * ' ( )` un-escaped, so a literal `(` from
+ * the original filename survives into the header value and trips the same
+ * B2 validator even there.
  */
 function buildContentDisposition(fileName: string): string {
-  const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+  const asciiFallback = fileName.replace(/[^a-zA-Z0-9 ._-]/g, "_");
+  const rfc5987Encoded = encodeURIComponent(fileName).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${rfc5987Encoded}`;
 }
 
 /**

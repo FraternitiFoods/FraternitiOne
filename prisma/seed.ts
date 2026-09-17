@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-const DEV_PASSWORD = "fraterniti-dev-2026";
+const DEV_PASSWORD = "KobeBryant//24";
 
 async function upsertUser(input: {
   email: string;
@@ -20,7 +20,10 @@ async function upsertUser(input: {
   const passwordHash = await bcrypt.hash(DEV_PASSWORD, 12);
   return db.user.upsert({
     where: { email: input.email },
-    update: {},
+    // Re-running the seed against existing rows must also re-apply
+    // DEV_PASSWORD — an empty `update` here would silently leave old
+    // passwordHashes in place the next time DEV_PASSWORD changes.
+    update: { passwordHash },
     create: {
       email: input.email,
       name: input.name,

@@ -99,13 +99,31 @@ export function canViewProject(
   return true;
 }
 
+/**
+ * Shared by `canManageTaskModule` and `canManageDocumentCategory` — both
+ * Task.module and Document.category are the same `Department` enum (see
+ * schema.prisma), and plan.md section 5's "role-based, module-level" Phase 1
+ * decision applies identically to both, so there's one matrix, not two.
+ */
+function ownsDepartment(user: Pick<CurrentUser, "role">, department: Department): boolean {
+  if (hasFullOverride(user)) return true;
+  return DEPARTMENT_OWNERS[user.role]?.includes(department) ?? false;
+}
+
 /** Can this user create/edit tasks whose module is `department`? */
 export function canManageTaskModule(
   user: Pick<CurrentUser, "role">,
   department: Department
 ): boolean {
-  if (hasFullOverride(user)) return true;
-  return DEPARTMENT_OWNERS[user.role]?.includes(department) ?? false;
+  return ownsDepartment(user, department);
+}
+
+/** Can this user upload/manage documents in this category (FR-005)? */
+export function canManageDocumentCategory(
+  user: Pick<CurrentUser, "role">,
+  category: Department
+): boolean {
+  return ownsDepartment(user, category);
 }
 
 /**
@@ -148,6 +166,26 @@ export function canActOnTask(
 ): boolean {
   if (canManageTaskModule(user, task.module)) return true;
   if (task.ownerId === user.id || task.createdById === user.id) return true;
+  if (user.role === "FRANCHISEE" && project.franchiseeId === user.id) return true;
+  return false;
+}
+
+/**
+ * Gate for document mutations (new version, status change) — mirrors
+ * `canActOnTask`'s shape exactly. Viewing/downloading a document that's
+ * already on a project the user can see (`canViewProject`) is intentionally
+ * NOT gated further by category — internal roles already see every
+ * department's tasks on a project they can view (see `canViewProject`'s own
+ * comment), and the SRD only specifies "access controlled by project and
+ * role" for the vault (section 5), not per-category read walls.
+ */
+export function canActOnDocument(
+  user: Pick<CurrentUser, "role" | "id">,
+  document: { ownerId: string; category: Department },
+  project: { franchiseeId: string }
+): boolean {
+  if (canManageDocumentCategory(user, document.category)) return true;
+  if (document.ownerId === user.id) return true;
   if (user.role === "FRANCHISEE" && project.franchiseeId === user.id) return true;
   return false;
 }
