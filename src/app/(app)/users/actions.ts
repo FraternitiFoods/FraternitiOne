@@ -142,6 +142,154 @@ export async function resendInvite(
   return { success: true };
 }
 
+const UpdateUserSchema = z.object({
+  name: z.string().trim().min(1, "Name is required."),
+  email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
+  role: z.nativeEnum(Role),
+  department: z.nativeEnum(Department).optional(),
+});
+
+export type UpdateUserState = { error?: string } | undefined;
+
+/** Admin-only. Editable: name, email, role, department. Password/isActive are separate flows. */
+export async function updateUser(
+  userId: string,
+  _prevState: UpdateUserState,
+  formData: FormData
+): Promise<UpdateUserState> {
+  const admin = await requireUser();
+
+  if (!canManageUsers(admin)) {
+    return { error: "You don't have permission to do this." };
+  }
+
+  const parsed = UpdateUserSchema.safeParse({
+    name: formData.get("name"),
+    email: formData.get("email"),
+    role: formData.get("role"),
+    department: formData.get("department") || undefined,
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const data = parsed.data;
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    return { error: "User not found." };
+  }
+
+  const emailTaken = await db.user.findFirst({
+    where: { email: data.email, id: { not: userId } },
+  });
+  if (emailTaken) {
+    return { error: "A user with this email already exists." };
+  }
+
+  // Prevent a lockout: if this is the last active ADMIN, its role can't be
+  // changed away from ADMIN (there would be nobody left who can manage users).
+  if (user.role === "ADMIN" && data.role !== "ADMIN") {
+    const otherActiveAdmins = await db.user.count({
+      where: { role: "ADMIN", isActive: true, id: { not: userId } },
+    });
+    if (otherActiveAdmins === 0) {
+      return { error: "Can't change role — this is the last active System Admin." };
+    }
+  }
+
+  await db.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        department: data.department ?? null,
+      },
+    });
+
+    await writeAuditEvent(tx, {
+      actor: admin,
+      entityType: "User",
+      entityId: updated.id,
+      action: "UPDATE",
+      oldValue: { name: user.name, email: user.email, role: user.role, department: user.department },
+      newValue: {
+        name: updated.name,
+        email: updated.email,
+        role: updated.role,
+        department: updated.department,
+      },
+      reference: "Updated via admin user management",
+    });
+  });
+
+  revalidatePath("/users");
+  redirect("/users");
+}
+
+export type SetUserActiveState = { error?: string; success?: boolean } | undefined;
+
+/**
+ * Soft deactivate/reactivate (User.isActive) — the reversible alternative to
+ * deleteUser's hard delete. session.ts's getCurrentUser rejects an inactive
+ * user's session on the next request, so this takes effect immediately, not
+ * just at next login.
+ */
+export async function setUserActive(
+  userId: string,
+  isActive: boolean,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _prevState: SetUserActiveState,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _formData: FormData
+): Promise<SetUserActiveState> {
+  const admin = await requireUser();
+
+  if (!canManageUsers(admin)) {
+    return { error: "You don't have permission to do this." };
+  }
+
+  if (userId === admin.id) {
+    return { error: "You can't deactivate your own account." };
+  }
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    return { error: "User not found." };
+  }
+
+  if (!isActive && user.role === "ADMIN") {
+    const otherActiveAdmins = await db.user.count({
+      where: { role: "ADMIN", isActive: true, id: { not: userId } },
+    });
+    if (otherActiveAdmins === 0) {
+      return { error: "Can't deactivate — this is the last active System Admin." };
+    }
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { isActive } });
+
+    await writeAuditEvent(tx, {
+      actor: admin,
+      entityType: "User",
+      entityId: user.id,
+      action: "UPDATE",
+      oldValue: { isActive: user.isActive },
+      newValue: { isActive },
+      reference: isActive
+        ? "Reactivated via admin user management"
+        : "Deactivated via admin user management",
+    });
+  });
+
+  revalidatePath("/users");
+  return { success: true };
+}
+
 export type DeleteUserState = { error?: string; success?: boolean } | undefined;
 
 /**

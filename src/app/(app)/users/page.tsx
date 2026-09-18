@@ -10,6 +10,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { ROLE_LABELS, DEPARTMENT_LABELS } from "@/lib/format";
 import { ResendInviteButton } from "./resend-invite-button";
 import { DeleteUserButton } from "./delete-user-button";
+import { DeactivateUserButton } from "./deactivate-user-button";
 
 export default async function UsersPage() {
   const user = await requireUser();
@@ -85,8 +86,20 @@ export default async function UsersPage() {
                 <TableCell>
                   <div className="flex items-center gap-1">
                     {u.isActive && !u.passwordHash && <ResendInviteButton userId={u.id} />}
+                    <Button
+                      nativeButton={false}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      render={<Link href={`/users/${u.id}/edit`} />}
+                    >
+                      Edit
+                    </Button>
                     {u.id !== user.id && (
-                      <DeleteUserButton userId={u.id} name={u.name} email={u.email} />
+                      <>
+                        <DeactivateUserButton userId={u.id} isActive={u.isActive} />
+                        <DeleteUserButton userId={u.id} name={u.name} email={u.email} />
+                      </>
                     )}
                   </div>
                 </TableCell>
