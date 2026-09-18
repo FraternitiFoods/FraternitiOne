@@ -253,14 +253,26 @@ sign-off (section 4) are resolved as of 2026-09-15.
       genuinely cannot be deleted; the resulting Postgres FK error is caught
       and shown as a clear message instead of crashing. Self-delete blocked.
       Writes a `DELETE` AuditEvent before the row goes.
-    - **Not done / still open**: editing or deactivating an existing user
-      (view + create + delete only, per what was asked); the git-committed
-      shared `DEV_PASSWORD` in `prisma/seed.ts` (dev/demo accounts only,
-      unaffected by this change, still a known issue for whenever this
-      repo's history or the Admin account's real password needs attention);
-      no deploy tooling yet (Railway is decided per section 5 but not wired
-      up — still relevant once step 6 involves a real external user, not
-      just Apoorv testing locally).
+    - **Edit + deactivate/reactivate user** (added 2026-09-18, same day):
+      `/users/[id]/edit` — name, email, role, department, same "this role
+      manages: ..." hint as the create form. `/users` also gets a
+      Deactivate/Reactivate toggle using the pre-existing `User.isActive`
+      field (no migration needed) — reversible, unlike delete. Both actions
+      guard against locking the system out: can't change the last active
+      `ADMIN`'s role away from Admin, and can't deactivate the last active
+      `ADMIN`. Self-edit is allowed but self-deactivate/self-delete stay
+      blocked (own row never shows those buttons). Deactivation takes effect
+      immediately, not just at next login — `session.ts`'s `getCurrentUser()`
+      already rejected `isActive: false` users on every request, so this
+      needed no new session plumbing. Every change writes an `UPDATE`
+      AuditEvent (old → new value).
+    - **Not done / still open**: the git-committed shared `DEV_PASSWORD` in
+      `prisma/seed.ts` (dev/demo accounts only, unaffected by this change,
+      still a known issue for whenever this repo's history or the Admin
+      account's real password needs attention); no deploy tooling yet
+      (Railway is decided per section 5 but not wired up — still relevant
+      once step 6 involves a real external user, not just Apoorv testing
+      locally).
 5. **Test/review each ticket** before starting the next one.
 6. **Load one real site's data** (e.g. an active Tulsi site) — now the
    natural next step, since every Phase 1 FR is built and dummy/seed data is
