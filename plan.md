@@ -245,14 +245,22 @@ sign-off (section 4) are resolved as of 2026-09-15.
       crashed server action.
     - Sidebar "People" link now points at `/users` for Admin only; unchanged
       ("Soon") for every other role.
+    - **Delete user** (added 2026-09-18, same day, after Apoorv's follow-up
+      request): confirm-dialog delete on `/users`. Hard delete — every
+      ownership FK on `User` (`FranchiseProject.franchiseeId/ownerId`,
+      `Task.ownerId/createdById`, `Document.ownerId`, `TaskComment.authorId`)
+      is `ON DELETE RESTRICT` and non-nullable, so a user who owns anything
+      genuinely cannot be deleted; the resulting Postgres FK error is caught
+      and shown as a clear message instead of crashing. Self-delete blocked.
+      Writes a `DELETE` AuditEvent before the row goes.
     - **Not done / still open**: editing or deactivating an existing user
-      (view + create only, per what was asked); the git-committed shared
-      `DEV_PASSWORD` in `prisma/seed.ts` (dev/demo accounts only, unaffected
-      by this change, still a known issue for whenever this repo's history
-      or the Admin account's real password needs attention); no deploy
-      tooling yet (Railway is decided per section 5 but not wired up —
-      still relevant once step 6 involves a real external user, not just
-      Apoorv testing locally).
+      (view + create + delete only, per what was asked); the git-committed
+      shared `DEV_PASSWORD` in `prisma/seed.ts` (dev/demo accounts only,
+      unaffected by this change, still a known issue for whenever this
+      repo's history or the Admin account's real password needs attention);
+      no deploy tooling yet (Railway is decided per section 5 but not wired
+      up — still relevant once step 6 involves a real external user, not
+      just Apoorv testing locally).
 5. **Test/review each ticket** before starting the next one.
 6. **Load one real site's data** (e.g. an active Tulsi site) — now the
    natural next step, since every Phase 1 FR is built and dummy/seed data is
