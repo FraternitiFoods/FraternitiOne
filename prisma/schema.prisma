@@ -129,6 +129,14 @@ enum AuditAction {
   LOGOUT
 }
 
+/// INVITE: admin created the account with no password yet — link sets the
+/// first one. RESET: existing user asked for a new one via "Forgot
+/// password". Same token mechanism, different email copy + expiry window.
+enum PasswordResetPurpose {
+  INVITE
+  RESET
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -140,21 +148,43 @@ model User {
   id           String      @id @default(cuid())
   name         String
   email        String      @unique
-  passwordHash String
+  /// Nullable: an admin-created user (see PasswordResetToken, purpose
+  /// INVITE) starts with no password until they follow their setup link.
+  /// login() treats a null hash the same as a wrong password — no separate
+  /// error message — so this doesn't become a way to enumerate which emails
+  /// exist in the system.
+  passwordHash String?
   role         Role
   department   Department?
   isActive     Boolean     @default(true)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  sessions           Session[]
-  ownedProjects      FranchiseProject[] @relation("ProjectOwner")
-  franchiseeProjects FranchiseProject[] @relation("ProjectFranchisee")
-  tasksOwned         Task[]             @relation("TaskOwner")
-  tasksCreated       Task[]             @relation("TaskCreatedBy")
-  taskComments       TaskComment[]
-  documentsOwned     Document[]         @relation("DocumentOwner")
-  auditEvents        AuditEvent[]
+  sessions            Session[]
+  ownedProjects       FranchiseProject[]   @relation("ProjectOwner")
+  franchiseeProjects  FranchiseProject[]   @relation("ProjectFranchisee")
+  tasksOwned          Task[]               @relation("TaskOwner")
+  tasksCreated        Task[]               @relation("TaskCreatedBy")
+  taskComments        TaskComment[]
+  documentsOwned      Document[]           @relation("DocumentOwner")
+  auditEvents         AuditEvent[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+/// Backs both the admin "invite" flow and self-service "forgot password"
+/// (plan.md build log, 2026-09-18). Same hashing discipline as Session: only
+/// tokenHash is stored, so a DB leak alone can't be replayed as a live link.
+model PasswordResetToken {
+  id        String               @id @default(cuid())
+  tokenHash String               @unique
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   PasswordResetPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([userId])
 }
 
 /// Database-backed session (decision: session-based auth, plan.md section 5).

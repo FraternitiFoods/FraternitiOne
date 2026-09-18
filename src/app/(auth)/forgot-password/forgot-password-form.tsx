@@ -2,21 +2,28 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { login, type LoginState } from "./actions";
+import { requestPasswordReset, type ForgotPasswordState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function LoginForm({ next }: { next?: string }) {
-  const [state, action, pending] = useActionState<LoginState, FormData>(
-    login,
+export function ForgotPasswordForm() {
+  const [state, action, pending] = useActionState<ForgotPasswordState, FormData>(
+    requestPasswordReset,
     undefined
   );
 
+  if (state?.success) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        If that email has a Fraterniti One account, we&apos;ve sent a link to reset the
+        password. Check your inbox.
+      </p>
+    );
+  }
+
   return (
     <form action={action} className="space-y-4">
-      {next && <input type="hidden" name="next" value={next} />}
-
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -29,22 +36,6 @@ export function LoginForm({ next }: { next?: string }) {
         />
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="password">Password</Label>
-          <Link href="/forgot-password" className="text-xs text-muted-foreground hover:underline">
-            Forgot password?
-          </Link>
-        </div>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-        />
-      </div>
-
       {state?.error && (
         <p className="text-sm text-destructive" role="alert">
           {state.error}
@@ -52,8 +43,12 @@ export function LoginForm({ next }: { next?: string }) {
       )}
 
       <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? "Signing in…" : "Sign in"}
+        {pending ? "Sending…" : "Send reset link"}
       </Button>
+
+      <Link href="/login" className="block text-center text-sm text-muted-foreground hover:underline">
+        Back to sign in
+      </Link>
     </form>
   );
 }

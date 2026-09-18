@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Role, Department } from "@prisma/client";
 import type { CurrentUser } from "@/lib/session";
+import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
 
 /**
  * Phase 1 RBAC — role-based, module-level (plan.md section 5 decision: "no
@@ -10,38 +11,15 @@ import type { CurrentUser } from "@/lib/session";
  * permission and user management") is explicitly out of Phase 1 scope
  * (plan.md section 3 FR list has no Admin/master-config FR).
  *
- * The role -> department mapping below is reconstructed from SRD section 2's
- * "User Roles and Permissions" table, cross-checked against the per-module
- * bullets in section 5 (the extracted PDF table had its "Key Rights" column
- * shifted by one row; the mapping here is the corrected version — e.g. Sales'
- * actual right is "Create franchise record, upload LOI, commercial
- * handover", matching section 5's Sales & Onboarding bullets). Roles/rights
- * not tied to a specific department (Management, Admin) get broader access.
+ * The role -> department mapping (DEPARTMENT_OWNERS, reconstructed from SRD
+ * section 2's "User Roles and Permissions" table, cross-checked against the
+ * per-module bullets in section 5) lives in role-departments.ts rather than
+ * here, so the admin "New User" form (a Client Component) can display it
+ * without importing this server-only file.
  *
  * Any change to who-can-do-what for a given department belongs here, not
  * scattered through page/action code.
  */
-const DEPARTMENT_OWNERS: Record<Role, Department[]> = {
-  FRANCHISEE: ["FRANCHISEE"],
-  SALES: ["SALES"],
-  // Legal's rights include "Lease/landlord diligence" (SRD section 5), which
-  // is the Property/Site lifecycle stage's work — no dedicated Property role
-  // exists in section 2, so it's grouped under Legal.
-  LEGAL: ["LEGAL", "PROPERTY"],
-  INTERIORS: ["INTERIORS"],
-  PROJECT_MANAGER: ["PROJECTS"],
-  ACCOUNTS: ["ACCOUNTS"],
-  HR: ["HR"],
-  // SRD groups "Culinary & Procurement" as one parallel lifecycle stage
-  // (section 3, Stage 08); no separate Procurement role exists in section 2.
-  CULINARY: ["CULINARY", "PROCUREMENT"],
-  MARKETING: ["MARKETING"],
-  OPERATIONS: ["OPERATIONS"],
-  // Management/Admin overrides are handled by ROLES_WITH_FULL_OVERRIDE below,
-  // not by listing every department here.
-  MANAGEMENT: [],
-  ADMIN: [],
-};
 
 /**
  * Management ("All projects, escalations, analytics, overrides with audit
@@ -74,6 +52,16 @@ export function hasFullOverride(user: Pick<CurrentUser, "role">): boolean {
 
 export function canCreateProject(user: Pick<CurrentUser, "role">): boolean {
   return PROJECT_CREATOR_ROLES.includes(user.role) || hasFullOverride(user);
+}
+
+/**
+ * Creating/listing user accounts is scoped to ADMIN only — narrower than
+ * `hasFullOverride` (which also grants MANAGEMENT broad task/document
+ * access). Account provisioning is a system-administration action, not a
+ * cross-department override, so it isn't extended to MANAGEMENT here.
+ */
+export function canManageUsers(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
 }
 
 export function canEditProjectHeader(user: Pick<CurrentUser, "role">): boolean {

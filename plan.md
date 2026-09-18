@@ -108,6 +108,26 @@ Accounts). Added per Apoorv's review — not in the original draft diagram.
   `project_id` relationship.
 - **Permission granularity**: Role-based, module-level for Phase 1 (e.g.
   "Legal: read/write Documents, read-only Tasks"). No field-level rules yet.
+- **Account provisioning (2026-09-18)**: No self-service signup. Accounts are
+  created only by an Admin, via `/users/new`. `canManageUsers` (permissions.ts)
+  is scoped to the `ADMIN` role specifically — narrower than
+  `hasFullOverride` (which also grants MANAGEMENT broad task/document
+  access) — because provisioning accounts is a system-administration action,
+  not a cross-department content override.
+- **Password set-up (2026-09-18)**: An admin-created user starts with no
+  password (`User.passwordHash` is nullable) and is emailed a one-time
+  "set your password" link (`PasswordResetToken`, purpose `INVITE`, 7-day
+  expiry). The same token model/route (`/reset-password/[token]`) backs
+  self-service "Forgot password" (purpose `RESET`, 1-hour expiry) — one
+  mechanism, not two. This replaces `prisma/seed.ts`'s shared
+  `DEV_PASSWORD` pattern for real users going forward; the seed script
+  itself is unchanged (dev/demo accounts only).
+- **Transactional email**: Resend (`RESEND_API_KEY`, `EMAIL_FROM` in `.env`
+  — Apoorv already has an account). Used only for invite/reset emails so
+  far. `EMAIL_FROM` must be on a Resend-verified domain to send to arbitrary
+  recipients — the sandbox sender `onboarding@resend.dev` only delivers to
+  the Resend account's own signup address, fine for local testing, not for
+  real users (e.g. the Tulsi Agra contact in step 6).
 
 ## 6. NOT DECIDED YET — ask before assuming
 
@@ -196,6 +216,43 @@ sign-off (section 4) are resolved as of 2026-09-15.
      Server Component render) — fixed by redirecting to a dedicated
      `/api/auth/clear-session` Route Handler that clears the session before
      bouncing to `/login`.
+4a. **Forgot password + admin user creation** — done 2026-09-18. Built ahead
+    of loading real site data (step 6) because step 6 needs real people
+    (a real franchisee + a real internal owner, both required, non-nullable
+    FKs on `FranchiseProject`) to exist as `User` rows first, and until this
+    step there was no way to create one except the DB seed script. What
+    shipped:
+    - `PasswordResetToken` model (hashed-token, same discipline as
+      `Session`) backs both flows — see section 5, "Password set-up".
+    - `/forgot-password` → `/reset-password/[token]`: self-service reset.
+      Deliberately reports the same generic "check your inbox" result
+      whether or not the email matches an account (and swallows email-send
+      failures the same way) — matches the existing login() discipline of
+      never revealing which case it was.
+    - `/users` (list, Admin-only) and `/users/new` (create form): name,
+      email, role, and an optional free-text "department" label. Module
+      access is **not** manually assigned here — it's entirely determined by
+      the existing hardcoded role→department matrix
+      (`src/lib/role-departments.ts`, extracted from `permissions.ts` so the
+      client-side form can show "this role manages: ..." without importing a
+      `server-only` file). The department field on the form is informational
+      only.
+    - New user creation emails an invite link immediately (purpose
+      `INVITE`); a "Resend invite" button on `/users` re-sends it for anyone
+      who hasn't set a password yet — added because the first real test of
+      this flow will likely happen before `RESEND_API_KEY`/`EMAIL_FROM` are
+      filled in, and that failure needed a clean recovery path instead of a
+      crashed server action.
+    - Sidebar "People" link now points at `/users` for Admin only; unchanged
+      ("Soon") for every other role.
+    - **Not done / still open**: editing or deactivating an existing user
+      (view + create only, per what was asked); the git-committed shared
+      `DEV_PASSWORD` in `prisma/seed.ts` (dev/demo accounts only, unaffected
+      by this change, still a known issue for whenever this repo's history
+      or the Admin account's real password needs attention); no deploy
+      tooling yet (Railway is decided per section 5 but not wired up —
+      still relevant once step 6 involves a real external user, not just
+      Apoorv testing locally).
 5. **Test/review each ticket** before starting the next one.
 6. **Load one real site's data** (e.g. an active Tulsi site) — now the
    natural next step, since every Phase 1 FR is built and dummy/seed data is

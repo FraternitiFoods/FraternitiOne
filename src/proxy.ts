@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "fo_session";
-const PUBLIC_ROUTES = new Set(["/login"]);
+const PUBLIC_ROUTES = new Set(["/login", "/forgot-password"]);
+// /reset-password/[token] is dynamic, so it's matched by prefix below rather
+// than added to the exact-match PUBLIC_ROUTES set.
+const PUBLIC_ROUTE_PREFIXES = ["/reset-password/"];
 
 /**
  * Optimistic auth gate only — checks whether the session cookie is present,
@@ -15,7 +18,9 @@ const PUBLIC_ROUTES = new Set(["/login"]);
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-  const isPublicRoute = PUBLIC_ROUTES.has(pathname);
+  const isPublicRoute =
+    PUBLIC_ROUTES.has(pathname) ||
+    PUBLIC_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   if (!isPublicRoute && !hasSessionCookie) {
     const loginUrl = new URL("/login", request.url);
@@ -23,7 +28,13 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isPublicRoute && hasSessionCookie) {
+  // Reset-password links are capability tokens (e.g. an admin's own invite
+  // link, opened in the same browser they're already signed in on) — they
+  // must stay reachable regardless of an existing session, unlike /login and
+  // /forgot-password which redirect an already-authenticated visitor away.
+  const isResetPasswordRoute = pathname.startsWith("/reset-password/");
+
+  if (isPublicRoute && hasSessionCookie && !isResetPasswordRoute) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

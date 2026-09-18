@@ -18,7 +18,7 @@ type NavItem = { label: string; href: string | null };
  * to pages that don't exist yet. This keeps the nav visually identical to
  * the wireframe pack without faking screens with no data behind them.
  */
-const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Overview", href: "/dashboard" },
   { label: "Lifecycle", href: null },
   { label: "Actions", href: null },
@@ -33,6 +33,12 @@ const NAV_ITEMS: NavItem[] = [
 
 export function AppSidebar({ name, role }: { name: string; role: Role }) {
   const pathname = usePathname();
+  // "People" only has a real page for Admin (canManageUsers, permissions.ts)
+  // — every other role keeps seeing it as the "Soon" placeholder like the
+  // rest of the not-yet-built Phase 2/3/4 modules.
+  const navItems = BASE_NAV_ITEMS.map((item) =>
+    item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item
+  );
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-56 flex-col bg-[#0b1220]">
@@ -44,7 +50,7 @@ export function AppSidebar({ name, role }: { name: string; role: Role }) {
       </div>
 
       <nav className="flex-1 space-y-0.5 px-3">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           if (!item.href) {
             return (
               <div

@@ -33,9 +33,15 @@ export async function login(
 
   const user = await db.user.findUnique({ where: { email } });
 
-  // Same error for "no such user" and "wrong password" — don't leak which
-  // one it was.
-  if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
+  // Same error for "no such user", "wrong password", and "account has no
+  // password set yet" (admin-created user who hasn't followed their invite
+  // link) — don't leak which one it was.
+  if (
+    !user ||
+    !user.isActive ||
+    !user.passwordHash ||
+    !(await verifyPassword(password, user.passwordHash))
+  ) {
     return { error: "Incorrect email or password." };
   }
 
