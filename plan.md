@@ -266,13 +266,9 @@ sign-off (section 4) are resolved as of 2026-09-15.
       already rejected `isActive: false` users on every request, so this
       needed no new session plumbing. Every change writes an `UPDATE`
       AuditEvent (old → new value).
-    - **Not done / still open**: the git-committed shared `DEV_PASSWORD` in
-      `prisma/seed.ts` (dev/demo accounts only, unaffected by this change,
-      still a known issue for whenever this repo's history or the Admin
-      account's real password needs attention); no deploy tooling yet
-      (Railway is decided per section 5 but not wired up — still relevant
-      once step 6 involves a real external user, not just Apoorv testing
-      locally).
+    - **Not done / still open**: no deploy tooling yet (Railway is decided
+      per section 5 but not wired up — still relevant once step 6 involves a
+      real external user, not just Apoorv testing locally).
 4b. **Lifecycle rework — independent, tappable, task-driven stages**
     (2026-09-18/19, at Apoorv's request). The original single
     `FranchiseProject.lifecycleStage` field modeled "the one current stage"
@@ -323,6 +319,34 @@ sign-off (section 4) are resolved as of 2026-09-15.
       for them were kept (their `projectId` FK is `ON DELETE SET NULL`, by
       original design — NFR-06 wants an immutable audit history even after
       the entity it describes is gone).
+4c. **Removed the hardcoded `DEV_PASSWORD` from `prisma/seed.ts`** (2026-09-19)
+    — closes the "not done" item flagged in 4a. The literal password string
+    was a git-committed source file, not a `.env` value, so it stayed in
+    history on every clone/fork regardless of `.gitignore`; one of the
+    accounts it seeded shares `tech@fraterniti.co.in`'s real admin address.
+    Seed script now reads `SEED_DEV_PASSWORD` from the environment and
+    throws immediately if it's unset — `.env.example` documents the
+    variable (empty placeholder), `.env` (gitignored) holds the real value
+    for this machine. No behavior change for local dev beyond the one-time
+    step of setting the env var; this does not rewrite git history, so the
+    old literal is still recoverable from past commits — worth a `git log -p`
+    sweep before this repo is ever made public.
+4d. **Action Centre placeholder (FR-004)** (2026-09-19) — was scoped into
+    Phase 1 (section 2: "Phase 1 only needs a placeholder list view in
+    Action Centre, not the approve/reject engine") but never built; sidebar
+    "Actions" rendered "Soon" like the genuinely-deferred Phase 2/3/4 items.
+    What shipped: `/actions` — a read-only queue built entirely from `Task`
+    (the only actionable-item entity Phase 1 actually has; Approval/Payment
+    are still Phase 2), reusing `canActOnTask` for the same
+    module-ownership/owner/franchisee-isolation rules as everywhere else.
+    Stat cards (Critical / Overdue / Awaiting You / Completed This Week) and
+    a sorted list (overdue first, then priority, then due date) link each
+    task straight to its existing stage page — no new mutation logic, no
+    approve/reject engine, matching the Phase 1 scope note exactly. Sidebar
+    "Actions" now points at it for every role. Verified against the real DB
+    over an authenticated session (not just type-checked): both an internal
+    (Admin) and a Franchisee session render 200 with correct data and no
+    server errors, franchisee view confirmed scoped to their own project.
 5. **Test/review each ticket** before starting the next one.
 6. **Load one real site's data** (e.g. an active Tulsi site) — now the
    natural next step, since every Phase 1 FR is built and dummy/seed data is

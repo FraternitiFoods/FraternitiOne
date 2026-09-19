@@ -13,15 +13,16 @@ type NavItem = { label: string; href: string | null };
 /**
  * Fixed nav list, in the exact order shown in every SRD wireframe's left
  * sidebar (wireframes 01-24). Phase 1 only has real pages for a handful of
- * these (Overview, Projects, Documents, Reports) — the rest are Phase 2/3/4 modules
- * per plan.md section 2, so they render disabled/"Soon" rather than linking
- * to pages that don't exist yet. This keeps the nav visually identical to
- * the wireframe pack without faking screens with no data behind them.
+ * these (Overview, Actions, Projects, Documents, Reports) — the rest are
+ * Phase 2/3/4 modules per plan.md section 2, so they render disabled/"Soon"
+ * rather than linking to pages that don't exist yet. This keeps the nav
+ * visually identical to the wireframe pack without faking screens with no
+ * data behind them.
  */
 const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Overview", href: "/dashboard" },
   { label: "Lifecycle", href: null },
-  { label: "Actions", href: null },
+  { label: "Actions", href: "/actions" },
   { label: "Documents", href: "/documents" },
   { label: "Payments", href: null },
   { label: "Projects", href: "/projects" },

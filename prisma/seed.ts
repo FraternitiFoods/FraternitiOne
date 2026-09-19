@@ -9,7 +9,21 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-const DEV_PASSWORD = "KobeBryant//24";
+// Never hardcode this — it was a committed literal until 2026-09-19 (plan.md
+// section 7, step 4a) and one of the accounts it seeds shares tech@'s real
+// admin address. Set SEED_DEV_PASSWORD in .env (gitignored) instead. Read
+// via an IIFE (rather than a bare `const` + `if` guard) so the result type
+// is `string`, not `string | undefined` — the guard alone doesn't narrow
+// across the closures in `upsertUser` below.
+const DEV_PASSWORD: string = (() => {
+  const value = process.env.SEED_DEV_PASSWORD;
+  if (!value) {
+    throw new Error(
+      "SEED_DEV_PASSWORD is not set. Add it to .env (see .env.example) before running the seed script."
+    );
+  }
+  return value;
+})();
 
 async function upsertUser(input: {
   email: string;
