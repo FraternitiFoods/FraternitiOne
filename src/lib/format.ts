@@ -107,36 +107,38 @@ export const DEPARTMENT_LABELS: Record<Department, string> = {
 };
 
 export const LIFECYCLE_STAGE_LABELS: Record<LifecycleStage, string> = {
-  SALES_LOI: "Sales & LOI",
+  SALES_FRANCHISE_ACQUISITION: "Sales & Franchise Acquisition",
+  LOCATION_ACQUISITION: "Location Acquisition",
   LEGAL_COMPLIANCE: "Legal & Compliance",
-  PROPERTY_SITE: "Property / Site",
-  INTERIORS_DESIGN: "Interiors & Design",
-  PROJECT_EXECUTION: "Project Execution",
-  ACCOUNTS: "Accounts",
-  HR: "HR",
-  CULINARY_PROCUREMENT: "Culinary & Procurement",
-  MARKETING: "Marketing",
-  PRE_OPENING_READINESS: "Pre-Opening Readiness",
-  TRAINING_TRIAL_RUNS: "Training & Trial Runs",
-  GRAND_OPENING: "Grand Opening",
-  POST_OPENING_TRANSITION: "Post-Opening Transition",
+  PROJECT_HANDOVER: "Project Handover",
+  DESIGN: "Design",
+  BOQ_PROCUREMENT: "BOQ & Procurement",
+  CONSTRUCTION_EXECUTION: "Construction Execution",
+  LICENSING: "Licensing",
+  OPERATIONS_PREPARATION: "Operations Preparation",
+  TECHNOLOGY_DEPLOYMENT: "Technology Deployment",
+  PRE_LAUNCH_MARKETING: "Pre-Launch Marketing",
+  GRAND_LAUNCH: "Grand Launch",
+  POST_OPENING: "Post Opening",
 };
 
-/** Ordered main path, for a simple "stage N of 13" style progress hint. */
+/** Ordered main path — each stage's status is independent (see
+ * lifecycle-stage-status.ts), this order only drives the "01"-"13" numbering
+ * and the projects-list "earliest incomplete stage" summary. */
 export const LIFECYCLE_STAGE_ORDER: LifecycleStage[] = [
-  "SALES_LOI",
+  "SALES_FRANCHISE_ACQUISITION",
+  "LOCATION_ACQUISITION",
   "LEGAL_COMPLIANCE",
-  "PROPERTY_SITE",
-  "INTERIORS_DESIGN",
-  "PROJECT_EXECUTION",
-  "ACCOUNTS",
-  "HR",
-  "CULINARY_PROCUREMENT",
-  "MARKETING",
-  "PRE_OPENING_READINESS",
-  "TRAINING_TRIAL_RUNS",
-  "GRAND_OPENING",
-  "POST_OPENING_TRANSITION",
+  "PROJECT_HANDOVER",
+  "DESIGN",
+  "BOQ_PROCUREMENT",
+  "CONSTRUCTION_EXECUTION",
+  "LICENSING",
+  "OPERATIONS_PREPARATION",
+  "TECHNOLOGY_DEPLOYMENT",
+  "PRE_LAUNCH_MARKETING",
+  "GRAND_LAUNCH",
+  "POST_OPENING",
 ];
 
 export const PROJECT_HEALTH_LABELS: Record<ProjectHealth, string> = {

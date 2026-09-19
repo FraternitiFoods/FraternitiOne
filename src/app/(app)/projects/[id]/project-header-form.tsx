@@ -12,20 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LIFECYCLE_STAGE_LABELS, LIFECYCLE_STAGE_ORDER, PROJECT_HEALTH_LABELS } from "@/lib/format";
-import type { LifecycleStage, ProjectHealth } from "@prisma/client";
+import { PROJECT_HEALTH_LABELS } from "@/lib/format";
+import type { ProjectHealth } from "@prisma/client";
 
 const HEALTH_OPTIONS: ProjectHealth[] = ["GREEN", "AMBER", "RED", "CRITICAL"];
 
 export function ProjectHeaderForm({
   projectId,
-  lifecycleStage,
   health,
   nextAction,
   targetOpening,
 }: {
   projectId: string;
-  lifecycleStage: LifecycleStage;
   health: ProjectHealth;
   nextAction: string | null;
   targetOpening: string; // yyyy-mm-dd
@@ -38,42 +36,22 @@ export function ProjectHeaderForm({
 
   return (
     <form action={action} className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="lifecycleStage">Lifecycle stage</Label>
-          <Select name="lifecycleStage" defaultValue={lifecycleStage}>
-            <SelectTrigger id="lifecycleStage" className="w-full">
-              <SelectValue>
-                {(value: LifecycleStage | null) => (value ? LIFECYCLE_STAGE_LABELS[value] : "")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {LIFECYCLE_STAGE_ORDER.map((stage) => (
-                <SelectItem key={stage} value={stage}>
-                  {LIFECYCLE_STAGE_LABELS[stage]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="health">Health</Label>
-          <Select name="health" defaultValue={health}>
-            <SelectTrigger id="health" className="w-full">
-              <SelectValue>
-                {(value: ProjectHealth | null) => (value ? PROJECT_HEALTH_LABELS[value] : "")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {HEALTH_OPTIONS.map((h) => (
-                <SelectItem key={h} value={h}>
-                  {PROJECT_HEALTH_LABELS[h]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-2">
+        <Label htmlFor="health">Health</Label>
+        <Select name="health" defaultValue={health}>
+          <SelectTrigger id="health" className="w-full">
+            <SelectValue>
+              {(value: ProjectHealth | null) => (value ? PROJECT_HEALTH_LABELS[value] : "")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {HEALTH_OPTIONS.map((h) => (
+              <SelectItem key={h} value={h}>
+                {PROJECT_HEALTH_LABELS[h]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">

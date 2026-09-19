@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
@@ -19,14 +18,15 @@ import {
   daysUntil,
   formatDate,
   formatProjectCode,
-  LIFECYCLE_STAGE_LABELS,
   LIFECYCLE_STAGE_ORDER,
   PROJECT_HEALTH_LABELS,
 } from "@/lib/format";
+import { computeStageStatus } from "@/lib/lifecycle-stage-status";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
 import { TaskCard } from "./task-card";
+import { StageTile } from "./stage-tile";
 import { DocumentUploadForm } from "./document-upload-form";
 import { DocumentCard } from "./document-card";
 
@@ -49,12 +49,13 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             orderBy: { createdAt: "asc" },
           },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ lifecycleStage: "asc" }, { order: "asc" }],
       },
       documents: {
         include: { owner: { select: { name: true } } },
         orderBy: [{ category: "asc" }, { createdAt: "desc" }],
       },
+      stageOverrides: true,
     },
   });
 
@@ -77,7 +78,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   const progressPct = total === 0 ? 0 : Math.round((completed / total) * 100);
   const openTasks = total - completed;
   const daysToLaunch = daysUntil(project.targetOpening);
-  const currentStageIndex = LIFECYCLE_STAGE_ORDER.indexOf(project.lifecycleStage);
+  const overriddenStages = new Set(project.stageOverrides.map((o) => o.stage));
 
   return (
     <div className="space-y-6">
@@ -133,37 +134,20 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         <CardContent>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {LIFECYCLE_STAGE_ORDER.map((stage, index) => {
-              const state =
-                index < currentStageIndex
-                  ? "completed"
-                  : index === currentStageIndex
-                    ? "current"
-                    : "upcoming";
+              const stageTasks = project.tasks.filter((t) => t.lifecycleStage === stage);
+              const isOverridden = overriddenStages.has(stage);
+              const stageCompleted = stageTasks.filter((t) => t.status === "COMPLETED").length;
               return (
-                <div
+                <StageTile
                   key={stage}
-                  className={cn(
-                    "rounded-lg border p-3",
-                    state === "completed" && "border-emerald-200 bg-emerald-50",
-                    state === "current" && "border-primary/30 bg-primary/5",
-                    state === "upcoming" && "border-border bg-background"
-                  )}
-                >
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {String(index + 1).padStart(2, "0")}
-                  </div>
-                  <div className="mt-1 text-sm font-medium">{LIFECYCLE_STAGE_LABELS[stage]}</div>
-                  <div
-                    className={cn(
-                      "mt-1 text-xs",
-                      state === "completed" && "text-emerald-700",
-                      state === "current" && "text-primary",
-                      state === "upcoming" && "text-muted-foreground"
-                    )}
-                  >
-                    {state === "completed" ? "Completed" : state === "current" ? "In Progress" : "Upcoming"}
-                  </div>
-                </div>
+                  stage={stage}
+                  index={index}
+                  status={computeStageStatus(stageTasks, isOverridden)}
+                  isOverridden={isOverridden}
+                  projectId={project.id}
+                  total={stageTasks.length}
+                  completed={stageCompleted}
+                />
               );
             })}
           </div>
@@ -172,21 +156,18 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Lifecycle & status (FR-002)</CardTitle>
+          <CardTitle className="text-base">Project status (FR-002)</CardTitle>
         </CardHeader>
         <CardContent>
           {canEditProjectHeader(user) ? (
             <ProjectHeaderForm
               projectId={project.id}
-              lifecycleStage={project.lifecycleStage}
               health={project.health}
               nextAction={project.nextAction}
               targetOpening={project.targetOpening.toISOString().slice(0, 10)}
             />
           ) : (
             <dl className="grid grid-cols-2 gap-y-2 text-sm sm:grid-cols-4">
-              <dt className="text-muted-foreground">Stage</dt>
-              <dd className="col-span-3">{LIFECYCLE_STAGE_LABELS[project.lifecycleStage]}</dd>
               <dt className="text-muted-foreground">Target opening</dt>
               <dd className="col-span-3">{formatDate(project.targetOpening)}</dd>
               <dt className="text-muted-foreground">Owner</dt>
@@ -220,6 +201,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   title: task.title,
                   description: task.description,
                   module: task.module,
+                  lifecycleStage: task.lifecycleStage,
                   status: task.status,
                   priority: task.priority,
                   dueDate: task.dueDate ? task.dueDate.toISOString() : null,

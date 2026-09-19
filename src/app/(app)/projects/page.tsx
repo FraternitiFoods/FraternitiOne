@@ -14,12 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  formatDate,
-  formatProjectCode,
-  LIFECYCLE_STAGE_LABELS,
-  PROJECT_HEALTH_LABELS,
-} from "@/lib/format";
+import { formatDate, formatProjectCode, PROJECT_HEALTH_LABELS } from "@/lib/format";
+import { summarizeProjectStage } from "@/lib/lifecycle-stage-status";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 
 // SRD wireframe 19 "Management Command Centre": portfolio heatmap — stage,
@@ -32,7 +28,8 @@ export default async function ProjectsPage() {
     include: {
       owner: { select: { name: true } },
       franchisee: { select: { name: true } },
-      tasks: { select: { status: true } },
+      tasks: { select: { status: true, lifecycleStage: true } },
+      stageOverrides: { select: { stage: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -124,7 +121,12 @@ export default async function ProjectsPage() {
                       {formatProjectCode(project.seq)} · {project.format}
                     </div>
                   </TableCell>
-                  <TableCell>{LIFECYCLE_STAGE_LABELS[project.lifecycleStage]}</TableCell>
+                  <TableCell>
+                    {summarizeProjectStage(
+                      project.tasks,
+                      new Set(project.stageOverrides.map((o) => o.stage))
+                    )}
+                  </TableCell>
                   <TableCell>{readyPct}%</TableCell>
                   <TableCell>{formatDate(project.targetOpening)}</TableCell>
                   <TableCell>

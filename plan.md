@@ -273,6 +273,56 @@ sign-off (section 4) are resolved as of 2026-09-15.
       (Railway is decided per section 5 but not wired up — still relevant
       once step 6 involves a real external user, not just Apoorv testing
       locally).
+4b. **Lifecycle rework — independent, tappable, task-driven stages**
+    (2026-09-18/19, at Apoorv's request). The original single
+    `FranchiseProject.lifecycleStage` field modeled "the one current stage"
+    for the whole project, assumed strict sequence, had no per-stage task
+    checklist, and its status (In Progress/Completed) wasn't actually
+    settable anywhere in the UI — a real gap, since in practice 3-4 stages
+    run in parallel and each needs its own checklist. What shipped:
+    - **Stages renamed/regrouped to 13**, matching the franchise lifecycle
+      tracker sheet exactly (`Sales & Franchise Acquisition` → `Post
+      Opening`) — replacing the previous ad-hoc 13-stage list. Old
+      standalone stages not on the sheet (Accounts/HR/Culinary &
+      Procurement as stages) are gone; the sheet's structure is now the
+      source of truth (`src/lib/lifecycle-stage-tasks.ts`).
+    - `FranchiseProject.lifecycleStage` **removed entirely** (and with it
+      the FR-002 "Lifecycle stage" dropdown/field). A stage's status is now
+      *derived*, not stored: `Task.lifecycleStage` (new, required) tags
+      every task with one of the 13 stages, and
+      `src/lib/lifecycle-stage-status.ts` computes Upcoming/In
+      Progress/Completed from that stage's tasks (no task started →
+      Upcoming; all done → Completed; otherwise → In Progress). Stages are
+      independent — no sequence/dependency enforcement between them.
+    - **`ProjectStageOverride`** (new model): Admin-only escape hatch to
+      force a stage to Completed even with tasks still open (e.g. 7/11) —
+      row present = forced; deleting it reopens the stage.
+      `canForceCompleteStage` in `permissions.ts` is intentionally Admin-only
+      (narrower than `hasFullOverride`).
+    - **Tappable stage tiles**: each of the 13 tiles on the project detail
+      page (`stage-tile.tsx`) opens a dialog listing only that stage's
+      tasks, using the existing `TaskCard`/status/comment UI. Every new
+      project auto-seeds ~150 tasks (one per sheet checklist item) across
+      the 13 stages via `STAGE_TASK_TEMPLATES`; extra ad-hoc tasks beyond
+      the checklist use the same `NewTaskForm` already on the page, now
+      stage-scoped when opened from inside a stage dialog.
+    - **Swappable + editable tasks** (2026-09-19 follow-up, same feature —
+      Apoorv flagged this was missing from the first pass): task titles are
+      editable inline (`updateTaskTitle`) from both the stage dialog and the
+      flat Tasks list. Ordering within a stage is a new `Task.order` int
+      column — seeded tasks get the sheet's own order, ad-hoc tasks append
+      to the end, and ▲/▼ buttons in the stage dialog (`moveTask` action)
+      swap a task with its neighbor. Reorder controls only render in the
+      stage-scoped dialog (`stage-tile.tsx` passes `canMoveUp`/`canMoveDown`
+      by array position), not the flat project-wide Tasks list, since that
+      list spans all 13 stages and has no single order to swap within.
+    - **Dummy/test data reset** (2026-09-19): the 3 seed-era projects (1
+      task, 2 documents) were deleted outright rather than migrated, per
+      Apoorv's explicit call — they predated the sheet-based stage
+      structure and were actively confusing verification. `AuditEvent` rows
+      for them were kept (their `projectId` FK is `ON DELETE SET NULL`, by
+      original design — NFR-06 wants an immutable audit history even after
+      the entity it describes is gone).
 5. **Test/review each ticket** before starting the next one.
 6. **Load one real site's data** (e.g. an active Tulsi site) — now the
    natural next step, since every Phase 1 FR is built and dummy/seed data is

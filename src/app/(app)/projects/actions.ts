@@ -6,7 +6,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
 import { canCreateProject, canEditProjectHeader, canViewProject } from "@/lib/permissions";
-import { LifecycleStage, ProjectHealth } from "@prisma/client";
+import { ProjectHealth } from "@prisma/client";
+import { LIFECYCLE_STAGE_ORDER } from "@/lib/format";
+import { STAGE_DEFAULT_DEPARTMENT, STAGE_TASK_TEMPLATES } from "@/lib/lifecycle-stage-tasks";
 
 const CreateProjectSchema = z.object({
   brand: z.string().trim().min(1).default("Tulsi"),
@@ -60,10 +62,6 @@ export async function createProject(
         ownerId: data.ownerId,
         targetOpening,
         nextAction: data.nextAction || null,
-        // FR-001: every project starts at the same first lifecycle stage —
-        // not exposed as a create-time input (Wireframe 01 implementation
-        // note: "Current stage ... must be computed, not manually typed").
-        lifecycleStage: LifecycleStage.SALES_LOI,
         health: ProjectHealth.GREEN,
       },
     });
@@ -81,9 +79,43 @@ export async function createProject(
         franchiseeId: created.franchiseeId,
         ownerId: created.ownerId,
         targetOpening: created.targetOpening.toISOString(),
-        lifecycleStage: created.lifecycleStage,
       },
     });
+
+    // Every project starts with the full lifecycle checklist pre-seeded
+    // (franchise lifecycle tracker sheet) — the project's Owner is the
+    // default task owner since there's no per-department roster yet.
+    for (const stage of LIFECYCLE_STAGE_ORDER) {
+      for (const [order, title] of STAGE_TASK_TEMPLATES[stage].entries()) {
+        const task = await tx.task.create({
+          data: {
+            projectId: created.id,
+            module: STAGE_DEFAULT_DEPARTMENT[stage],
+            lifecycleStage: stage,
+            title,
+            order,
+            ownerId: created.ownerId,
+            createdById: user.id,
+          },
+        });
+
+        await writeAuditEvent(tx, {
+          actor: user,
+          projectId: created.id,
+          entityType: "Task",
+          entityId: task.id,
+          action: "CREATE",
+          newValue: {
+            module: task.module,
+            lifecycleStage: task.lifecycleStage,
+            title: task.title,
+            ownerId: task.ownerId,
+            status: task.status,
+          },
+          reference: "Auto-seeded from lifecycle checklist",
+        });
+      }
+    }
 
     return created;
   });
@@ -92,7 +124,6 @@ export async function createProject(
 }
 
 const UpdateHeaderSchema = z.object({
-  lifecycleStage: z.nativeEnum(LifecycleStage),
   health: z.nativeEnum(ProjectHealth),
   nextAction: z.string().trim().optional(),
   targetOpening: z.string().min(1),
@@ -114,7 +145,6 @@ export async function updateProjectHeader(
   }
 
   const parsed = UpdateHeaderSchema.safeParse({
-    lifecycleStage: formData.get("lifecycleStage"),
     health: formData.get("health"),
     nextAction: formData.get("nextAction") || undefined,
     targetOpening: formData.get("targetOpening"),
@@ -134,7 +164,6 @@ export async function updateProjectHeader(
     const updated = await tx.franchiseProject.update({
       where: { id: projectId },
       data: {
-        lifecycleStage: data.lifecycleStage,
         health: data.health,
         nextAction: data.nextAction || null,
         targetOpening,
@@ -148,13 +177,11 @@ export async function updateProjectHeader(
       entityId: updated.id,
       action: "UPDATE",
       oldValue: {
-        lifecycleStage: project.lifecycleStage,
         health: project.health,
         nextAction: project.nextAction,
         targetOpening: project.targetOpening.toISOString(),
       },
       newValue: {
-        lifecycleStage: updated.lifecycleStage,
         health: updated.health,
         nextAction: updated.nextAction,
         targetOpening: updated.targetOpening.toISOString(),

@@ -13,8 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DEPARTMENT_LABELS, TASK_PRIORITY_LABELS } from "@/lib/format";
-import type { Department, TaskPriority } from "@prisma/client";
+import { DEPARTMENT_LABELS, LIFECYCLE_STAGE_LABELS, LIFECYCLE_STAGE_ORDER, TASK_PRIORITY_LABELS } from "@/lib/format";
+import type { Department, LifecycleStage, TaskPriority } from "@prisma/client";
 
 type PersonOption = { id: string; name: string };
 type TaskOption = { id: string; title: string };
@@ -26,13 +26,22 @@ export function NewTaskForm({
   modules,
   people,
   existingTasks,
+  stage,
+  returnPath,
 }: {
   projectId: string;
   modules: Department[];
   people: PersonOption[];
   existingTasks: TaskOption[];
+  /** Fixed lifecycle stage (embedded in the stage detail page) — when
+   * omitted, the form shows a visible Stage select instead (standalone
+   * "Add a task" card on the main project page). */
+  stage?: LifecycleStage;
+  /** Where to redirect back to after adding a task — defaults to the main
+   * project page; the stage detail page passes its own path. */
+  returnPath?: string;
 }) {
-  const boundAction = createTask.bind(null, projectId);
+  const boundAction = createTask.bind(null, projectId, returnPath ?? `/projects/${projectId}`);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     boundAction,
     undefined
@@ -81,6 +90,28 @@ export function NewTaskForm({
           </Select>
         </div>
       </div>
+
+      {stage ? (
+        <input type="hidden" name="lifecycleStage" value={stage} />
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="lifecycleStage">Stage</Label>
+          <Select name="lifecycleStage" required>
+            <SelectTrigger id="lifecycleStage" className="w-full">
+              <SelectValue placeholder="Select stage">
+                {(value: LifecycleStage | null) => (value ? LIFECYCLE_STAGE_LABELS[value] : "Select stage")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {LIFECYCLE_STAGE_ORDER.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {LIFECYCLE_STAGE_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="title">Title</Label>

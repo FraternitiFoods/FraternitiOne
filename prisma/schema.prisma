@@ -55,25 +55,25 @@ enum Department {
   GENERAL
 }
 
-/// SRD section 3 — End-to-End Franchise Lifecycle. Stages 6-9 run in parallel
-/// with the main path per the SRD ("Accounts, reporting, communication and
-/// document management are horizontal services across all lifecycle stages");
-/// FranchiseProject.lifecycleStage still models a single current-stage value
-/// for Phase 1 per SRD section 8 (one `lifecycle_stage` field).
+/// SRD section 3 — End-to-End Franchise Lifecycle, regrouped 2026-09-18 to
+/// match the franchise lifecycle tracker sheet (13 stages, independent/
+/// parallel — no longer a single project-wide "current stage": each stage's
+/// status is derived from its own Task.lifecycleStage set, see Task below
+/// and ProjectStageOverride for the admin force-complete escape hatch).
 enum LifecycleStage {
-  SALES_LOI
+  SALES_FRANCHISE_ACQUISITION
+  LOCATION_ACQUISITION
   LEGAL_COMPLIANCE
-  PROPERTY_SITE
-  INTERIORS_DESIGN
-  PROJECT_EXECUTION
-  ACCOUNTS
-  HR
-  CULINARY_PROCUREMENT
-  MARKETING
-  PRE_OPENING_READINESS
-  TRAINING_TRIAL_RUNS
-  GRAND_OPENING
-  POST_OPENING_TRANSITION
+  PROJECT_HANDOVER
+  DESIGN
+  BOQ_PROCUREMENT
+  CONSTRUCTION_EXECUTION
+  LICENSING
+  OPERATIONS_PREPARATION
+  TECHNOLOGY_DEPLOYMENT
+  PRE_LAUNCH_MARKETING
+  GRAND_LAUNCH
+  POST_OPENING
 }
 
 /// SRD section 7 — Status, SLA and Escalation Model: "Project Health".
@@ -161,14 +161,15 @@ model User {
   updatedAt    DateTime    @updatedAt
 
   sessions            Session[]
-  ownedProjects       FranchiseProject[]   @relation("ProjectOwner")
-  franchiseeProjects  FranchiseProject[]   @relation("ProjectFranchisee")
-  tasksOwned          Task[]               @relation("TaskOwner")
-  tasksCreated        Task[]               @relation("TaskCreatedBy")
+  ownedProjects       FranchiseProject[]     @relation("ProjectOwner")
+  franchiseeProjects  FranchiseProject[]     @relation("ProjectFranchisee")
+  tasksOwned          Task[]                 @relation("TaskOwner")
+  tasksCreated        Task[]                 @relation("TaskCreatedBy")
   taskComments        TaskComment[]
-  documentsOwned      Document[]           @relation("DocumentOwner")
+  documentsOwned      Document[]             @relation("DocumentOwner")
   auditEvents         AuditEvent[]
   passwordResetTokens PasswordResetToken[]
+  stageOverridesDone  ProjectStageOverride[]
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -206,33 +207,33 @@ model Session {
 /// lifecycle_stage, health". The one entity everything else attaches to
 /// (plan.md section 4) — every other Phase 1 model carries a projectId.
 model FranchiseProject {
-  id              String         @id @default(cuid())
+  id              String        @id @default(cuid())
   /// Autoincrementing sequence backing the human-readable project code
   /// (formatted at the application layer, e.g. "FR-00001"), kept separate
   /// from the cuid primary key used in URLs.
-  seq             Int            @unique @default(autoincrement())
+  seq             Int           @unique @default(autoincrement())
   /// Single-brand hardcode for Phase 1 (plan.md section 5 decision) — plain
   /// string field, not a Brand entity, so it normalizes later without
   /// breaking this relationship.
-  brand           String         @default("Tulsi")
+  brand           String        @default("Tulsi")
   format          String
   franchiseeId    String
-  franchisee      User           @relation("ProjectFranchisee", fields: [franchiseeId], references: [id])
+  franchisee      User          @relation("ProjectFranchisee", fields: [franchiseeId], references: [id])
   location        String
-  lifecycleStage  LifecycleStage @default(SALES_LOI)
-  health          ProjectHealth  @default(GREEN)
+  health          ProjectHealth @default(GREEN)
   targetOpening   DateTime
   forecastOpening DateTime?
   /// FR-002: "current owner and next action visible on ... dashboards".
   ownerId         String
-  owner           User           @relation("ProjectOwner", fields: [ownerId], references: [id])
+  owner           User          @relation("ProjectOwner", fields: [ownerId], references: [id])
   nextAction      String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  tasks       Task[]
-  documents   Document[]
-  auditEvents AuditEvent[]
+  tasks          Task[]
+  documents      Document[]
+  auditEvents    AuditEvent[]
+  stageOverrides ProjectStageOverride[]
 
   @@index([franchiseeId])
   @@index([ownerId])
@@ -241,22 +242,31 @@ model FranchiseProject {
 /// SRD section 8: "Task — task_id, project_id, module, owner, due, priority,
 /// status, dependency, completion evidence". FR-003.
 model Task {
-  id          String           @id @default(cuid())
-  projectId   String
-  project     FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id             String           @id @default(cuid())
+  projectId      String
+  project        FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// Department this task belongs to — added to the data model per Apoorv's
   /// 2026-09-15 review (plan.md section 4), and confirmed present in SRD
   /// section 8's own Task field list ("module").
-  module      Department
-  title       String
-  description String?
-  ownerId     String
-  owner       User             @relation("TaskOwner", fields: [ownerId], references: [id])
-  createdById String
-  createdBy   User             @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  dueDate     DateTime?
-  priority    TaskPriority     @default(MEDIUM)
-  status      TaskStatus       @default(NOT_STARTED)
+  module         Department
+  /// Which of the 13 lifecycle stages this task belongs to (added alongside
+  /// `module` 2026-09-18) — orthogonal to `module`/Department: module still
+  /// drives who can manage the task, lifecycleStage drives which stage tile
+  /// it shows up under and feeds that stage's derived status.
+  lifecycleStage LifecycleStage
+  /// Position within its (project, lifecycleStage) group — drives the
+  /// swappable up/down ordering in the stage dialog (2026-09-19 addition).
+  /// Seeded tasks get the sheet's order; ad-hoc tasks append to the end.
+  order          Int              @default(0)
+  title          String
+  description    String?
+  ownerId        String
+  owner          User             @relation("TaskOwner", fields: [ownerId], references: [id])
+  createdById    String
+  createdBy      User             @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  dueDate        DateTime?
+  priority       TaskPriority     @default(MEDIUM)
+  status         TaskStatus       @default(NOT_STARTED)
 
   /// Self-referencing dependency link (SRD: "dependency").
   dependsOnId String?
@@ -275,6 +285,7 @@ model Task {
   @@index([projectId])
   @@index([ownerId])
   @@index([status])
+  @@index([lifecycleStage])
 }
 
 /// FR-003 acceptance criteria mentions comments as part of the task
@@ -290,6 +301,24 @@ model TaskComment {
   createdAt DateTime @default(now())
 
   @@index([taskId])
+}
+
+/// Admin-only "force complete" escape hatch for a lifecycle stage (2026-09-18
+/// addition): normally a stage's status is derived purely from its tasks
+/// (see lifecycle-stage-status.ts), but the business can decide a stage is
+/// done even with tasks still open (e.g. 7/11). Presence of a row = that
+/// stage is force-completed for that project; deleting it reopens the stage.
+model ProjectStageOverride {
+  id            String           @id @default(cuid())
+  projectId     String
+  project       FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage         LifecycleStage
+  completedById String
+  completedBy   User             @relation(fields: [completedById], references: [id])
+  createdAt     DateTime         @default(now())
+
+  @@unique([projectId, stage])
+  @@index([projectId])
 }
 
 /// SRD section 8: "Document — document_id, project, category, version, file,

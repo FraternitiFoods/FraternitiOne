@@ -71,6 +71,16 @@ export function canEditProjectHeader(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
+ * Force a lifecycle stage to "Completed" even with open tasks. Deliberately
+ * narrower than `hasFullOverride` (Admin only, not Management) — this is a
+ * business call to skip the normal completion criteria, not a general
+ * cross-department access grant.
+ */
+export function canForceCompleteStage(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
  * Franchisees only see their own project(s) (NFR-04: "project-level data
  * isolation"); every internal role sees the full project list so they can
  * work their department's queue across active sites — this matches the
