@@ -81,6 +81,18 @@ export function canForceCompleteStage(user: Pick<CurrentUser, "role">): boolean 
 }
 
 /**
+ * Deleting a FranchiseProject cascades its entire task/document/stage-override
+ * history (see schema.prisma's `onDelete: Cascade` on those relations) — the
+ * most destructive action in the app. Scoped to ADMIN only, same as
+ * `canManageUsers`/`canForceCompleteStage`, not extended to MANAGEMENT via
+ * `hasFullOverride`. Not asked for explicitly which roles beyond "admin"
+ * should get this — narrowest reasonable default, flagged in plan.md.
+ */
+export function canDeleteProject(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
  * Franchisees only see their own project(s) (NFR-04: "project-level data
  * isolation"); every internal role sees the full project list so they can
  * work their department's queue across active sites — this matches the

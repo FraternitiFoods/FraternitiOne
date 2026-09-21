@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import {
   canActOnDocument,
   canActOnTask,
+  canDeleteProject,
   canEditProjectHeader,
   canViewProject,
   getManageableModules,
@@ -22,13 +23,16 @@ import {
   PROJECT_HEALTH_LABELS,
 } from "@/lib/format";
 import { computeStageStatus } from "@/lib/lifecycle-stage-status";
+import { computeCategoryProgress } from "@/lib/category-progress";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
 import { TaskCard } from "./task-card";
 import { StageTile } from "./stage-tile";
+import { CategoryTile } from "./category-tile";
 import { DocumentUploadForm } from "./document-upload-form";
 import { DocumentCard } from "./document-card";
+import { DeleteProjectButton } from "./delete-project-button";
 
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
@@ -79,6 +83,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   const openTasks = total - completed;
   const daysToLaunch = daysUntil(project.targetOpening);
   const overriddenStages = new Set(project.stageOverrides.map((o) => o.stage));
+  const categoryProgress = computeCategoryProgress(project.tasks);
 
   return (
     <div className="space-y-6">
@@ -92,9 +97,14 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         }
         isFranchisee={user.role === "FRANCHISEE"}
         action={
-          <Link href={`/audit?project=${project.id}`} className="text-sm underline underline-offset-4">
-            Audit trail →
-          </Link>
+          <>
+            <Link href={`/audit?project=${project.id}`} className="text-sm underline underline-offset-4">
+              Audit trail →
+            </Link>
+            {canDeleteProject(user) && (
+              <DeleteProjectButton projectId={project.id} brand={project.brand} location={project.location} />
+            )}
+          </>
         }
       />
 
@@ -153,6 +163,30 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           </div>
         </CardContent>
       </Card>
+
+      {categoryProgress.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Construction &amp; Ops Progress</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              How far each trade/department has reached, rolled up from the BOQ/Ops checklist
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {categoryProgress.map((c) => (
+                <CategoryTile
+                  key={c.category}
+                  category={c.category}
+                  total={c.total}
+                  completed={c.completed}
+                  state={c.state}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

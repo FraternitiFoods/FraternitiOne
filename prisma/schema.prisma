@@ -258,6 +258,16 @@ model Task {
   /// swappable up/down ordering in the stage dialog (2026-09-19 addition).
   /// Seeded tasks get the sheet's order; ad-hoc tasks append to the end.
   order          Int              @default(0)
+  /// Construction trade / ops department roll-up axis (plan.md section 9,
+  /// decided 2026-09-21) — free-text, not an enum: the real BOQ/Ops master
+  /// checklist carries ~28 distinct categories (AC Work, Electrical,
+  /// Carpentry, Culinary, HR, ...), too granular for the 13-value
+  /// `Department` enum that `module` uses for RBAC. Orthogonal to both
+  /// `module` (who can manage it) and `lifecycleStage` (which stage tile it
+  /// shows under) — nullable because the original ~150-item lifecycle
+  /// checklist (STAGE_TASK_TEMPLATES) predates this axis and has no
+  /// category of its own.
+  category       String?
   title          String
   description    String?
   ownerId        String
@@ -286,6 +296,7 @@ model Task {
   @@index([ownerId])
   @@index([status])
   @@index([lifecycleStage])
+  @@index([category])
 }
 
 /// FR-003 acceptance criteria mentions comments as part of the task
