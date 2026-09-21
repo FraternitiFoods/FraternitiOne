@@ -1,20 +1,11 @@
 import Link from "next/link";
+import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canActOnTask } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  DEPARTMENT_LABELS,
-  LIFECYCLE_STAGE_LABELS,
-  TASK_PRIORITY_LABELS,
-  TASK_STATUS_LABELS,
-  formatDate,
-  formatProjectCode,
-} from "@/lib/format";
-import { TASK_PRIORITY_BADGE_CLASS, TASK_STATUS_BADGE_CLASS } from "@/lib/badge-colors";
+import { ActionsList, type ActionItem } from "./actions-list";
 import type { Prisma, TaskPriority } from "@prisma/client";
 
 // Plain module-level helpers (not inline in the component body) so the
@@ -36,8 +27,11 @@ function isOverdue(dueDate: Date): boolean {
  * user can act on. Read-only: it links out to the existing stage page for
  * any actual status change rather than duplicating that UI here.
  */
-export default async function ActionsPage() {
+export default async function ActionsPage(props: PageProps<"/actions">) {
   const user = await requireUser();
+  const searchParams = await props.searchParams;
+  const projectParam = searchParams.project;
+  const selectedProjectId = typeof projectParam === "string" ? projectParam : undefined;
 
   // Same project-level isolation as everywhere else (NFR-04): a franchisee
   // only ever sees their own project's tasks.
@@ -66,8 +60,45 @@ export default async function ActionsPage() {
 
   // Task/project shape from the queries above satisfies canActOnTask's
   // (narrower) parameter types directly.
-  const myOpenTasks = openTasks.filter((t) => canActOnTask(user, t, t.project));
-  const myCompletedThisWeek = completedThisWeek.filter((t) => canActOnTask(user, t, t.project));
+  const myOpenTasksAll = openTasks.filter((t) => canActOnTask(user, t, t.project));
+  const myCompletedThisWeekAll = completedThisWeek.filter((t) => canActOnTask(user, t, t.project));
+
+  // Franchise picker (2026-09-21, Apoorv's ask: "pehle choose krne ka option
+  // ki konsi franchise ka dekhna hai") — built from every franchise that has
+  // an open task for this user, regardless of the current ?project=
+  // selection, so switching franchises from the picker always stays
+  // possible. Skipped entirely for a franchisee (always exactly their own
+  // one project) or anyone else with only one project in view.
+  const projectCardMap = new Map<
+    string,
+    { id: string; brand: string; location: string; count: number }
+  >();
+  for (const t of myOpenTasksAll) {
+    const existing = projectCardMap.get(t.project.id);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      projectCardMap.set(t.project.id, {
+        id: t.project.id,
+        brand: t.project.brand,
+        location: t.project.location,
+        count: 1,
+      });
+    }
+  }
+  const projectCards = Array.from(projectCardMap.values()).sort((a, b) =>
+    a.brand === b.brand ? a.location.localeCompare(b.location) : a.brand.localeCompare(b.brand)
+  );
+  const selectedProject = selectedProjectId
+    ? projectCards.find((p) => p.id === selectedProjectId)
+    : undefined;
+
+  const myOpenTasks = selectedProjectId
+    ? myOpenTasksAll.filter((t) => t.projectId === selectedProjectId)
+    : myOpenTasksAll;
+  const myCompletedThisWeek = selectedProjectId
+    ? myCompletedThisWeekAll.filter((t) => t.projectId === selectedProjectId)
+    : myCompletedThisWeekAll;
 
   const overdue = myOpenTasks.filter((t) => t.dueDate && isOverdue(t.dueDate));
   const critical = myOpenTasks.filter((t) => t.priority === "CRITICAL");
@@ -90,13 +121,68 @@ export default async function ActionsPage() {
     return 0;
   });
 
+  const items: ActionItem[] = sorted.map((task) => ({
+    id: task.id,
+    title: task.title,
+    module: task.module,
+    category: task.category,
+    lifecycleStage: task.lifecycleStage,
+    projectId: task.projectId,
+    projectSeq: task.project.seq,
+    projectBrand: task.project.brand,
+    projectLocation: task.project.location,
+    dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+    overdue: overdueIds.has(task.id),
+    priority: task.priority,
+    status: task.status,
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Action Centre"
-        subtitle="Everything needing your attention, sorted by urgency (FR-004 placeholder — approvals/payments queues arrive in Phase 2)."
+        subtitle={
+          selectedProject
+            ? `Scoped to ${selectedProject.brand} — ${selectedProject.location}. Everything needing your attention, sorted by urgency.`
+            : "Everything needing your attention, sorted by urgency (FR-004 placeholder — approvals/payments queues arrive in Phase 2)."
+        }
         isFranchisee={user.role === "FRANCHISEE"}
       />
+
+      {projectCards.length > 1 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Franchise</h2>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/actions"
+              className={cn(
+                "rounded-lg border px-3 py-2 text-sm transition-colors",
+                !selectedProjectId
+                  ? "border-primary bg-primary/5 font-medium"
+                  : "border-border hover:bg-muted/40"
+              )}
+            >
+              All Franchises
+              <span className="ml-1.5 text-xs text-muted-foreground">({myOpenTasksAll.length})</span>
+            </Link>
+            {projectCards.map((p) => (
+              <Link
+                key={p.id}
+                href={`/actions?project=${p.id}`}
+                className={cn(
+                  "rounded-lg border px-3 py-2 text-sm transition-colors",
+                  selectedProjectId === p.id
+                    ? "border-primary bg-primary/5 font-medium"
+                    : "border-border hover:bg-muted/40"
+                )}
+              >
+                {p.brand} — {p.location}
+                <span className="ml-1.5 text-xs text-muted-foreground">({p.count})</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -125,47 +211,7 @@ export default async function ActionsPage() {
         />
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {sorted.length === 0 ? (
-            <p className="p-6 text-sm text-muted-foreground">Nothing needs your attention right now.</p>
-          ) : (
-            <div className="divide-y">
-              {sorted.map((task) => (
-                <Link
-                  key={task.id}
-                  href={`/projects/${task.projectId}/stages/${task.lifecycleStage}`}
-                  className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm transition-colors hover:bg-muted/40"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{task.title}</span>
-                      <Badge variant="outline">{DEPARTMENT_LABELS[task.module]}</Badge>
-                      <Badge variant="outline">{LIFECYCLE_STAGE_LABELS[task.lifecycleStage]}</Badge>
-                    </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {formatProjectCode(task.project.seq)} — {task.project.brand}, {task.project.location}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {task.dueDate && (
-                      <span className={overdueIds.has(task.id) ? "text-xs font-medium text-red-600" : "text-xs text-muted-foreground"}>
-                        Due {formatDate(task.dueDate)}
-                      </span>
-                    )}
-                    <Badge variant="outline" className={TASK_PRIORITY_BADGE_CLASS[task.priority]}>
-                      {TASK_PRIORITY_LABELS[task.priority]}
-                    </Badge>
-                    <Badge variant="outline" className={TASK_STATUS_BADGE_CLASS[task.status]}>
-                      {TASK_STATUS_LABELS[task.status]}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <ActionsList items={items} />
     </div>
   );
 }

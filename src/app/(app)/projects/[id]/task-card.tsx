@@ -23,7 +23,7 @@ import {
 import { TASK_PRIORITY_BADGE_CLASS, TASK_STATUS_BADGE_CLASS } from "@/lib/badge-colors";
 import type { LifecycleStage, TaskPriority, TaskStatus } from "@prisma/client";
 
-const STATUS_OPTIONS: TaskStatus[] = [
+export const STATUS_OPTIONS: TaskStatus[] = [
   "NOT_STARTED",
   "IN_PROGRESS",
   "AWAITING_FRANCHISEE",

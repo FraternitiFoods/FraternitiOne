@@ -27,7 +27,7 @@ import { computeCategoryProgress } from "@/lib/category-progress";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
-import { TaskCard } from "./task-card";
+import { TaskList } from "./task-list";
 import { StageTile } from "./stage-tile";
 import { CategoryTile } from "./category-tile";
 import { DocumentUploadForm } from "./document-upload-form";
@@ -221,39 +221,31 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           </Badge>
         </div>
 
-        {project.tasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No tasks yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {project.tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                projectId={project.id}
-                canAct={canActOnTask(user, task, project)}
-                task={{
-                  id: task.id,
-                  title: task.title,
-                  description: task.description,
-                  module: task.module,
-                  lifecycleStage: task.lifecycleStage,
-                  status: task.status,
-                  priority: task.priority,
-                  dueDate: task.dueDate ? task.dueDate.toISOString() : null,
-                  completionEvidence: task.completionEvidence,
-                  owner: task.owner,
-                  createdBy: task.createdBy,
-                  dependsOn: task.dependsOn,
-                  comments: task.comments.map((c) => ({
-                    id: c.id,
-                    body: c.body,
-                    createdAt: c.createdAt.toISOString(),
-                    author: c.author,
-                  })),
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <TaskList
+          projectId={project.id}
+          tasks={project.tasks.map((task) => ({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            module: task.module,
+            category: task.category,
+            lifecycleStage: task.lifecycleStage,
+            status: task.status,
+            priority: task.priority,
+            dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+            completionEvidence: task.completionEvidence,
+            owner: task.owner,
+            createdBy: task.createdBy,
+            dependsOn: task.dependsOn,
+            comments: task.comments.map((c) => ({
+              id: c.id,
+              body: c.body,
+              createdAt: c.createdAt.toISOString(),
+              author: c.author,
+            })),
+            canAct: canActOnTask(user, task, project),
+          }))}
+        />
 
         {manageableModules.length > 0 && (
           <>
