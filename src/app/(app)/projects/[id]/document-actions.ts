@@ -124,6 +124,89 @@ export async function createDocument(
   redirect(`/projects/${projectId}`);
 }
 
+const CreateVaultDocumentSchema = z.object({
+  projectId: z.string().min(1, "Select a project."),
+  category: z.nativeEnum(Department),
+  title: z.string().trim().min(1, "Title is required."),
+});
+
+/**
+ * Same as `createDocument`, but for the Document Vault page (FR-005), where
+ * the project isn't fixed by the URL — it's picked in the form instead of
+ * bound ahead of time — so it redirects back to the vault rather than into
+ * that project.
+ */
+export async function createVaultDocument(
+  _prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const user = await requireUser();
+
+  const parsed = CreateVaultDocumentSchema.safeParse({
+    projectId: formData.get("projectId"),
+    category: formData.get("category"),
+    title: formData.get("title"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+  const { projectId, category, title } = parsed.data;
+
+  const project = await db.franchiseProject.findUnique({ where: { id: projectId } });
+  if (!project || !canViewProject(user, project)) {
+    return { error: "Project not found." };
+  }
+
+  if (!canManageDocumentCategory(user, category)) {
+    return { error: "You don't have permission to upload documents in that category." };
+  }
+
+  const fileResult = validateFile(formData.get("file"));
+  if ("error" in fileResult) {
+    return { error: fileResult.error };
+  }
+  const { file } = fileResult;
+
+  const key = buildDocumentKey({ projectId, category, fileName: file.name });
+  await uploadDocument({
+    key,
+    body: Buffer.from(await file.arrayBuffer()),
+    contentType: file.type,
+  });
+
+  await db.$transaction(async (tx) => {
+    const document = await tx.document.create({
+      data: {
+        projectId,
+        category,
+        title,
+        fileKey: key,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        ownerId: user.id,
+      },
+    });
+
+    await writeAuditEvent(tx, {
+      actor: user,
+      projectId,
+      entityType: "Document",
+      entityId: document.id,
+      action: "CREATE",
+      newValue: {
+        category: document.category,
+        title: document.title,
+        version: document.version,
+        fileName: document.fileName,
+        status: document.status,
+      },
+    });
+  });
+
+  redirect("/documents");
+}
+
 const CreateDocumentVersionSchema = z.object({
   title: z.string().trim().min(1, "Title is required."),
 });

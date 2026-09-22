@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getManageableModules } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { formatProjectCode } from "@/lib/format";
 import type { Prisma } from "@prisma/client";
 import { DocumentVaultBrowser, type DocumentVaultRow } from "./document-vault-browser";
+import { AddDocumentDialog } from "./add-document-dialog";
 
 export default async function DocumentsPage(props: PageProps<"/documents">) {
   const user = await requireUser();
@@ -29,7 +31,9 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
         : {}),
   };
 
-  const [documents, project] = await Promise.all([
+  const categories = getManageableModules(user);
+
+  const [documents, project, uploadableProjects] = await Promise.all([
     db.document.findMany({
       where,
       include: {
@@ -44,6 +48,13 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
           select: { seq: true, brand: true, location: true },
         })
       : Promise.resolve(null),
+    categories.length > 0
+      ? db.franchiseProject.findMany({
+          where: user.role === "FRANCHISEE" ? { franchiseeId: user.id } : undefined,
+          select: { id: true, seq: true, brand: true, location: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Grouping/search live in the client component; the server side only owns
@@ -78,6 +89,15 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
           )
         }
         isFranchisee={user.role === "FRANCHISEE"}
+        action={
+          categories.length > 0 ? (
+            <AddDocumentDialog
+              projects={uploadableProjects}
+              categories={categories}
+              defaultProjectId={projectId}
+            />
+          ) : undefined
+        }
       />
 
       <DocumentVaultBrowser documents={rows} />
