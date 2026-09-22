@@ -108,7 +108,28 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <nav className="sticky top-0 z-10 flex gap-1 rounded-lg bg-card px-2 py-1.5 ring-1 ring-foreground/10">
+        <a
+          href="#overview"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Overview
+        </a>
+        <a
+          href="#tasks"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Tasks
+        </a>
+        <a
+          href="#documents"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Documents
+        </a>
+      </nav>
+
+      <div id="overview" className="grid scroll-mt-16 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Site Progress" value={`${progressPct}%`} caption={`${completed}/${total} tasks done`} />
         <StatCard
           label="Open Tasks"
@@ -213,7 +234,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
+      <div id="tasks" className="scroll-mt-16 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Tasks (FR-003)</h2>
           <Badge variant="outline" className={HEALTH_BADGE_CLASS[project.health]}>
@@ -267,7 +288,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         )}
       </div>
 
-      <div className="space-y-4">
+      <div id="documents" className="scroll-mt-16 space-y-4">
         <h2 className="text-lg font-semibold">Documents (FR-005)</h2>
 
         {project.documents.length === 0 ? (
