@@ -15,12 +15,15 @@ export function CategoryTile({ category, total, completed, state }: {
 }) {
   const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
   return (
+    // No border, no hover state, no Link — deliberately flatter than
+    // StageTile so it doesn't visually imply the tile is clickable (it isn't;
+    // this is a read-only rollup, see the file-level comment above).
     <div
       className={cn(
-        "rounded-lg border p-3",
-        state === "completed" && "border-emerald-200 bg-emerald-50",
-        state === "in_progress" && "border-primary/30 bg-primary/5",
-        state === "upcoming" && "border-border bg-background"
+        "cursor-default rounded-lg p-3",
+        state === "completed" && "bg-emerald-50",
+        state === "in_progress" && "bg-primary/5",
+        state === "upcoming" && "bg-muted/40"
       )}
     >
       <div className="text-sm font-medium">{category}</div>

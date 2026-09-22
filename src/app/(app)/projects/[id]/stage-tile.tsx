@@ -28,12 +28,15 @@ export function StageTile({
     <Link
       href={`/projects/${projectId}/stages/${stage}`}
       className={cn(
-        "block rounded-lg border p-3 text-left transition-colors hover:border-primary/40",
+        "group relative block rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:shadow-sm",
         status === "completed" && "border-emerald-200 bg-emerald-50",
         status === "in_progress" && "border-primary/30 bg-primary/5",
         status === "upcoming" && "border-border bg-background"
       )}
     >
+      <span className="absolute right-2 top-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+        →
+      </span>
       <div className="text-xs font-medium text-muted-foreground">
         {String(index + 1).padStart(2, "0")}
       </div>
