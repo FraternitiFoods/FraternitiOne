@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { cn } from "cn";
 import { updateTaskStatus, updateTaskTitle, addTaskComment, moveTask, type ActionState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,7 @@ export function TaskCard({
   returnPath?: string;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const redirectTo = returnPath ?? `/projects/${projectId}`;
 
   const statusAction = useActionState<ActionState, FormData>(
@@ -191,61 +193,76 @@ export function TaskCard({
         </Badge>
       </div>
 
-      {canAct && (
-        <form action={statusFormAction} className="flex flex-wrap items-end gap-2 border-t pt-3">
-          <div className="space-y-1">
-            <Select name="status" defaultValue={task.status}>
-              <SelectTrigger className="h-8 w-[180px]">
-                <SelectValue>
-                  {(value: TaskStatus | null) => (value ? TASK_STATUS_LABELS[value] : "")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {TASK_STATUS_LABELS[s]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Input
-            name="completionEvidence"
-            placeholder="Completion evidence (if completing)"
-            defaultValue={task.completionEvidence ?? ""}
-            className="h-8 flex-1 min-w-[200px]"
-          />
-          <Button type="submit" size="sm" variant="secondary" disabled={statusPending}>
-            {statusPending ? "Saving…" : "Update status"}
-          </Button>
-          {statusState?.error && (
-            <p className="w-full text-xs text-destructive">{statusState.error}</p>
-          )}
-        </form>
-      )}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <span className={cn("inline-block transition-transform", expanded && "rotate-90")}>▸</span>
+        {expanded ? "Hide" : canAct ? "Update status / comment" : "Comment"}
+        {task.comments.length > 0 &&
+          ` · ${task.comments.length} comment${task.comments.length === 1 ? "" : "s"}`}
+      </button>
 
-      <div className="border-t pt-3 space-y-2">
-        {task.comments.length > 0 && (
-          <ul className="space-y-1.5">
-            {task.comments.map((c) => (
-              <li key={c.id} className="text-xs">
-                <span className="font-medium">{c.author.name}</span>{" "}
-                <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>
-                <p>{c.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-        <form action={commentFormAction} className="flex gap-2">
-          <Input name="body" placeholder="Add a comment…" className="h-8 flex-1" />
-          <Button type="submit" size="sm" variant="outline" disabled={commentPending}>
-            {commentPending ? "Posting…" : "Comment"}
-          </Button>
-        </form>
-        {commentState?.error && (
-          <p className="text-xs text-destructive">{commentState.error}</p>
-        )}
-      </div>
+      {expanded && (
+        <>
+          {canAct && (
+            <form action={statusFormAction} className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Select name="status" defaultValue={task.status}>
+                  <SelectTrigger className="h-8 w-[180px]">
+                    <SelectValue>
+                      {(value: TaskStatus | null) => (value ? TASK_STATUS_LABELS[value] : "")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {TASK_STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Input
+                name="completionEvidence"
+                placeholder="Completion evidence (if completing)"
+                defaultValue={task.completionEvidence ?? ""}
+                className="h-8 flex-1 min-w-[200px]"
+              />
+              <Button type="submit" size="sm" variant="secondary" disabled={statusPending}>
+                {statusPending ? "Saving…" : "Update status"}
+              </Button>
+              {statusState?.error && (
+                <p className="w-full text-xs text-destructive">{statusState.error}</p>
+              )}
+            </form>
+          )}
+
+          <div className="space-y-2">
+            {task.comments.length > 0 && (
+              <ul className="space-y-1.5">
+                {task.comments.map((c) => (
+                  <li key={c.id} className="text-xs">
+                    <span className="font-medium">{c.author.name}</span>{" "}
+                    <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>
+                    <p>{c.body}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form action={commentFormAction} className="flex gap-2">
+              <Input name="body" placeholder="Add a comment…" className="h-8 flex-1" />
+              <Button type="submit" size="sm" variant="outline" disabled={commentPending}>
+                {commentPending ? "Posting…" : "Comment"}
+              </Button>
+            </form>
+            {commentState?.error && (
+              <p className="text-xs text-destructive">{commentState.error}</p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
