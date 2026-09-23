@@ -83,7 +83,8 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   const openTasks = total - completed;
   const daysToLaunch = daysUntil(project.targetOpening);
   const overriddenStages = new Set(project.stageOverrides.map((o) => o.stage));
-  const categoryProgress = computeCategoryProgress(project.tasks);
+  const boqProgress = computeCategoryProgress(project.tasks, "BOQ");
+  const opsProgress = computeCategoryProgress(project.tasks, "OPS");
 
   return (
     <div className="space-y-6">
@@ -185,17 +186,42 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         </CardContent>
       </Card>
 
-      {categoryProgress.length > 0 && (
+      {boqProgress.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Construction &amp; Ops Progress</CardTitle>
+            <CardTitle className="text-base">BOQ</CardTitle>
             <p className="text-xs text-muted-foreground">
-              How far each trade/department has reached, rolled up from the BOQ/Ops checklist
+              How far each trade has reached, rolled up from the BOQ checklist
             </p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {categoryProgress.map((c) => (
+              {boqProgress.map((c) => (
+                <CategoryTile
+                  key={c.category}
+                  category={c.category}
+                  total={c.total}
+                  completed={c.completed}
+                  state={c.state}
+                  projectId={project.id}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {opsProgress.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Construction &amp; Ops Progress</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              How far each department has reached, rolled up from the Ops checklist
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {opsProgress.map((c) => (
                 <CategoryTile
                   key={c.category}
                   category={c.category}

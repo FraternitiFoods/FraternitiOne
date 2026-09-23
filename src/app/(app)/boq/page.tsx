@@ -9,13 +9,17 @@ import { computeCategoryProgress } from "@/lib/category-progress";
 import { CategoryTile } from "../projects/[id]/category-tile";
 
 /**
- * Dedicated screen for the "Construction & Ops Progress" grid (also embedded
- * on the project detail page) — reachable straight from the sidebar instead
- * of only via a project's Overview section. Franchisees are auto-scoped to
- * their own project like the dashboard; internal roles pick a project first
- * (`?project=<id>`, same pattern as /audit) since they work across many.
+ * Dedicated screen for the "BOQ" grid (also embedded on the project detail
+ * page) — reachable straight from the sidebar instead of only via a
+ * project's Overview section. Only covers categories sourced from the
+ * founder's BOQ Excel (route: "BOQ", see ops-route.ts) — the process
+ * checklists (Interior/OPERATION/MARKETING/HR/CULINARY's pre-opening steps)
+ * live on the separate /construction-ops screen. Franchisees are
+ * auto-scoped to their own project like the dashboard; internal roles pick
+ * a project first (`?project=<id>`, same pattern as /audit) since they work
+ * across many.
  */
-export default async function ProgressPage(props: PageProps<"/progress">) {
+export default async function BoqPage(props: PageProps<"/boq">) {
   const user = await requireUser();
   const searchParams = await props.searchParams;
   const projectParam = searchParams.project;
@@ -30,7 +34,7 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
   if (projects.length === 0) {
     return (
       <div>
-        <PageHeader title="Construction & Ops Progress" isFranchisee={user.role === "FRANCHISEE"} />
+        <PageHeader title="BOQ" isFranchisee={user.role === "FRANCHISEE"} />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {user.role === "FRANCHISEE" ? "No franchise project is linked to your account yet." : "No projects yet."}
@@ -45,13 +49,13 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
     (user.role === "FRANCHISEE" ? projects[0].id : undefined);
 
   // Internal roles land on a project picker first — mixing categories across
-  // different projects' BOQ/Ops checklists into one grid wouldn't mean
-  // anything, so there's no portfolio-wide rollup here, unlike /projects.
+  // different projects' BOQ checklists into one grid wouldn't mean anything,
+  // so there's no portfolio-wide rollup here, unlike /projects.
   if (!activeProjectId) {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Construction & Ops Progress"
+          title="BOQ"
           subtitle="Pick a project to see its trade/department rollup"
           isFranchisee={false}
         />
@@ -59,7 +63,7 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
           {projects.map((project) => (
             <Link
               key={project.id}
-              href={`/progress?project=${project.id}`}
+              href={`/boq?project=${project.id}`}
               className="block rounded-lg border p-4 transition-colors hover:border-primary/40 hover:shadow-sm"
             >
               <div className="text-sm font-medium">
@@ -75,13 +79,13 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
 
   const project = await db.franchiseProject.findUnique({
     where: { id: activeProjectId },
-    include: { tasks: { select: { category: true, status: true } } },
+    include: { tasks: { select: { category: true, status: true, title: true } } },
   });
 
   if (!project || !canViewProject(user, project)) {
     return (
       <div>
-        <PageHeader title="Construction & Ops Progress" isFranchisee={user.role === "FRANCHISEE"} />
+        <PageHeader title="BOQ" isFranchisee={user.role === "FRANCHISEE"} />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">Project not found.</CardContent>
         </Card>
@@ -89,18 +93,18 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
     );
   }
 
-  const categoryProgress = computeCategoryProgress(project.tasks);
+  const categoryProgress = computeCategoryProgress(project.tasks, "BOQ");
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Construction & Ops Progress"
+        title="BOQ"
         subtitle={`${project.brand} — ${project.location} · ${formatProjectCode(project.seq)}`}
         isFranchisee={user.role === "FRANCHISEE"}
         action={
           <>
             {user.role !== "FRANCHISEE" && projects.length > 1 && (
-              <Link href="/progress" className="text-sm underline underline-offset-4">
+              <Link href="/boq" className="text-sm underline underline-offset-4">
                 Switch project →
               </Link>
             )}
@@ -114,14 +118,14 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
       {categoryProgress.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No BOQ/Ops checklist tasks on this project yet.
+            No BOQ checklist tasks on this project yet.
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">How far each trade/department has reached</CardTitle>
-            <p className="text-xs text-muted-foreground">Rolled up from the BOQ/Ops checklist</p>
+            <CardTitle className="text-base">How far each trade has reached</CardTitle>
+            <p className="text-xs text-muted-foreground">Rolled up from the BOQ checklist</p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -133,7 +137,7 @@ export default async function ProgressPage(props: PageProps<"/progress">) {
                   completed={c.completed}
                   state={c.state}
                   projectId={project.id}
-                  backHref={`/progress?project=${project.id}`}
+                  backHref={`/boq?project=${project.id}`}
                 />
               ))}
             </div>
