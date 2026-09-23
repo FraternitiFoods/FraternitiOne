@@ -13,8 +13,19 @@ export default async function CategoryDetailPage(
   props: PageProps<"/projects/[id]/categories/[category]">
 ) {
   const { id, category: categoryParam } = await props.params;
+  const searchParams = await props.searchParams;
   const user = await requireUser();
   const category = decodeURIComponent(categoryParam);
+
+  // Where "← Back" goes, and where actions on this page redirect back to —
+  // defaults to the project page (tile lives there too), but the /progress
+  // screen's tiles pass their own URL through so tapping a card there and
+  // then going back lands you back on /progress, not the project page.
+  const backParam = searchParams.back;
+  const backHref = typeof backParam === "string" ? backParam : `/projects/${id}`;
+  const selfHref = `/projects/${id}/categories/${encodeURIComponent(category)}${
+    typeof backParam === "string" ? `?back=${encodeURIComponent(backParam)}` : ""
+  }`;
 
   const project = await db.franchiseProject.findUnique({
     where: { id },
@@ -46,10 +57,10 @@ export default async function CategoryDetailPage(
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <Link
-        href={`/projects/${project.id}`}
+        href={backHref}
         className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
       >
-        ← Back to project
+        ← Back
       </Link>
 
       <PageHeader
@@ -75,7 +86,7 @@ export default async function CategoryDetailPage(
             key={task.id}
             projectId={project.id}
             canAct={canActOnTask(user, task, project)}
-            returnPath={`/projects/${project.id}/categories/${encodeURIComponent(category)}`}
+            returnPath={selfHref}
             task={{
               id: task.id,
               title: task.title,
