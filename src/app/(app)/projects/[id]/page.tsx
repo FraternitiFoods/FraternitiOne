@@ -202,6 +202,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   total={c.total}
                   completed={c.completed}
                   state={c.state}
+                  projectId={project.id}
                 />
               ))}
             </div>

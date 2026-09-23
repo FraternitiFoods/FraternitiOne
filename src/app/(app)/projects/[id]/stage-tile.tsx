@@ -1,7 +1,6 @@
-import Link from "next/link";
-import { cn } from "cn";
 import { LIFECYCLE_STAGE_LABELS } from "@/lib/format";
-import { STAGE_STATE_LABELS, type StageState } from "@/lib/lifecycle-stage-status";
+import { type StageState } from "@/lib/lifecycle-stage-status";
+import { ProgressTile } from "./progress-tile";
 import type { LifecycleStage } from "@prisma/client";
 
 /** Tapping a tile navigates to its own page (/projects/[id]/stages/[stage])
@@ -25,38 +24,14 @@ export function StageTile({
   projectId: string;
 }) {
   return (
-    <Link
+    <ProgressTile
       href={`/projects/${projectId}/stages/${stage}`}
-      className={cn(
-        "group relative block rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:shadow-sm",
-        status === "completed" && "border-emerald-200 bg-emerald-50",
-        status === "in_progress" && "border-primary/30 bg-primary/5",
-        status === "upcoming" && "border-border bg-background"
-      )}
-    >
-      <span className="absolute right-2 top-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-        →
-      </span>
-      <div className="text-xs font-medium text-muted-foreground">
-        {String(index + 1).padStart(2, "0")}
-      </div>
-      <div className="mt-1 text-sm font-medium">{LIFECYCLE_STAGE_LABELS[stage]}</div>
-      <div
-        className={cn(
-          "mt-1 text-xs",
-          status === "completed" && "text-emerald-700",
-          status === "in_progress" && "text-primary",
-          status === "upcoming" && "text-muted-foreground"
-        )}
-      >
-        {STAGE_STATE_LABELS[status]}
-        {isOverridden && " (override)"}
-      </div>
-      {total > 0 && (
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          {completed}/{total} tasks
-        </div>
-      )}
-    </Link>
+      eyebrow={String(index + 1).padStart(2, "0")}
+      label={LIFECYCLE_STAGE_LABELS[stage]}
+      status={status}
+      statusSuffix={isOverridden ? " (override)" : undefined}
+      total={total}
+      completed={completed}
+    />
   );
 }
