@@ -179,6 +179,13 @@ model User {
   /// Hashed PIN for phone-based supervisor login (plan.md section 16). Same
   /// null-means-"can't log in yet" discipline as passwordHash.
   pinHash      String?
+  /// Brute-force lockout for phone+PIN login (plan.md section 16, "NOT
+  /// DECIDED YET" item 3, resolved 2026-09-24: 5 wrong attempts -> 15-minute
+  /// lock). Reset to 0/null on a correct login, and by the admin's
+  /// "Reset PIN" action. Unused by every other login path (email+password has
+  /// no lockout — out of scope for this section).
+  pinFailedAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
   role         Role
   department   Department?
   isActive     Boolean     @default(true)

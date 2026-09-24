@@ -2,6 +2,7 @@ import "server-only";
 
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getCurrentUser, type CurrentUser } from "@/lib/session";
 
 const SALT_ROUNDS = 12;
@@ -46,7 +47,15 @@ export async function verifyPin(pin: string, hash: string): Promise<boolean> {
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect("/api/auth/clear-session");
+    // x-pathname is set by proxy.ts on every request — forwarded here so
+    // clear-session knows whether to land back on /login or /m/login
+    // (plan.md section 16): this function has no other way to see which
+    // "side" of the app called it.
+    const pathname = (await headers()).get("x-pathname");
+    const clearSessionUrl = pathname
+      ? `/api/auth/clear-session?next=${encodeURIComponent(pathname)}`
+      : "/api/auth/clear-session";
+    redirect(clearSessionUrl);
   }
   return user;
 }

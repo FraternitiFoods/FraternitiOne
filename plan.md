@@ -927,8 +927,12 @@ moves on its own. No sync job, no second system.
     build order step 2).** No 4-digit option. The admin sets it directly in
     `/users/new` — there's no invite-link equivalent for a phone-only
     account, given decisions 7/8 already rule out OTP/SMS/email/notifications
-    as a delivery channel. Lockout-after-N-tries is separate and still open
-    (see "NOT DECIDED YET", deferred to build order step 3).
+    as a delivery channel.
+11. **PIN lockout (confirmed 2026-09-24, during build order step 3):** 5
+    consecutive wrong PINs locks that phone number for 15 minutes; the
+    counter resets on a correct login, and the admin's "Reset PIN" action
+    also clears an active lock immediately. This closes out the last open
+    part of decision 10/PIN rules — nothing left open on PINs.
 
 ### What gets built (new vs reused)
 
@@ -999,6 +1003,43 @@ working, nothing backfilled/touched). What shipped:
   Build order step 2 extends `/users/new` with the fields a supervisor
   actually needs, at which point it gets re-added there.
 
+**Two unplanned things found and fixed along the way, worth knowing about:**
+1. **An orphaned, uncommitted migration already existed on the real dev DB.**
+   `_prisma_migrations` had a row for `20260922000000_add_document_task_link`
+   (dated two days before section 16 was even decided), and a same-named
+   folder existed on disk — but empty, no `migration.sql` inside, not in git
+   history, no branch/stash reference anywhere. The DB itself had already
+   received a `Document.taskId` column from it — 0 rows affected (`Document`
+   table was empty), but with `onDelete: CASCADE`, not the `SET NULL` this
+   section's design calls for (a document should survive its task being
+   deleted). Likely an earlier session's interrupted attempt at this exact
+   feature that never got committed. Resolved by dropping that column/FK/index
+   and its ledger row (verified zero data loss first), then generating this
+   step's migration cleanly from a matching-git-history baseline — so the
+   `SET NULL` behavior above is this build's own, not inherited from the
+   orphan. Worth a "did anyone run migrate commands directly against dev
+   without committing?" check with whoever else has touched this machine.
+2. **`prisma migrate dev` can't run against the real dev DB at all** — the
+   native Postgres role backing `DATABASE_URL` (port 5432) doesn't have
+   `CREATEDB`, which the shadow-database step requires, and the interactive
+   confirmation prompt it also wants doesn't work in a non-interactive shell
+   either way. Worked around by pointing a new `SHADOW_DATABASE_URL` at the
+   docker-compose Postgres (port 5433 — already in the repo per this file's
+   own step 3 setup notes, just unused by this particular machine's `.env`)
+   whose role is a real superuser, and applying the generated SQL via
+   `prisma migrate diff` + `prisma migrate deploy` instead of the interactive
+   `migrate dev` flow. `.env.example` now documents `SHADOW_DATABASE_URL`.
+   Future migrations on this machine need the same two-step (`migrate diff`
+   piped into a new migration folder, then `migrate deploy`) unless the
+   native role is granted `CREATEDB`.
+
+Verified: `tsc --noEmit` and `eslint` both clean. Real browser session
+(Playwright, logged in as Admin against the live dev DB): `/users`,
+`/users/new`, `/projects`, a real project detail page (franchisee email still
+renders correctly), `/projects/new`, a user edit page, and the delete-user
+confirm dialog — all 200s, zero console/page errors. No `/m` pages exist yet
+(step 3), so no phone-viewport check this step.
+
 ### Suggested build order — step 2 shipped (2026-09-24)
 
 **Admin: create supervisor with phone + PIN + project assignment.** Asked
@@ -1061,42 +1102,95 @@ Test account deleted afterward through the app's own delete-user feature
 (confirmed 0 rows left in the DB). No `/m` pages exist yet (step 3), so no
 phone-viewport check this step either.
 
-**Two unplanned things found and fixed along the way, worth knowing about:**
-1. **An orphaned, uncommitted migration already existed on the real dev DB.**
-   `_prisma_migrations` had a row for `20260922000000_add_document_task_link`
-   (dated two days before section 16 was even decided), and a same-named
-   folder existed on disk — but empty, no `migration.sql` inside, not in git
-   history, no branch/stash reference anywhere. The DB itself had already
-   received a `Document.taskId` column from it — 0 rows affected (`Document`
-   table was empty), but with `onDelete: CASCADE`, not the `SET NULL` this
-   section's design calls for (a document should survive its task being
-   deleted). Likely an earlier session's interrupted attempt at this exact
-   feature that never got committed. Resolved by dropping that column/FK/index
-   and its ledger row (verified zero data loss first), then generating this
-   step's migration cleanly from a matching-git-history baseline — so the
-   `SET NULL` behavior above is this build's own, not inherited from the
-   orphan. Worth a "did anyone run migrate commands directly against dev
-   without committing?" check with whoever else has touched this machine.
-2. **`prisma migrate dev` can't run against the real dev DB at all** — the
-   native Postgres role backing `DATABASE_URL` (port 5432) doesn't have
-   `CREATEDB`, which the shadow-database step requires, and the interactive
-   confirmation prompt it also wants doesn't work in a non-interactive shell
-   either way. Worked around by pointing a new `SHADOW_DATABASE_URL` at the
-   docker-compose Postgres (port 5433 — already in the repo per this file's
-   own step 3 setup notes, just unused by this particular machine's `.env`)
-   whose role is a real superuser, and applying the generated SQL via
-   `prisma migrate diff` + `prisma migrate deploy` instead of the interactive
-   `migrate dev` flow. `.env.example` now documents `SHADOW_DATABASE_URL`.
-   Future migrations on this machine need the same two-step (`migrate diff`
-   piped into a new migration folder, then `migrate deploy`) unless the
-   native role is granted `CREATEDB`.
+### Suggested build order — step 3 shipped (2026-09-24)
 
-Verified: `tsc --noEmit` and `eslint` both clean. Real browser session
-(Playwright, logged in as Admin against the live dev DB): `/users`,
-`/users/new`, `/projects`, a real project detail page (franchisee email still
-renders correctly), `/projects/new`, a user edit page, and the delete-user
-confirm dialog — all 200s, zero console/page errors. No `/m` pages exist yet
-(step 3), so no phone-viewport check this step.
+**Phone + PIN login and the `/m` project list (access control first).** Asked
+about the one remaining open PIN-rules question first (lockout, deferred here
+from step 2 per the top-level instructions) — **confirmed: lock a phone
+number for 15 minutes after 5 consecutive wrong PINs**, resetting on a
+correct login, with the admin's existing Reset PIN action also clearing the
+lock immediately.
+
+What shipped:
+- **`User.pinFailedAttempts`/`pinLockedUntil`** (new, migration
+  `20260924080015_add_pin_lockout`): tracks the lockout above. Reset to
+  `0`/`null` on a correct login and by `resetPin` (step 2's action, updated).
+- **`/m/login`**: phone + PIN form (`src/app/m/login/`). `loginSupervisor`
+  mirrors the desktop `login()`'s "don't reveal which case it was" discipline
+  for wrong-phone/wrong-PIN/inactive/no-PIN-set (all get "Incorrect phone
+  number or PIN.") — lockout gets its own distinct message, since a
+  supervisor genuinely needs to know why they're blocked, unlike a single
+  wrong guess. Writes a `User` LOGIN AuditEvent with `source: "mobile"`.
+- **`/m`**: the project list ("chats", decision 3) — queries `ProjectMember`
+  for the signed-in user only, so isolation is structural (a supervisor
+  physically cannot query another project's row into this list), not a
+  filter that could be bypassed. Rows aren't links yet — the destination
+  (category → task picker) is step 4, not this one.
+- **`src/app/m/layout.tsx`**: shell only (phone-width column), no auth check
+  — same reasoning as the (auth) group having no shared layout: `/m/login`
+  must render inside it while staying public, so each authenticated page
+  under `/m` checks `requireUser()` + the `SITE_SUPERVISOR` role itself.
+- **Sign out** (`logoutSupervisor`): same shape as the desktop `logout()`,
+  kept as its own function only because the redirect target differs
+  (`/m/login`, not `/login`).
+- **Desktop lockout closed, not just `/m`**: `(app)/layout.tsx` now redirects
+  a `SITE_SUPERVISOR` session to `/m` before rendering anything — without
+  this, a supervisor's valid session cookie could otherwise reach
+  `/projects/[id]` for *any* project, since `permissions.ts`'s
+  `canViewProject` only special-cases `FRANCHISEE`, not the new role. This
+  wasn't explicitly asked for (the task instructions scoped the isolation
+  requirement to "every `/m` page and action"), but leaving every desktop
+  route wide open to a role that has no business there was a one-line fix
+  for a real gap, not scope creep.
+- **`proxy.ts` and `/api/auth/clear-session` updated for the `/m` prefix**:
+  an unauthenticated hit on any `/m/*` route now bounces to `/m/login` (not
+  `/login`), and an authenticated hit on `/m/login` bounces to `/m` (not
+  `/dashboard`) — same pathname-prefix convention on both sides.
+
+**Real bug found and fixed during verification**: a stale-but-cookied `/m`
+visit (e.g., right after signing out) was landing on the desktop `/login`
+instead of `/m/login`. Root cause: `requireUser()`'s existing stale-cookie
+fallback (`/api/auth/clear-session`, built before this section existed —
+see its own comment for the proxy.ts/DB-check disagreement it papers over)
+always redirected to `/login`, with no way to know which "side" of the app
+the failing request came from. Fixed by having `proxy.ts` forward the
+request path via an `x-pathname` header on every request, which
+`requireUser()` reads and passes to `clear-session` as a `next` param;
+`clear-session` now picks `/m/login` vs `/login` the same way `proxy.ts`
+already does. Caught by an explicit re-visit-`/m`-after-logout check in the
+Playwright pass below — first surfaced as a genuine bug, not a test artifact
+(see the note on flaky test attempts, next paragraph).
+
+Verified against the real dev DB and a real browser session (Playwright,
+phone-sized viewport, 390×844): created a live test supervisor assigned to
+exactly one of two projects; logging in at `/m/login` with the wrong PIN
+correctly showed "Incorrect phone number or PIN." for 4 tries, the 5th wrong
+try switched to "Too many wrong attempts..." and set `pinLockedUntil` in the
+DB to +15 minutes from then (confirmed directly in Postgres, not just the UI
+message); a 6th attempt using the *correct* PIN was still correctly rejected
+while locked; admin's Reset PIN cleared both the PIN and the lock, and login
+with the new PIN succeeded immediately after. The project list showed only
+the one assigned project, never the second (real) project the account wasn't
+a member of. A supervisor session hitting `/dashboard` or `/projects`
+redirected straight back to `/m`. Sign-out landed on `/m/login`, and
+re-visiting `/m` afterward stayed on `/m/login` (the bug above, confirmed
+fixed). Zero console/page errors throughout. `tsc --noEmit` and `eslint`
+both clean. Test accounts deleted afterward via direct SQL (the ones created
+mid-debugging) and the app's own delete-user feature (the final one).
+
+**Note on the verification process itself**: several early attempts at the
+lockout test showed no error text or wrong attempt counts — traced to the
+test script reading the DOM before a Server Action's pending state (React's
+`useActionState` transition, not a full page navigation) had actually
+settled, so it sometimes read a stale, leftover error paragraph from the
+*previous* attempt rather than the current one. Confirmed non-issue by
+checking `pinFailedAttempts`/`pinLockedUntil` directly in Postgres after a
+version of the script that waits for the submit button's pending state to
+clear before reading anything — same class of test-script flakiness plan.md
+has hit before (sections 9 and 11), not a product bug. Flagging the pattern
+in case it recurs: for a Server Action + `useActionState` form, wait for the
+pending indicator to resolve (or the resulting DOM text to actually change),
+not just `networkidle` or a fixed timeout.
 
 ### NOT DECIDED YET — ask before assuming
 
@@ -1108,26 +1202,19 @@ confirm dialog — all 200s, zero console/page errors. No `/m` pages exist yet
 2. **Work not on the list.** Since tagging is mandatory, what does a supervisor
    do when the work matches no task? Options: an admin adds the task first, or
    an "Other" task per category. Not decided.
-3. **PIN rules — partially resolved 2026-09-24.** Length: **6 digits**,
-   confirmed. Who sets the first PIN: **the admin, directly, at creation** —
-   not really an open choice once decisions 7/8 (no OTP/SMS, no
-   notifications) are taken as given, since there's no channel to send a
-   "set your own PIN" link through. **Still open:** lockout after N wrong
-   tries — deferred on purpose to build order step 3 (login), per this
-   section's own top-level instructions.
-4. **Video limits.** Max file size/length, whether to compress on the phone,
+3. **Video limits.** Max file size/length, whether to compress on the phone,
    and how storage is paid for once B2's free 10 GB fills up.
-5. **Task list per category** is up to ~278 items (CULINARY). Needs a search
+4. **Task list per category** is up to ~278 items (CULINARY). Needs a search
    box in the task picker; confirm that is acceptable.
-6. **Which other roles get this UI later** (HR/ops employees, other
+5. **Which other roles get this UI later** (HR/ops employees, other
    departments) and whether they will also be limited to uploads.
-7. **Weak site network.** Retry/queue for failed uploads in v1, or later.
+6. **Weak site network.** Retry/queue for failed uploads in v1, or later.
 
 ### Suggested build order (each step tested before the next, per section 7 step 5)
 
-1. Schema: `User.phone`, optional email, PIN, `SITE_SUPERVISOR`, `ProjectMember`, `Document.taskId`.
-2. Admin: create supervisor with phone + PIN + project assignment.
-3. Phone + PIN login and the `/m` project list (access control first).
+1. ~~Schema: `User.phone`, optional email, PIN, `SITE_SUPERVISOR`, `ProjectMember`, `Document.taskId`.~~ Done.
+2. ~~Admin: create supervisor with phone + PIN + project assignment.~~ Done.
+3. ~~Phone + PIN login and the `/m` project list (access control first).~~ Done.
 4. Category → task picker (read-only) for one project.
 5. Upload with presigned B2 URL, Document link, status change, audit.
 6. Verify end to end in a real browser on a phone-sized viewport, including a

@@ -281,7 +281,13 @@ export async function resetPin(
   const pinHash = await hashPin(parsed.data.pin);
 
   await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: userId }, data: { pinHash } });
+    // Also clears any active brute-force lockout (plan.md section 16, PIN
+    // rules item 3) — confirmed 2026-09-24: an admin resetting the PIN is the
+    // escape hatch for a locked-out supervisor, not just a forgotten PIN.
+    await tx.user.update({
+      where: { id: userId },
+      data: { pinHash, pinFailedAttempts: 0, pinLockedUntil: null },
+    });
     await writeAuditEvent(tx, {
       actor: admin,
       entityType: "User",
