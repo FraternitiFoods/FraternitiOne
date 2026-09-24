@@ -20,6 +20,7 @@ import {
   TASK_STATUS_LABELS,
   formatDate,
   formatDateTime,
+  formatFileSize,
 } from "@/lib/format";
 import { TASK_PRIORITY_BADGE_CLASS, TASK_STATUS_BADGE_CLASS } from "@/lib/badge-colors";
 import type { LifecycleStage, TaskPriority, TaskStatus } from "@prisma/client";
@@ -48,6 +49,10 @@ export type TaskCardData = {
   createdBy: { name: string };
   dependsOn: { title: string } | null;
   comments: { id: string; body: string; createdAt: string; author: { name: string } }[];
+  /// Evidence attached straight to this Task (plan.md section 16, decision 9
+  /// — reverses section 9 decision #5) — mainly supervisor uploads from
+  /// `/m`, but any Document.taskId link shows up here the same way.
+  documents: { id: string; fileName: string; fileSize: number; createdAt: string }[];
 };
 
 export function TaskCard({
@@ -186,6 +191,23 @@ export function TaskCard({
               <span className="font-medium">Completion evidence: </span>
               {task.completionEvidence}
             </p>
+          )}
+          {task.documents.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs">
+              {task.documents.map((doc) => (
+                <li key={doc.id}>
+                  <a
+                    href={`/projects/${projectId}/documents/${doc.id}/download`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {doc.fileName}
+                  </a>{" "}
+                  <span className="text-muted-foreground">
+                    ({formatFileSize(doc.fileSize)}, {formatDate(doc.createdAt)})
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
         <Badge variant="outline" className={TASK_STATUS_BADGE_CLASS[task.status]}>

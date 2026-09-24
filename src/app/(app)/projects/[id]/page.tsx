@@ -52,6 +52,10 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             include: { author: { select: { name: true } } },
             orderBy: { createdAt: "asc" },
           },
+          documents: {
+            select: { id: true, fileName: true, fileSize: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+          },
         },
         orderBy: [{ lifecycleStage: "asc" }, { order: "asc" }],
       },
@@ -290,6 +294,12 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
               body: c.body,
               createdAt: c.createdAt.toISOString(),
               author: c.author,
+            })),
+            documents: task.documents.map((d) => ({
+              id: d.id,
+              fileName: d.fileName,
+              fileSize: d.fileSize,
+              createdAt: d.createdAt.toISOString(),
             })),
             canAct: canActOnTask(user, task, project),
           }))}

@@ -933,6 +933,21 @@ moves on its own. No sync job, no second system.
     counter resets on a correct login, and the admin's "Reset PIN" action
     also clears an active lock immediately. This closes out the last open
     part of decision 10/PIN rules — nothing left open on PINs.
+12. **"Work not on the list" (confirmed 2026-09-24, during build order steps
+    4-6):** every BOQ category gets one reusable "Other (not on checklist)"
+    task, not an admin-adds-it-first flow. Chosen over the recommended
+    option specifically because it never blocks a supervisor waiting on the
+    office. To keep decision 6 (upload → Task `COMPLETED`) true without
+    exception, "Other" isn't special-cased to stay open — instead,
+    `finalizeUpload` auto-creates a fresh replacement "Other" task the
+    instant the previous one is used, in the same transaction, so the
+    picker always has exactly one available. First created lazily, the
+    first time a supervisor opens that category (self-healing for existing
+    projects too — no separate backfill script needed).
+13. **Upload size limit (confirmed 2026-09-24, during build order steps
+    4-6):** 50MB per file, checked server-side before a presigned URL is
+    issued (client-side checks the same limit first, for instant feedback,
+    but the server check is the real gate). No client-side compression.
 
 ### What gets built (new vs reused)
 
@@ -1192,6 +1207,92 @@ in case it recurs: for a Server Action + `useActionState` form, wait for the
 pending indicator to resolve (or the resulting DOM text to actually change),
 not just `networkidle` or a fixed timeout.
 
+### Suggested build order — steps 4-6 shipped (2026-09-24)
+
+**Category → task picker, upload with presigned B2 URL, and end-to-end
+verification** — built and verified together in one session at Apoorv's
+request ("sab krde bhai" — just get it all done). Asked about the two open
+items that actually blocked this work first (see decisions 12-13): the
+"Other" task for unlisted work, and the 50MB upload size limit.
+
+What shipped:
+- **`/m/[id]`**: the project "chat" screen. The real access gate is here —
+  `db.projectMember.findUnique({ userId_projectId })` — a project id typed
+  into the URL that the signed-in supervisor isn't a member of gets the same
+  `notFound()` as a project that doesn't exist, matching this section's own
+  "cause -> effect that must hold." Shows this supervisor's own upload
+  history for the project as WhatsApp-style bubbles (decision 2's "look"),
+  and hands off to a single client component for the actual send flow.
+- **`UploadFlow`** (`upload-flow.tsx`): one linear state machine matching
+  decision 4's exact order — pick photo/video (native file/camera picker,
+  `capture="environment"`) → pick category → pick task (search box included,
+  per the ~278-item CULINARY category) → confirm → send. Nothing is
+  selectable out of order; category/task lists are fetched only once the
+  file is already chosen, not preloaded for all ~28 categories up front.
+- **Upload mechanics** (`src/app/m/[id]/actions.ts`, `lib/storage.ts`):
+  `getPresignedUpload` re-validates everything server-side (membership,
+  file size ≤50MB, `image/*`/`video/*` only, task belongs to this project
+  and is BOQ-routed) before issuing a short-lived presigned B2 PUT URL —
+  the client then PUTs the file bytes straight to B2, never through a
+  Next.js route (Vercel's ~4.5MB body cap, per this section's own note).
+  `finalizeUpload` creates the `Document` (linked via `taskId`, `category`
+  copied from `task.module`), flips the `Task` to `COMPLETED`, and (for an
+  "Other" task) creates its replacement — all in one transaction, with a
+  `CREATE`/`UPDATE`/`CREATE` `AuditEvent` trail (`source: "mobile"`).
+- **B2 bucket CORS configured** for real (`scripts/configure-b2-cors.ts`,
+  idempotent, `--apply` to write) — this section's own architecture note
+  ("bucket CORS needed") flagged this as required for a browser to PUT
+  directly to B2; applied for `http://localhost:3000` today, needs the real
+  deployed origin added once one exists (still just `localhost` in `.env`
+  per section 12's unresolved hosting question).
+- **Office side**: `TaskCard` (used by the project page, stage pages, and
+  category pages alike) now lists any `Document`s linked to a task, each a
+  download link through the existing signed-download Route Handler — this
+  was explicitly called out in this section's own "What gets built" list
+  and had no prior UI at all (the FK didn't exist before step 1).
+
+**Real bug found and fixed during verification**: the very first live test
+of `/m/[id]` 500'd — including the negative-test visit to an *unassigned*
+project, which should have been a clean 404. Root cause: `actions.ts` is a
+`"use server"` file, and Next.js requires every export from such a file to
+be an async function — `OTHER_TASK_TITLE` was exported as a plain string
+constant, which broke the entire module (cascading into the page that
+imports it transitively). Fixed by simply not exporting it (a `"use server"`
+file can have private, non-exported constants freely — the restriction is
+only on what's exported). `tsc --noEmit` did not catch this, since it's a
+Next.js/SWC build-time rule, not a TypeScript type rule — worth remembering
+for any future `"use server"` file that wants a shared constant.
+
+Verified against the real dev DB, the real B2 bucket, and a real browser
+session (Playwright, phone-sized viewport, a real 1×1 PNG test file): a test
+supervisor assigned to only one of the two real projects (Bengaluru,
+Ashok Vihar) — visiting the *other* one by URL correctly 404'd; opening the
+assigned one showed its categories; sent a photo through the full flow
+against the "Other (not on checklist)" task specifically (to exercise the
+respawn path) — confirmed directly in Postgres, not just the UI: the
+original task flipped to `COMPLETED`, a fresh replacement "Other" task
+appeared (`NOT_STARTED`), and all three expected `AuditEvent` rows landed in
+the right order. Confirmed the file actually reached B2 (not just that the
+client called PUT) by following the same download route the office side
+uses — 307 redirect to a live signed URL. Confirmed office-side visibility
+separately: the project's category page now lists and links the uploaded
+file via `TaskCard`. On a second, fresh page load (not just the
+post-upload `router.refresh()`), the chat history correctly showed the sent
+file as a bubble. Zero console/page errors (aside from the one 404 the bug
+itself caused, before the fix). `tsc --noEmit` and `eslint` both clean. Test
+artifacts (the test supervisor, the test `Document`, and both "Other" task
+rows created during testing) were deleted afterward via direct SQL, restoring
+the Bengaluru project to exactly 963 tasks — its documented baseline from
+section 15.
+
+**Still open** (deliberately not built this session — see "NOT DECIDED
+YET"): video compression, storage billing once B2's free tier fills, retry/
+queue for uploads on a dropped connection, and which other roles (beyond
+`SITE_SUPERVISOR`) might get a similar mobile flow later. The negative test
+this section's own step 6 called for ("supervisor cannot open an unassigned
+project") is done — see above — closing out the last item in the original
+6-step build order.
+
 ### NOT DECIDED YET — ask before assuming
 
 1. **Upload = completed, even mid-work.** Decision 6 means a photo of work
@@ -1199,23 +1300,27 @@ not just `networkidle` or a fixed timeout.
    corrects by hand), or add one "Complete / Still in progress" tap on the
    confirm screen. Decision was "keep it simple"; revisit if progress numbers
    on `/boq` start looking too optimistic.
-2. **Work not on the list.** Since tagging is mandatory, what does a supervisor
-   do when the work matches no task? Options: an admin adds the task first, or
-   an "Other" task per category. Not decided.
-3. **Video limits.** Max file size/length, whether to compress on the phone,
-   and how storage is paid for once B2's free 10 GB fills up.
-4. **Task list per category** is up to ~278 items (CULINARY). Needs a search
-   box in the task picker; confirm that is acceptable.
-5. **Which other roles get this UI later** (HR/ops employees, other
+2. **Video limits — partially resolved 2026-09-24.** Max file size:
+   **50MB**, confirmed (see decision 12). **Still open:** whether to compress
+   on the phone (not built — Phase 1 has no client-side compression at all),
+   and how storage is paid for once B2's free 10GB fills up.
+3. **Which other roles get this UI later** (HR/ops employees, other
    departments) and whether they will also be limited to uploads.
-6. **Weak site network.** Retry/queue for failed uploads in v1, or later.
+4. **Weak site network.** Retry/queue for failed uploads in v1, or later —
+   not built yet (a failed upload just shows an error with a "Try again"
+   button, no queue/persistence across a dropped connection).
 
 ### Suggested build order (each step tested before the next, per section 7 step 5)
 
 1. ~~Schema: `User.phone`, optional email, PIN, `SITE_SUPERVISOR`, `ProjectMember`, `Document.taskId`.~~ Done.
 2. ~~Admin: create supervisor with phone + PIN + project assignment.~~ Done.
 3. ~~Phone + PIN login and the `/m` project list (access control first).~~ Done.
-4. Category → task picker (read-only) for one project.
-5. Upload with presigned B2 URL, Document link, status change, audit.
-6. Verify end to end in a real browser on a phone-sized viewport, including a
-   negative test: supervisor cannot open an unassigned project.
+4. ~~Category → task picker (read-only) for one project.~~ Done.
+5. ~~Upload with presigned B2 URL, Document link, status change, audit.~~ Done.
+6. ~~Verify end to end in a real browser on a phone-sized viewport, including a
+   negative test: supervisor cannot open an unassigned project.~~ Done.
+
+All six original build-order steps are shipped as of 2026-09-24. See "NOT
+DECIDED YET" above for what's deliberately still open (video compression/
+billing, retry queue, other roles), and section 16's own build-log entries
+above for what was verified at each step.

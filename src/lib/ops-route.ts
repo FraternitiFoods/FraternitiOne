@@ -35,6 +35,17 @@ const CULINARY_OPS_TITLES = new Set([
   "Training Recorde Maintainence",
 ]);
 
+/**
+ * Does this category have *any* BOQ-routed tasks at all? Used to build the
+ * category picker for the `/m` mobile upload flow (plan.md section 16,
+ * decision 5: BOQ categories only) -- CULINARY still counts (most of it is
+ * BOQ; only 15 specific titles are OPS), so this checks the category alone,
+ * not category+title like `getTaskRoute` does.
+ */
+export function categoryHasBoqTasks(category: string): boolean {
+  return !OPS_ONLY_CATEGORIES.has(category);
+}
+
 export function getTaskRoute(category: string | null, title: string): OpsRoute {
   if (!category) return "BOQ";
   if (OPS_ONLY_CATEGORIES.has(category)) return "OPS";

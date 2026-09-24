@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -37,9 +38,11 @@ export default async function MProjectListPage() {
           </p>
         ) : (
           projects.map((p) => (
-            // Not a link yet — the destination screen (category → task
-            // picker) is build order step 4, not this one.
-            <div key={p.id} className="flex items-center gap-3 px-4 py-4">
+            <Link
+              key={p.id}
+              href={`/m/${p.id}`}
+              className="flex items-center gap-3 px-4 py-4 hover:bg-muted/50"
+            >
               <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                 {p.brand.slice(0, 1)}
               </div>
@@ -47,9 +50,9 @@ export default async function MProjectListPage() {
                 <p className="font-medium">
                   {p.brand} — {p.location}
                 </p>
-                <p className="text-xs text-muted-foreground">Tap to open (coming soon)</p>
+                <p className="text-xs text-muted-foreground">Tap to open</p>
               </div>
-            </div>
+            </Link>
           ))
         )}
       </main>

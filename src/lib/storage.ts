@@ -65,6 +65,29 @@ export async function uploadDocument(params: {
 }
 
 /**
+ * Presigned PUT URL for a browser to upload straight to B2 (plan.md
+ * section 16: "phone -> B2 directly through a presigned upload URL", never
+ * proxied through a Next.js route — Vercel request bodies are capped around
+ * 4.5MB, which a phone video would exceed). Short expiry (5 minutes, same as
+ * the download URL below) since the client is expected to start the upload
+ * immediately after requesting this.
+ */
+export async function getSupervisorUploadUrl(params: {
+  key: string;
+  contentType: string;
+}): Promise<string> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: params.key,
+    ContentType: params.contentType,
+  });
+  return getSignedUrl(getClient(endpoint, keyId, applicationKey), command, {
+    expiresIn: 60 * 5,
+  });
+}
+
+/**
  * Builds a `Content-Disposition` value that can't be broken out of by a
  * malicious original filename (e.g. one containing `"` or control
  * characters): the quoted `filename` fallback is stripped to safe ASCII, and
