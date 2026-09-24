@@ -1,12 +1,45 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getTasksForCategory, getPresignedUpload, finalizeUpload, type BoqTask } from "./actions";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+function FilePreview({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Object URLs must be created and revoked together inside the effect —
+    // not via useMemo — because React Strict Mode's dev-only double-invoke
+    // (mount -> cleanup -> mount) would revoke a memoized URL before the
+    // second mount's <img>/<video> ever gets to load it.
+    const objectUrl = URL.createObjectURL(file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  if (!url) return null;
+
+  if (file.type.startsWith("video/")) {
+    return (
+      <video
+        src={url}
+        controls
+        muted
+        playsInline
+        className="max-h-48 w-full rounded-md bg-black object-contain"
+      />
+    );
+  }
+
+  // Blob URLs can't go through next/image's optimizer, so a plain <img> is required here.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url} alt={file.name} className="max-h-48 w-full rounded-md object-contain" />;
+}
 
 type Step =
   | { name: "idle" }
@@ -132,6 +165,7 @@ export function UploadFlow({ projectId, categories }: { projectId: string; categ
   if (step.name === "category") {
     return (
       <div className="space-y-2">
+        <FilePreview file={step.file} />
         <p className="text-sm font-medium">Which category is this for?</p>
         {categories.length === 0 ? (
           <p className="text-sm text-muted-foreground">No categories set up for this project yet.</p>
@@ -161,6 +195,7 @@ export function UploadFlow({ projectId, categories }: { projectId: string; categ
     const filtered = q ? step.tasks.filter((t) => t.title.toLowerCase().includes(q)) : step.tasks;
     return (
       <div className="space-y-2">
+        <FilePreview file={step.file} />
         <p className="text-sm font-medium">Which task is this for? ({step.category})</p>
         {step.loading ? (
           <p className="text-sm text-muted-foreground">Loading tasks…</p>
@@ -206,7 +241,8 @@ export function UploadFlow({ projectId, categories }: { projectId: string; categ
     return (
       <div className="space-y-2">
         <p className="text-sm font-medium">Send this?</p>
-        <div className="rounded-md border px-3 py-2 text-sm">
+        <div className="space-y-2 rounded-md border px-3 py-2 text-sm">
+          <FilePreview file={step.file} />
           <p className="font-medium">{step.file.name}</p>
           <p className="text-xs text-muted-foreground">
             {step.category} · {step.task.title}
