@@ -218,7 +218,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
       {opsProgress.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Construction &amp; Ops Progress</CardTitle>
+            <CardTitle className="text-base">Operations</CardTitle>
             <p className="text-xs text-muted-foreground">
               How far each department has reached, rolled up from the Ops checklist
             </p>

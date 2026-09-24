@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage(props: PageProps<"/login">) {
@@ -34,6 +35,12 @@ export default async function LoginPage(props: PageProps<"/login">) {
             </p>
           </div>
           <LoginForm next={next} />
+          <p className="text-center text-sm text-muted-foreground">
+            Site supervisor?{" "}
+            <Link href="/m/login" className="font-medium text-foreground underline underline-offset-4">
+              Sign in here
+            </Link>
+          </p>
         </div>
       </div>
     </div>

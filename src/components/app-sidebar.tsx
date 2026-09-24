@@ -33,7 +33,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   // Construction & Ops Progress (process checklists never in that Excel) —
   // see ops-route.ts.
   { label: "BOQ", href: "/boq" },
-  { label: "Construction & Ops Progress", href: "/construction-ops" },
+  { label: "Operations", href: "/construction-ops" },
   { label: "People", href: null },
   { label: "Culinary", href: null },
   { label: "Marketing", href: null },

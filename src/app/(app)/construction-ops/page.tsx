@@ -33,7 +33,7 @@ export default async function ConstructionOpsPage(props: PageProps<"/constructio
   if (projects.length === 0) {
     return (
       <div>
-        <PageHeader title="Construction & Ops Progress" isFranchisee={user.role === "FRANCHISEE"} />
+        <PageHeader title="Operations" isFranchisee={user.role === "FRANCHISEE"} />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             {user.role === "FRANCHISEE" ? "No franchise project is linked to your account yet." : "No projects yet."}
@@ -54,7 +54,7 @@ export default async function ConstructionOpsPage(props: PageProps<"/constructio
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Construction & Ops Progress"
+          title="Operations"
           subtitle="Pick a project to see its department rollup"
           isFranchisee={false}
         />
@@ -84,7 +84,7 @@ export default async function ConstructionOpsPage(props: PageProps<"/constructio
   if (!project || !canViewProject(user, project)) {
     return (
       <div>
-        <PageHeader title="Construction & Ops Progress" isFranchisee={user.role === "FRANCHISEE"} />
+        <PageHeader title="Operations" isFranchisee={user.role === "FRANCHISEE"} />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">Project not found.</CardContent>
         </Card>
@@ -97,7 +97,7 @@ export default async function ConstructionOpsPage(props: PageProps<"/constructio
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Construction & Ops Progress"
+        title="Operations"
         subtitle={`${project.brand} — ${project.location} · ${formatProjectCode(project.seq)}`}
         isFranchisee={user.role === "FRANCHISEE"}
         action={
