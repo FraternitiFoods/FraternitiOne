@@ -47,7 +47,11 @@ export type ValidatedResetToken = {
   userId: string;
   purpose: PasswordResetPurpose;
   userName: string;
-  userEmail: string;
+  /// Nullable as of plan.md section 16 — a supervisor account may have none.
+  /// In practice this flow is only reachable for email-based accounts today
+  /// (invite/reset emails require an email to send to), but the type must
+  /// match the underlying (now-nullable) User.email column.
+  userEmail: string | null;
 };
 
 /** Read-only check — does NOT mark the token used. See `consumePasswordResetToken`. */

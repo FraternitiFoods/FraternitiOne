@@ -17,13 +17,15 @@ import { ROLE_LABELS, DEPARTMENT_LABELS } from "@/lib/format";
 import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
 import type { Role, Department } from "@prisma/client";
 
-const ROLES = Object.keys(ROLE_LABELS) as Role[];
+// SITE_SUPERVISOR excluded — see the same-reasoning comment in
+// new-user-form.tsx (this form has no phone/PIN fields yet).
+const ROLES = (Object.keys(ROLE_LABELS) as Role[]).filter((r) => r !== "SITE_SUPERVISOR");
 const DEPARTMENTS = Object.keys(DEPARTMENT_LABELS) as Department[];
 
 type EditableUser = {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   role: Role;
   department: Department | null;
 };
@@ -49,7 +51,7 @@ export function EditUserForm({ user }: { user: EditableUser }) {
           name="email"
           type="email"
           required
-          defaultValue={user.email}
+          defaultValue={user.email ?? ""}
           placeholder="name@fraterniti.co.in"
         />
       </div>

@@ -26,6 +26,14 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Documents", href: "/documents" },
   { label: "Payments", href: null },
   { label: "Projects", href: "/projects" },
+  // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops
+  // category rollup itself (plan.md section 9) so it's reachable without
+  // drilling into a specific project's Overview section first. Split into two
+  // screens (2026-09-23): BOQ (Excel-sourced trade line items) and
+  // Construction & Ops Progress (process checklists never in that Excel) —
+  // see ops-route.ts.
+  { label: "BOQ", href: "/boq" },
+  { label: "Operations", href: "/construction-ops" },
   { label: "People", href: null },
   { label: "Culinary", href: null },
   { label: "Marketing", href: null },

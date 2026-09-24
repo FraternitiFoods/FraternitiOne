@@ -2,6 +2,7 @@ import "server-only";
 
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getCurrentUser, type CurrentUser } from "@/lib/session";
 
 const SALT_ROUNDS = 12;
@@ -15,6 +16,19 @@ export async function verifyPassword(
   hash: string
 ): Promise<boolean> {
   return bcrypt.compare(plain, hash);
+}
+
+/**
+ * Same bcrypt mechanism as password hashing, kept as its own named function
+ * (not a reused alias) so call sites read as what they are — a supervisor's
+ * PIN (plan.md section 16), not a password.
+ */
+export async function hashPin(pin: string): Promise<string> {
+  return bcrypt.hash(pin, SALT_ROUNDS);
+}
+
+export async function verifyPin(pin: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(pin, hash);
 }
 
 /**
@@ -33,7 +47,15 @@ export async function verifyPassword(
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect("/api/auth/clear-session");
+    // x-pathname is set by proxy.ts on every request — forwarded here so
+    // clear-session knows whether to land back on /login or /m/login
+    // (plan.md section 16): this function has no other way to see which
+    // "side" of the app called it.
+    const pathname = (await headers()).get("x-pathname");
+    const clearSessionUrl = pathname
+      ? `/api/auth/clear-session?next=${encodeURIComponent(pathname)}`
+      : "/api/auth/clear-session";
+    redirect(clearSessionUrl);
   }
   return user;
 }

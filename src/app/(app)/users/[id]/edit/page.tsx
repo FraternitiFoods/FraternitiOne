@@ -36,7 +36,15 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
           <CardTitle className="text-base">User details</CardTitle>
         </CardHeader>
         <CardContent>
-          <EditUserForm user={user} />
+          {user.role === "SITE_SUPERVISOR" ? (
+            <p className="text-sm text-muted-foreground">
+              Editing site supervisors isn&apos;t built yet (plan.md section 16, build order
+              step 2 only covers creation). Use &quot;Reset PIN&quot; or &quot;Delete&quot; from the
+              users list for now.
+            </p>
+          ) : (
+            <EditUserForm user={user} />
+          )}
         </CardContent>
       </Card>
     </div>

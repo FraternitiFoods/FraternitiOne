@@ -1,51 +1,30 @@
-import { cn } from "cn";
-import { STAGE_STATE_LABELS, type StageState } from "@/lib/lifecycle-stage-status";
+import { type StageState } from "@/lib/lifecycle-stage-status";
+import { ProgressTile } from "./progress-tile";
 
-/**
- * Read-only "barometer" tile (plan.md section 9) — no drill-down page yet,
- * unlike StageTile: the founder's ask was a rolled-up percentage per
- * trade/department ("construction itna pahunch gya"), not a new place to
- * manage tasks — those are still managed from the flat Tasks list below.
- */
-export function CategoryTile({ category, total, completed, state }: {
+/** Tapping a tile navigates to its own page (/projects/[id]/categories/[category])
+ * with the trade/department's task list — mirrors StageTile's drill-down. */
+export function CategoryTile({ category, total, completed, state, projectId, backHref }: {
   category: string;
   total: number;
   completed: number;
   state: StageState;
+  projectId: string;
+  /** Where the detail page's "← Back" link (and its task actions) should
+   * return to — defaults to the project page there, but callers that embed
+   * this tile elsewhere (e.g. /progress) pass their own URL through so the
+   * user lands back where they actually came from. */
+  backHref?: string;
 }) {
-  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const href = `/projects/${projectId}/categories/${encodeURIComponent(category)}${
+    backHref ? `?back=${encodeURIComponent(backHref)}` : ""
+  }`;
   return (
-    // No border, no hover state, no Link — deliberately flatter than
-    // StageTile so it doesn't visually imply the tile is clickable (it isn't;
-    // this is a read-only rollup, see the file-level comment above).
-    <div
-      className={cn(
-        "cursor-default rounded-lg p-3",
-        state === "completed" && "bg-emerald-50",
-        state === "in_progress" && "bg-primary/5",
-        state === "upcoming" && "bg-muted/40"
-      )}
-    >
-      <div className="text-sm font-medium">{category}</div>
-      <div
-        className={cn(
-          "mt-1 text-xs",
-          state === "completed" && "text-emerald-700",
-          state === "in_progress" && "text-primary",
-          state === "upcoming" && "text-muted-foreground"
-        )}
-      >
-        {STAGE_STATE_LABELS[state]} · {completed}/{total}
-      </div>
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            state === "completed" ? "bg-emerald-500" : "bg-primary"
-          )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
+    <ProgressTile
+      href={href}
+      label={category}
+      status={state}
+      total={total}
+      completed={completed}
+    />
   );
 }

@@ -4,19 +4,50 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireUser, hashPin } from "@/lib/auth";
+import type { CurrentUser } from "@/lib/session";
 import { writeAuditEvent } from "@/lib/audit";
 import { canManageUsers } from "@/lib/permissions";
 import { createPasswordResetToken } from "@/lib/password-reset-tokens";
 import { sendPasswordSetupEmail } from "@/lib/email";
 import { Role, Department, Prisma } from "@prisma/client";
 
-const CreateUserSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
-  role: z.nativeEnum(Role),
-  department: z.nativeEnum(Department).optional(),
-});
+/// plan.md section 16, decision 7 — a SITE_SUPERVISOR logs in with phone+PIN,
+/// not email+password, and has no email channel to receive an invite link
+/// through (decision 8: no notifications). So unlike every other role, the
+/// admin sets the PIN directly at creation time — there's no viable
+/// alternative given the other decisions already locked in.
+const PHONE_PATTERN = /^[0-9]{10}$/;
+const PIN_PATTERN = /^[0-9]{6}$/; // 6 digits, confirmed 2026-09-24
+
+const CreateUserSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required."),
+    role: z.nativeEnum(Role),
+    department: z.nativeEnum(Department).optional(),
+    email: z.string().trim().toLowerCase().optional(),
+    phone: z.string().trim().optional(),
+    pin: z.string().optional(),
+    confirmPin: z.string().optional(),
+    projectIds: z.array(z.string()).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === "SITE_SUPERVISOR") {
+      if (!data.phone || !PHONE_PATTERN.test(data.phone)) {
+        ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit phone number." });
+      }
+      if (!data.pin || !PIN_PATTERN.test(data.pin)) {
+        ctx.addIssue({ code: "custom", path: ["pin"], message: "PIN must be exactly 6 digits." });
+      } else if (data.pin !== data.confirmPin) {
+        ctx.addIssue({ code: "custom", path: ["confirmPin"], message: "PINs don't match." });
+      }
+      if (!data.projectIds || data.projectIds.length === 0) {
+        ctx.addIssue({ code: "custom", path: ["projectIds"], message: "Assign at least one project." });
+      }
+    } else if (!data.email || !z.string().email().safeParse(data.email).success) {
+      ctx.addIssue({ code: "custom", path: ["email"], message: "Enter a valid email." });
+    }
+  });
 
 export type ActionState = { error?: string } | undefined;
 
@@ -39,9 +70,13 @@ export async function createUser(
 
   const parsed = CreateUserSchema.safeParse({
     name: formData.get("name"),
-    email: formData.get("email"),
+    email: formData.get("email") || undefined,
     role: formData.get("role"),
     department: formData.get("department") || undefined,
+    phone: formData.get("phone") || undefined,
+    pin: formData.get("pin") || undefined,
+    confirmPin: formData.get("confirmPin") || undefined,
+    projectIds: formData.getAll("projectIds"),
   });
 
   if (!parsed.success) {
@@ -49,6 +84,18 @@ export async function createUser(
   }
 
   const data = parsed.data;
+
+  if (data.role === "SITE_SUPERVISOR") {
+    return createSupervisor(admin, data);
+  }
+
+  // superRefine already guarantees this for a non-supervisor role, but the
+  // Zod-inferred type stays `string | undefined` (superRefine doesn't narrow
+  // sibling fields) — this both satisfies TS and is a real belt-and-braces
+  // check.
+  if (!data.email) {
+    return { error: "Enter a valid email." };
+  }
 
   const existing = await db.user.findUnique({ where: { email: data.email } });
   if (existing) {
@@ -85,8 +132,13 @@ export async function createUser(
 
   const token = await createPasswordResetToken(user.id, "INVITE");
   try {
+    // `data.email` (guaranteed string from CreateUserSchema), not
+    // `user.email` — same value, but User.email is nullable at the type
+    // level now that SITE_SUPERVISOR accounts can have none (plan.md
+    // section 16). This form still always collects an email, so this stays
+    // exactly as it worked before.
     await sendPasswordSetupEmail({
-      to: user.email,
+      to: data.email,
       name: user.name,
       token,
       purpose: "INVITE",
@@ -98,11 +150,155 @@ export async function createUser(
     // thinking an invite went out when it didn't.
     console.error("Failed to send invite email:", err);
     return {
-      error: `User "${user.email}" was created, but the invite email failed to send (check RESEND_API_KEY / EMAIL_FROM in .env). Use "Resend invite" once email is configured.`,
+      error: `User "${data.email}" was created, but the invite email failed to send (check RESEND_API_KEY / EMAIL_FROM in .env). Use "Resend invite" once email is configured.`,
     };
   }
 
   redirect("/users");
+}
+
+/**
+ * Site-supervisor branch of createUser (plan.md section 16, build order
+ * step 2). No email/invite-link path at all — phone+PIN is the whole
+ * credential, set by the admin directly right here, and `ProjectMember` rows
+ * are created in the same transaction as the user so a supervisor is never
+ * left existing-but-unassigned even momentarily.
+ */
+async function createSupervisor(
+  admin: CurrentUser,
+  data: z.infer<typeof CreateUserSchema>
+): Promise<ActionState> {
+  // superRefine guarantees these for role === SITE_SUPERVISOR; narrow here
+  // for TS (see the sibling comment in createUser) and as a real guard.
+  if (!data.phone || !data.pin || !data.projectIds || data.projectIds.length === 0) {
+    return { error: "Invalid input." };
+  }
+  const { phone, pin, projectIds } = data;
+
+  const existingPhone = await db.user.findUnique({ where: { phone } });
+  if (existingPhone) {
+    return { error: "A user with this phone number already exists." };
+  }
+
+  const projects = await db.franchiseProject.findMany({
+    where: { id: { in: projectIds } },
+    select: { id: true },
+  });
+  if (projects.length !== projectIds.length) {
+    return { error: "One or more selected projects couldn't be found." };
+  }
+
+  const pinHash = await hashPin(pin);
+
+  await db.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        name: data.name,
+        role: "SITE_SUPERVISOR",
+        phone,
+        pinHash,
+        // No department — a supervisor's access is ProjectMember-scoped
+        // (see role-departments.ts), not department-scoped.
+      },
+    });
+
+    await writeAuditEvent(tx, {
+      actor: admin,
+      entityType: "User",
+      entityId: created.id,
+      action: "CREATE",
+      newValue: { name: created.name, role: created.role, phone: created.phone },
+      reference: "Created via admin user management (site supervisor)",
+    });
+
+    const members = await tx.projectMember.createManyAndReturn({
+      data: projectIds.map((projectId) => ({ userId: created.id, projectId })),
+    });
+
+    await tx.auditEvent.createMany({
+      data: members.map((m) => ({
+        projectId: m.projectId,
+        actorId: admin.id,
+        actorEmail: admin.email ?? "(no email on file)",
+        actorName: admin.name,
+        actorRole: admin.role,
+        entityType: "ProjectMember",
+        entityId: m.id,
+        action: "CREATE" as const,
+        newValue: { userId: created.id, projectId: m.projectId },
+        reference: "Supervisor assigned via admin user management",
+        source: "web",
+      })),
+    });
+  });
+
+  redirect("/users");
+}
+
+const ResetPinSchema = z
+  .object({
+    pin: z.string(),
+    confirmPin: z.string(),
+  })
+  .superRefine((data, ctx) => {
+    if (!PIN_PATTERN.test(data.pin)) {
+      ctx.addIssue({ code: "custom", path: ["pin"], message: "PIN must be exactly 6 digits." });
+    } else if (data.pin !== data.confirmPin) {
+      ctx.addIssue({ code: "custom", path: ["confirmPin"], message: "PINs don't match." });
+    }
+  });
+
+export type ResetPinState = { error?: string; success?: boolean } | undefined;
+
+/** Admin-only. Resets a site supervisor's PIN — the phone+PIN equivalent of "Resend invite". */
+export async function resetPin(
+  userId: string,
+  _prevState: ResetPinState,
+  formData: FormData
+): Promise<ResetPinState> {
+  const admin = await requireUser();
+
+  if (!canManageUsers(admin)) {
+    return { error: "You don't have permission to do this." };
+  }
+
+  const parsed = ResetPinSchema.safeParse({
+    pin: formData.get("pin"),
+    confirmPin: formData.get("confirmPin"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    return { error: "User not found." };
+  }
+  if (user.role !== "SITE_SUPERVISOR") {
+    return { error: "This account doesn't use a PIN." };
+  }
+
+  const pinHash = await hashPin(parsed.data.pin);
+
+  await db.$transaction(async (tx) => {
+    // Also clears any active brute-force lockout (plan.md section 16, PIN
+    // rules item 3) — confirmed 2026-09-24: an admin resetting the PIN is the
+    // escape hatch for a locked-out supervisor, not just a forgotten PIN.
+    await tx.user.update({
+      where: { id: userId },
+      data: { pinHash, pinFailedAttempts: 0, pinLockedUntil: null },
+    });
+    await writeAuditEvent(tx, {
+      actor: admin,
+      entityType: "User",
+      entityId: userId,
+      action: "UPDATE",
+      reference: "PIN reset via admin user management",
+    });
+  });
+
+  revalidatePath("/users");
+  return { success: true };
 }
 
 export type ResendInviteState = { error?: string; success?: boolean } | undefined;
@@ -129,6 +325,9 @@ export async function resendInvite(
   if (user.passwordHash) {
     return { error: "This user already set a password." };
   }
+  if (!user.email) {
+    return { error: "This account has no email on file — can't resend an email invite." };
+  }
 
   const token = await createPasswordResetToken(user.id, "INVITE");
   try {
@@ -145,7 +344,12 @@ export async function resendInvite(
 const UpdateUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
   email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
-  role: z.nativeEnum(Role),
+  // This form is email+password only (no phone/PIN fields) — SITE_SUPERVISOR
+  // isn't a valid target here, same reasoning as excluding it from the role
+  // dropdown in new-user-form.tsx.
+  role: z.nativeEnum(Role).refine((r) => r !== "SITE_SUPERVISOR", {
+    message: "Site supervisors can't be edited from this form yet.",
+  }),
   department: z.nativeEnum(Department).optional(),
 });
 
@@ -179,6 +383,11 @@ export async function updateUser(
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
     return { error: "User not found." };
+  }
+  if (user.role === "SITE_SUPERVISOR") {
+    return {
+      error: "Editing site supervisors isn't supported yet — use Reset PIN or Delete from the users list.",
+    };
   }
 
   const emailTaken = await db.user.findFirst({

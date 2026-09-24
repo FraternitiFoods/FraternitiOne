@@ -88,6 +88,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   OPERATIONS: "Operations",
   MANAGEMENT: "Management",
   ADMIN: "System Admin",
+  SITE_SUPERVISOR: "Site Supervisor",
 };
 
 export const DEPARTMENT_LABELS: Record<Department, string> = {

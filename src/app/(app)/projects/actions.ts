@@ -149,7 +149,7 @@ export async function createProject(
       data: createdTasks.map((task) => ({
         projectId: created.id,
         actorId: user.id,
-        actorEmail: user.email,
+        actorEmail: user.email ?? "(no email on file)",
         actorName: user.name,
         actorRole: user.role,
         entityType: "Task",

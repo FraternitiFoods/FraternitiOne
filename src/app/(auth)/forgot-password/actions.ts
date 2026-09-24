@@ -34,7 +34,10 @@ export async function requestPasswordReset(
     const purpose = user.passwordHash ? "RESET" : "INVITE";
     const token = await createPasswordResetToken(user.id, purpose);
     try {
-      await sendPasswordSetupEmail({ to: user.email, name: user.name, token, purpose });
+      // `email` (the validated query param), not `user.email` — same value in
+      // practice (the lookup was by exact match), but typed as a guaranteed
+      // string, unlike the nullable User.email column (plan.md section 16).
+      await sendPasswordSetupEmail({ to: email, name: user.name, token, purpose });
     } catch (err) {
       // Swallowed deliberately: surfacing a different result here (vs. the
       // generic success message below) would let an attacker tell "account
