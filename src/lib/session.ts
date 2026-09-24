@@ -56,7 +56,9 @@ export async function deleteSession(): Promise<void> {
 export type CurrentUser = {
   id: string;
   name: string;
-  email: string;
+  /// Nullable as of plan.md section 16 (2026-09-24) — a phone+PIN
+  /// SITE_SUPERVISOR login may have no email on file.
+  email: string | null;
   role: Role;
   department: Department | null;
 };

@@ -85,8 +85,13 @@ export async function createUser(
 
   const token = await createPasswordResetToken(user.id, "INVITE");
   try {
+    // `data.email` (guaranteed string from CreateUserSchema), not
+    // `user.email` — same value, but User.email is nullable at the type
+    // level now that SITE_SUPERVISOR accounts can have none (plan.md
+    // section 16). This form still always collects an email, so this stays
+    // exactly as it worked before.
     await sendPasswordSetupEmail({
-      to: user.email,
+      to: data.email,
       name: user.name,
       token,
       purpose: "INVITE",
@@ -98,7 +103,7 @@ export async function createUser(
     // thinking an invite went out when it didn't.
     console.error("Failed to send invite email:", err);
     return {
-      error: `User "${user.email}" was created, but the invite email failed to send (check RESEND_API_KEY / EMAIL_FROM in .env). Use "Resend invite" once email is configured.`,
+      error: `User "${data.email}" was created, but the invite email failed to send (check RESEND_API_KEY / EMAIL_FROM in .env). Use "Resend invite" once email is configured.`,
     };
   }
 
@@ -128,6 +133,9 @@ export async function resendInvite(
   }
   if (user.passwordHash) {
     return { error: "This user already set a password." };
+  }
+  if (!user.email) {
+    return { error: "This account has no email on file — can't resend an email invite." };
   }
 
   const token = await createPasswordResetToken(user.id, "INVITE");

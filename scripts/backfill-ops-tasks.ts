@@ -111,7 +111,7 @@ async function main() {
         data: created.map((task) => ({
           projectId: project.id,
           actorId: admin.id,
-          actorEmail: admin.email,
+          actorEmail: admin.email ?? "(no email on file)",
           actorName: admin.name,
           actorRole: admin.role,
           entityType: "Task",

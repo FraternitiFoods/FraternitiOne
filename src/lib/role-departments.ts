@@ -22,4 +22,9 @@ export const DEPARTMENT_OWNERS: Record<Role, Department[]> = {
   OPERATIONS: ["OPERATIONS"],
   MANAGEMENT: [],
   ADMIN: [],
+  // Deliberately empty: a SITE_SUPERVISOR's access is scoped by
+  // ProjectMember (plan.md section 16), not this role->department matrix —
+  // a supervisor spans every BOQ trade on their assigned site, not one
+  // department.
+  SITE_SUPERVISOR: [],
 };

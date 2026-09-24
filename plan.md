@@ -873,3 +873,190 @@ appears on both (278 BOQ + 15 OPS = 293), and BOQ-total + OPS-total exactly
 equals the count of tasks carrying a category (805) — nothing lost, nothing
 double-counted outside the intentional CULINARY overlap. Not click-tested in a
 browser this session (no Playwright pass, same gap as section 14).
+
+## 16. Mobile field interface — WhatsApp-style upload UI for site supervisors (decided 2026-09-24)
+
+**Where this came from:** the founder wants the people who actually produce
+progress data (site supervisors, later employees) to upload it from a
+WhatsApp-feeling screen, not from the office web app. Reference: Linemate
+(`Linemate WhatsApp-Based Frontline Operations Platform` deck) — its chat look
+is a wrapper; the real work is structured, tap-to-answer forms. We copy that
+idea. **We do not use WhatsApp or any WhatsApp service.** It only looks and
+feels like it.
+
+### Mental model
+
+```
+Supervisor phone                Same Fraterniti One app              Office
+/m/... chat-style screens  →    Task, Document, AuditEvent   →    /boq, project page,
+(new routes, same codebase)     (same DB, same B2 bucket)         Document Vault
+```
+
+Cause → effect: supervisor picks a task and uploads a photo/video → a
+`Document` row is created and linked to that `Task` → `Task.status` becomes
+`COMPLETED` → `AuditEvent` rows are written → the category tile on `/boq`
+moves on its own. No sync job, no second system.
+
+### Decisions (confirmed by Apoorv, 2026-09-24)
+
+1. **No new web app.** Added as new routes (e.g. `/m/...`) inside the existing
+   Next.js app. Same DB, same auth/session layer, same storage.
+2. **Not real chat.** No free-text messaging, no group conversations, no
+   supervisor-to-supervisor talk. It is a WhatsApp-like *look*: a list of
+   project "chats", and inside one, a message-bubble style flow.
+3. **One project = one "chat".** A supervisor sees only the projects they are
+   assigned to.
+4. **Upload flow (tagging is mandatory — no untagged uploads):**
+   `open project chat → send photo/video → pick category (AC Work, Board Work,
+   Fire Work...) → pick task inside it (checkbox-style list) → file saved
+   against that Task`.
+   The file cannot be submitted until both category and task are picked.
+5. **Scope for now: BOQ only.** Categories offered are the BOQ-routed ones
+   (`ops-route.ts`), same list `/boq` rolls up. Ops/Construction & Ops
+   Progress categories are not offered to supervisors yet.
+6. **Status rule (kept simple):** a successful upload sets the linked Task to
+   `COMPLETED`. Existing `Task.status` enum is unchanged; no % field.
+7. **Login: phone number + PIN.** Accounts are created by an Admin from the
+   existing `/users/new` flow (extended with a phone field and role). No
+   self-signup, no OTP/SMS, no DLT registration.
+8. **No notifications.** No web push, SMS or email for this feature.
+9. **Reversal of section 9, decision #5:** "no `Document.taskId` FK" is now
+   overturned. A `Document` can belong to a specific Task (nullable FK, so the
+   existing project-level vault documents keep working).
+
+### What gets built (new vs reused)
+
+Reused as-is: `Task`, `AuditEvent`, `Document` + B2 storage
+(`src/lib/storage.ts`), `ops-route.ts` (BOQ/OPS split), category list, session
+layer, admin user management.
+
+New:
+- **Role `SITE_SUPERVISOR`** plus a `ProjectMember` table (userId, projectId).
+  Access rule for supervisors: only assigned projects, only BOQ-routed tasks,
+  only "upload + mark complete". This is a new permission path — the existing
+  role→department matrix does not fit because a supervisor spans many trades.
+- **`User.phone`** (unique) and a PIN credential. `User.email` is currently a
+  required unique field; it must become optional for supervisors who have no
+  email (migration).
+- **`Document.taskId`** nullable FK (migration).
+- **`/m` route group**: project list ("chats") → project chat → category picker
+  → task picker → upload/confirm. Mobile-first, installable as a PWA (home
+  screen icon) purely for feel; not needed for notifications.
+- **Upload path**: phone → B2 directly through a presigned upload URL (bucket
+  CORS needed), then a server action records the `Document`, links the Task,
+  sets status, writes AuditEvents in one transaction. Reason: Vercel request
+  bodies are capped (about 4.5 MB per the platform docs — confirm), which a
+  phone video will exceed.
+- **Admin side**: `/users/new` gets phone, PIN and "assign to projects".
+  Admin can reset a PIN.
+- **Office side**: files show up inside the Task (category page and stage
+  page), and in the Document Vault, using existing views.
+
+### Cause → effect that must hold
+
+- A supervisor upload without a chosen Task must be rejected server-side, not
+  just hidden in the UI.
+- Every upload writes a `Document` CREATE event, and the status change writes
+  a Task UPDATE event (old → new value). Audit rule from section 4 applies.
+- A supervisor can never see or touch a project they are not a member of, even
+  by guessing a URL or id.
+
+### Suggested build order — step 1 shipped (2026-09-24)
+
+**Schema: `User.phone`, optional email, PIN, `SITE_SUPERVISOR`, `ProjectMember`,
+`Document.taskId`.** Migration `20260924071435_add_supervisor_mobile_upload`,
+applied to the real dev DB (Bengaluru/Ashok Vihar, 963 tasks each — both keep
+working, nothing backfilled/touched). What shipped:
+- `Role.SITE_SUPERVISOR` added to the enum.
+- `User.email` is now nullable (still unique when present — Postgres allows
+  multiple NULLs under a unique constraint). `User.phone` (nullable, unique)
+  and `User.pinHash` (nullable, hashed like `passwordHash`) added.
+- `ProjectMember` (new): `userId` + `projectId`, `@@unique` on the pair — the
+  server-side "is this supervisor even allowed to see this project" gate for
+  every future `/m` page/action, separate from (not a replacement for)
+  `permissions.ts`'s existing department matrix.
+- `Document.taskId` (new, nullable, `onDelete: SetNull`) — reverses section 9
+  decision #5, per section 16 decision 9.
+- Null-safety fallout from `User.email` going optional, fixed across the
+  codebase so `tsc`/`eslint` stay clean: `CurrentUser.email` and
+  `ValidatedResetToken.userEmail` are now `string | null`;
+  `writeAuditEvent`'s `actorEmail` (still a required column — NFR-06 wants an
+  immutable snapshot) falls back to `"(no email on file)"`; a few
+  email-sending call sites (`resendInvite`, `forgot-password`) now guard or
+  use the already-validated non-null value instead of re-reading the nullable
+  column; `DEPARTMENT_OWNERS` and `ROLE_LABELS` (both `Record<Role, ...>`)
+  gained a `SITE_SUPERVISOR` entry (empty department list — a supervisor's
+  access is `ProjectMember`-scoped, not department-scoped).
+- `/users/new` and `/users/[id]/edit`'s role dropdowns deliberately **exclude**
+  `SITE_SUPERVISOR` for now — both forms only collect email+password;
+  creating one today would leave phone/PIN null and permanently locked out.
+  Build order step 2 extends `/users/new` with the fields a supervisor
+  actually needs, at which point it gets re-added there.
+
+**Two unplanned things found and fixed along the way, worth knowing about:**
+1. **An orphaned, uncommitted migration already existed on the real dev DB.**
+   `_prisma_migrations` had a row for `20260922000000_add_document_task_link`
+   (dated two days before section 16 was even decided), and a same-named
+   folder existed on disk — but empty, no `migration.sql` inside, not in git
+   history, no branch/stash reference anywhere. The DB itself had already
+   received a `Document.taskId` column from it — 0 rows affected (`Document`
+   table was empty), but with `onDelete: CASCADE`, not the `SET NULL` this
+   section's design calls for (a document should survive its task being
+   deleted). Likely an earlier session's interrupted attempt at this exact
+   feature that never got committed. Resolved by dropping that column/FK/index
+   and its ledger row (verified zero data loss first), then generating this
+   step's migration cleanly from a matching-git-history baseline — so the
+   `SET NULL` behavior above is this build's own, not inherited from the
+   orphan. Worth a "did anyone run migrate commands directly against dev
+   without committing?" check with whoever else has touched this machine.
+2. **`prisma migrate dev` can't run against the real dev DB at all** — the
+   native Postgres role backing `DATABASE_URL` (port 5432) doesn't have
+   `CREATEDB`, which the shadow-database step requires, and the interactive
+   confirmation prompt it also wants doesn't work in a non-interactive shell
+   either way. Worked around by pointing a new `SHADOW_DATABASE_URL` at the
+   docker-compose Postgres (port 5433 — already in the repo per this file's
+   own step 3 setup notes, just unused by this particular machine's `.env`)
+   whose role is a real superuser, and applying the generated SQL via
+   `prisma migrate diff` + `prisma migrate deploy` instead of the interactive
+   `migrate dev` flow. `.env.example` now documents `SHADOW_DATABASE_URL`.
+   Future migrations on this machine need the same two-step (`migrate diff`
+   piped into a new migration folder, then `migrate deploy`) unless the
+   native role is granted `CREATEDB`.
+
+Verified: `tsc --noEmit` and `eslint` both clean. Real browser session
+(Playwright, logged in as Admin against the live dev DB): `/users`,
+`/users/new`, `/projects`, a real project detail page (franchisee email still
+renders correctly), `/projects/new`, a user edit page, and the delete-user
+confirm dialog — all 200s, zero console/page errors. No `/m` pages exist yet
+(step 3), so no phone-viewport check this step.
+
+### NOT DECIDED YET — ask before assuming
+
+1. **Upload = completed, even mid-work.** Decision 6 means a photo of work
+   still in progress will mark the task done. Options: accept it (office
+   corrects by hand), or add one "Complete / Still in progress" tap on the
+   confirm screen. Decision was "keep it simple"; revisit if progress numbers
+   on `/boq` start looking too optimistic.
+2. **Work not on the list.** Since tagging is mandatory, what does a supervisor
+   do when the work matches no task? Options: an admin adds the task first, or
+   an "Other" task per category. Not decided.
+3. **PIN rules.** Length (recommend 6 digits, not 4), lockout after N wrong
+   tries, who sets the first PIN (Admin sets, supervisor changes on first
+   login?).
+4. **Video limits.** Max file size/length, whether to compress on the phone,
+   and how storage is paid for once B2's free 10 GB fills up.
+5. **Task list per category** is up to ~278 items (CULINARY). Needs a search
+   box in the task picker; confirm that is acceptable.
+6. **Which other roles get this UI later** (HR/ops employees, other
+   departments) and whether they will also be limited to uploads.
+7. **Weak site network.** Retry/queue for failed uploads in v1, or later.
+
+### Suggested build order (each step tested before the next, per section 7 step 5)
+
+1. Schema: `User.phone`, optional email, PIN, `SITE_SUPERVISOR`, `ProjectMember`, `Document.taskId`.
+2. Admin: create supervisor with phone + PIN + project assignment.
+3. Phone + PIN login and the `/m` project list (access control first).
+4. Category → task picker (read-only) for one project.
+5. Upload with presigned B2 URL, Document link, status change, audit.
+6. Verify end to end in a real browser on a phone-sized viewport, including a
+   negative test: supervisor cannot open an unassigned project.

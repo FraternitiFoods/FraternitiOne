@@ -37,7 +37,11 @@ export async function writeAuditEvent(
     data: {
       projectId: rest.projectId ?? null,
       actorId: actor.id,
-      actorEmail: actor.email,
+      // AuditEvent.actorEmail is a required denormalized snapshot (NFR-06 —
+      // immutable even if the User row later changes). A phone-only
+      // SITE_SUPERVISOR (plan.md section 16) has no email, so fall back to an
+      // explicit placeholder rather than writing an empty string.
+      actorEmail: actor.email ?? "(no email on file)",
       actorName: actor.name,
       actorRole: actor.role,
       entityType: rest.entityType,

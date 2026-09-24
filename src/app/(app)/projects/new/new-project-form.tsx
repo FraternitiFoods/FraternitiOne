@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type PersonOption = { id: string; name: string; email: string };
+type PersonOption = { id: string; name: string; email: string | null };
 
 export function NewProjectForm({
   franchisees,
@@ -31,7 +31,7 @@ export function NewProjectForm({
   // matching SelectItem's children automatically. Build id -> label maps
   // for the two people selects below.
   const franchiseeLabels = Object.fromEntries(
-    franchisees.map((f) => [f.id, `${f.name} (${f.email})`])
+    franchisees.map((f) => [f.id, `${f.name} (${f.email ?? "no email"})`])
   );
   const ownerLabels = Object.fromEntries(internalUsers.map((u) => [u.id, u.name]));
 
@@ -65,7 +65,7 @@ export function NewProjectForm({
             <SelectContent>
               {franchisees.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
-                  {f.name} ({f.email})
+                  {f.name} ({f.email ?? "no email"})
                 </SelectItem>
               ))}
             </SelectContent>

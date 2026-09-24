@@ -9,8 +9,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider           = "postgresql"
+  url                = env("DATABASE_URL")
+  // `migrate dev`'s shadow-database step needs CREATEDB, which the native
+  // Postgres role backing DATABASE_URL (port 5432) doesn't have. Point it at
+  // the docker-compose Postgres instead (port 5433, docker-compose.yml) —
+  // that container's user is a real superuser, and it's already sitting
+  // there unused for exactly this workflow.
+  shadowDatabaseUrl  = env("SHADOW_DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -31,6 +37,13 @@ enum Role {
   OPERATIONS
   MANAGEMENT
   ADMIN
+  /// plan.md section 16 (mobile field interface, decided 2026-09-24) — site
+  /// supervisors upload progress photos/videos from `/m`. Access is scoped by
+  /// `ProjectMember`, not the department matrix in role-departments.ts (a
+  /// supervisor spans every BOQ trade on their assigned site, not one
+  /// department), and login is phone+PIN, not email+password (see
+  /// `User.phone`/`User.pinHash` below).
+  SITE_SUPERVISOR
 }
 
 /// Department taxonomy, used both for Task.module (SRD section 8: "task_id,
@@ -145,15 +158,27 @@ enum PasswordResetPurpose {
 /// permissions, contact, project access". Organisation/multi-org access is
 /// out of scope for Phase 1 (single-brand, plan.md section 5 decisions).
 model User {
-  id           String      @id @default(cuid())
-  name         String
-  email        String      @unique
+  id    String  @id @default(cuid())
+  name  String
+  /// Optional as of plan.md section 16 (2026-09-24): a site supervisor logs
+  /// in with phone+PIN and may have no email at all. Still unique when
+  /// present — Postgres allows multiple NULLs under a unique constraint, so
+  /// this doesn't collide across supervisor accounts. Every pre-existing user
+  /// keeps their email untouched; this migration only widens the column.
+  email String? @unique
+  /// Site-supervisor login credential (plan.md section 16, decision 7: phone
+  /// + PIN, no OTP/SMS). Hashed the same way as passwordHash — never store
+  /// the raw PIN. Null for every non-supervisor account.
+  phone String? @unique
   /// Nullable: an admin-created user (see PasswordResetToken, purpose
   /// INVITE) starts with no password until they follow their setup link.
   /// login() treats a null hash the same as a wrong password — no separate
   /// error message — so this doesn't become a way to enumerate which emails
   /// exist in the system.
   passwordHash String?
+  /// Hashed PIN for phone-based supervisor login (plan.md section 16). Same
+  /// null-means-"can't log in yet" discipline as passwordHash.
+  pinHash      String?
   role         Role
   department   Department?
   isActive     Boolean     @default(true)
@@ -170,6 +195,9 @@ model User {
   auditEvents         AuditEvent[]
   passwordResetTokens PasswordResetToken[]
   stageOverridesDone  ProjectStageOverride[]
+  /// Which projects a SITE_SUPERVISOR can see/act on (plan.md section 16,
+  /// decision 3: "one project = one chat"). Empty for every other role.
+  projectMemberships  ProjectMember[]
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -234,9 +262,28 @@ model FranchiseProject {
   documents      Document[]
   auditEvents    AuditEvent[]
   stageOverrides ProjectStageOverride[]
+  members        ProjectMember[]
 
   @@index([franchiseeId])
   @@index([ownerId])
+}
+
+/// Site-supervisor project access (plan.md section 16, decision 3: "one
+/// project = one chat"). Presence of a row = that supervisor can see and
+/// upload against that project on `/m`; this is the server-side gate on
+/// every `/m` page/action, checked in addition to (not instead of) the
+/// existing role-based checks in permissions.ts — a supervisor spanning
+/// several sites gets one row per site, not a role-wide grant.
+model ProjectMember {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, projectId])
+  @@index([projectId])
 }
 
 /// SRD section 8: "Task — task_id, project_id, module, owner, due, priority,
@@ -290,7 +337,11 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  comments TaskComment[]
+  comments  TaskComment[]
+  /// Reverses plan.md section 9 decision #5 ("no Document.taskId FK") — see
+  /// plan.md section 16, decision 9: a supervisor's upload attaches straight
+  /// to the Task it's evidence for, not just the project.
+  documents Document[]
 
   @@index([projectId])
   @@index([ownerId])
@@ -341,6 +392,14 @@ model Document {
   id          String           @id @default(cuid())
   projectId   String
   project     FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Nullable (plan.md section 16, decision 9 — reverses section 9 decision
+  /// #5): set when a document is evidence for one specific Task (e.g. a
+  /// supervisor's upload from `/m`). Null for the pre-existing project-level
+  /// vault documents, which are unaffected. `onDelete: SetNull` so a document
+  /// is never deleted just because the Task it was attached to is gone — it
+  /// falls back to being a plain project-level document.
+  taskId      String?
+  task        Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
   category    Department
   title       String
   version     Int              @default(1)
@@ -368,6 +427,7 @@ model Document {
 
   @@index([projectId])
   @@index([category])
+  @@index([taskId])
 }
 
 /// SRD section 8: "AuditEvent — event_id, user, project, object, action,

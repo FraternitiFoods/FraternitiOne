@@ -13,7 +13,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-export function DeleteUserButton({ userId, name, email }: { userId: string; name: string; email: string }) {
+export function DeleteUserButton({ userId, name, email }: { userId: string; name: string; email: string | null }) {
   const [open, setOpen] = useState(false);
   const boundAction = deleteUser.bind(null, userId);
   const [state, action, pending] = useActionState<DeleteUserState, FormData>(boundAction, undefined);
@@ -39,7 +39,7 @@ export function DeleteUserButton({ userId, name, email }: { userId: string; name
         <DialogHeader>
           <DialogTitle>Delete {name}?</DialogTitle>
           <DialogDescription>
-            {email} will be permanently removed. This can&apos;t be undone.
+            {email ?? "This account"} will be permanently removed. This can&apos;t be undone.
           </DialogDescription>
         </DialogHeader>
 

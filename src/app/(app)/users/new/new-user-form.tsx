@@ -17,7 +17,12 @@ import { ROLE_LABELS, DEPARTMENT_LABELS } from "@/lib/format";
 import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
 import type { Role, Department } from "@prisma/client";
 
-const ROLES = Object.keys(ROLE_LABELS) as Role[];
+// SITE_SUPERVISOR is excluded here for now — this form only collects
+// email+password (plan.md section 16, build order step 2 extends it with
+// phone+PIN+project assignment, the fields a supervisor account actually
+// needs to log in). Creating one through this form today would leave both
+// null and permanently locked out.
+const ROLES = (Object.keys(ROLE_LABELS) as Role[]).filter((r) => r !== "SITE_SUPERVISOR");
 const DEPARTMENTS = Object.keys(DEPARTMENT_LABELS) as Department[];
 
 export function NewUserForm() {

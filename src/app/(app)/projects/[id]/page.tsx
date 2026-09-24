@@ -93,7 +93,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         subtitle={
           <>
             {formatProjectCode(project.seq)} · {project.format} · Franchisee: {project.franchisee.name} (
-            {project.franchisee.email})
+            {project.franchisee.email ?? "no email on file"})
           </>
         }
         isFranchisee={user.role === "FRANCHISEE"}
