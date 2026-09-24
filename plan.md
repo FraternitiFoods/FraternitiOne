@@ -923,6 +923,12 @@ moves on its own. No sync job, no second system.
 9. **Reversal of section 9, decision #5:** "no `Document.taskId` FK" is now
    overturned. A `Document` can belong to a specific Task (nullable FK, so the
    existing project-level vault documents keep working).
+10. **PIN is 6 digits, admin-set at creation (confirmed 2026-09-24, during
+    build order step 2).** No 4-digit option. The admin sets it directly in
+    `/users/new` — there's no invite-link equivalent for a phone-only
+    account, given decisions 7/8 already rule out OTP/SMS/email/notifications
+    as a delivery channel. Lockout-after-N-tries is separate and still open
+    (see "NOT DECIDED YET", deferred to build order step 3).
 
 ### What gets built (new vs reused)
 
@@ -993,6 +999,68 @@ working, nothing backfilled/touched). What shipped:
   Build order step 2 extends `/users/new` with the fields a supervisor
   actually needs, at which point it gets re-added there.
 
+### Suggested build order — step 2 shipped (2026-09-24)
+
+**Admin: create supervisor with phone + PIN + project assignment.** Asked
+about the one open item this step actually needed (PIN length, item 3 of
+"NOT DECIDED YET") before writing code — **confirmed: 6 digits** (plan.md's
+own recommendation over 4). The rest of item 3 (lockout, who sets the first
+PIN) wasn't asked yet: the top-level task instructions explicitly say to ask
+about brute-force/lockout at step 3 (login), and "who sets the first PIN" turns
+out not to be a real open choice — decisions 7/8 (no OTP/SMS, no
+notifications) leave no channel to send a "set your PIN" link through, so the
+admin setting it directly at creation is the only workable mechanism, not a
+judgment call.
+
+What shipped:
+- `/users/new`'s role dropdown now includes **Site Supervisor** (excluded in
+  step 1). Picking it swaps the form: Phone number, PIN + Confirm PIN (both
+  6-digit, `pattern="[0-9]{6}"`), and a checkbox list of every project to
+  assign — replacing the Email + Department fields the other roles use.
+  Submitting requires at least one project checked.
+- `createUser` (`src/app/(app)/users/actions.ts`) branches on role via a
+  `superRefine`-validated schema, then hands off to a new `createSupervisor`:
+  creates the `User` (phone + hashed PIN, no email/department) and every
+  `ProjectMember` row in one transaction, writing a `User` CREATE AuditEvent
+  and one `ProjectMember` CREATE AuditEvent per project assigned — the
+  section 4 audit rule technically only mandates this for Task/Document/
+  Project, but a security-scoping grant like this seemed worth the same
+  discipline, flagging in case that's more than wanted.
+- `hashPin`/`verifyPin` added to `lib/auth.ts` — same bcrypt mechanism as
+  passwords, named separately so call sites read as what they are.
+- **Reset PIN** (`reset-pin-button.tsx` + `resetPin` action): admin-only,
+  the phone+PIN equivalent of "Resend invite" — sets a new PIN immediately
+  (no link to send), writes a `User` UPDATE AuditEvent. Shown on `/users` for
+  active supervisor rows.
+- `/users` list: Email column renamed "Contact" (shows email or phone),
+  status badge no longer shows "Invite pending" for supervisors (they're
+  never mid-invite — the PIN is live the moment they're created), and a new
+  column shows each supervisor's assigned projects (or non-supervisors'
+  department, as before).
+- **Editing a supervisor is explicitly not supported yet** — `/users/[id]/edit`
+  shows a plain message instead of the (email-only) edit form for
+  `SITE_SUPERVISOR` rows, and `updateUser` rejects it server-side too
+  (both directions: can't edit an existing supervisor through this form, and
+  can't turn any other role into one through it). This wasn't asked about —
+  it's outside what step 2's own scope ("create... with phone + PIN + project
+  assignment") covers, and building a second, phone-based edit form felt like
+  scope creep for this step. Flagging in case project (re)assignment after
+  creation turns out to be needed sooner than expected — there's currently no
+  way to add/remove a supervisor's projects short of deleting and recreating
+  the account.
+
+Verified against the real dev DB and a real browser session (Playwright,
+Admin login): mismatched PIN/confirm-PIN correctly blocked with "PINs don't
+match." and no row created; a real supervisor created successfully with one
+project assigned (confirmed via DB: the `User`, `ProjectMember`, and all
+three expected `AuditEvent` rows — `User` CREATE, `ProjectMember` CREATE,
+`User` UPDATE from the PIN reset that followed — landed exactly as designed);
+Reset PIN succeeded end to end; a duplicate-phone attempt was correctly
+rejected with no second row created. `tsc --noEmit` and `eslint` both clean.
+Test account deleted afterward through the app's own delete-user feature
+(confirmed 0 rows left in the DB). No `/m` pages exist yet (step 3), so no
+phone-viewport check this step either.
+
 **Two unplanned things found and fixed along the way, worth knowing about:**
 1. **An orphaned, uncommitted migration already existed on the real dev DB.**
    `_prisma_migrations` had a row for `20260922000000_add_document_task_link`
@@ -1040,9 +1108,13 @@ confirm dialog — all 200s, zero console/page errors. No `/m` pages exist yet
 2. **Work not on the list.** Since tagging is mandatory, what does a supervisor
    do when the work matches no task? Options: an admin adds the task first, or
    an "Other" task per category. Not decided.
-3. **PIN rules.** Length (recommend 6 digits, not 4), lockout after N wrong
-   tries, who sets the first PIN (Admin sets, supervisor changes on first
-   login?).
+3. **PIN rules — partially resolved 2026-09-24.** Length: **6 digits**,
+   confirmed. Who sets the first PIN: **the admin, directly, at creation** —
+   not really an open choice once decisions 7/8 (no OTP/SMS, no
+   notifications) are taken as given, since there's no channel to send a
+   "set your own PIN" link through. **Still open:** lockout after N wrong
+   tries — deferred on purpose to build order step 3 (login), per this
+   section's own top-level instructions.
 4. **Video limits.** Max file size/length, whether to compress on the phone,
    and how storage is paid for once B2's free 10 GB fills up.
 5. **Task list per category** is up to ~278 items (CULINARY). Needs a search
