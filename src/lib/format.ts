@@ -89,6 +89,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   MANAGEMENT: "Management",
   ADMIN: "System Admin",
   SITE_SUPERVISOR: "Site Supervisor",
+  KYC_REVIEWER: "KYC Reviewer",
+  LOI_PREPARER: "LOI Preparer",
+  COMPANY_SIGNATORY: "Company Signatory",
 };
 
 export const DEPARTMENT_LABELS: Record<Department, string> = {

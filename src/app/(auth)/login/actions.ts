@@ -15,6 +15,13 @@ const LoginSchema = z.object({
 
 export type LoginState = { error?: string } | undefined;
 
+// P1-02: email+password login needs rate limiting and lockout. Mirrors the
+// mobile PIN pattern already shipped (plan.md section 16) — 5 consecutive
+// wrong attempts locks the account for 15 minutes, resetting on a correct
+// login. Step 0 confirmed no such lockout existed before this section.
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
 export async function login(
   _prevState: LoginState,
   formData: FormData
@@ -33,17 +40,37 @@ export async function login(
 
   const user = await db.user.findUnique({ where: { email } });
 
-  // Same error for "no such user", "wrong password", and "account has no
-  // password set yet" (admin-created user who hasn't followed their invite
-  // link) — don't leak which one it was.
-  if (
-    !user ||
-    !user.isActive ||
-    !user.passwordHash ||
-    !(await verifyPassword(password, user.passwordHash))
-  ) {
+  if (user && user.loginLockedUntil && user.loginLockedUntil > new Date()) {
+    return {
+      error: "Too many wrong attempts. This account is locked for 15 minutes — try again later.",
+    };
+  }
+
+  const passwordOk =
+    !!user && !!user.isActive && !!user.passwordHash && (await verifyPassword(password, user.passwordHash));
+
+  if (!passwordOk) {
+    // Only a real, active, password-set account can actually be locked out —
+    // an unknown email still gets the same generic message (don't leak which
+    // case it was), but there's no row to increment a counter on.
+    if (user && user.isActive) {
+      const attempts = user.loginFailedAttempts + 1;
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          loginFailedAttempts: attempts,
+          loginLockedUntil:
+            attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null,
+        },
+      });
+    }
     return { error: "Incorrect email or password." };
   }
+
+  await db.user.update({
+    where: { id: user.id },
+    data: { loginFailedAttempts: 0, loginLockedUntil: null },
+  });
 
   await createSession(user.id);
 
@@ -59,6 +86,21 @@ export async function login(
     entityId: user.id,
     action: "LOGIN",
   });
+
+  // plan.md section 17: a FRANCHISEE with a non-complete StoreOnboarding
+  // lands on their onboarding portal instead of /dashboard. A franchisee
+  // with no onboarding record (existing seeded/real users) or a completed
+  // one keeps today's behaviour exactly — no regression to existing
+  // franchisee/project flows.
+  if (user.role === "FRANCHISEE" && (!next || next === "/dashboard")) {
+    const onboarding = await db.storeOnboarding.findUnique({
+      where: { franchiseeUserId: user.id },
+      select: { onboardingStatus: true },
+    });
+    if (onboarding && onboarding.onboardingStatus !== "LOI_COMPLETE") {
+      redirect("/onboarding");
+    }
+  }
 
   const destination = next && next.startsWith("/") ? next : "/dashboard";
   redirect(destination);

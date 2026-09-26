@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Buffer } from "node:buffer";
 
 // Backblaze B2 (S3-compatible API) — switched from the originally planned
 // Cloudflare R2 (plan.md section 5) because R2 requires a credit card on
@@ -147,4 +148,37 @@ export function buildDocumentKey(params: {
 }): string {
   const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `${params.projectId}/${params.category}/${randomUUID()}-${safeName}`;
+}
+
+/**
+ * plan.md section 17: onboarding files (KYC, payment receipts) must NOT
+ * share the Document vault's `{projectId}/...` key space — the project may
+ * not exist yet, and these files need a much tighter access rule. Own prefix
+ * per the section's own instruction: `onboarding/{onboardingId}/...`.
+ */
+export function buildOnboardingFileKey(params: {
+  onboardingId: string;
+  kind: string;
+  fileName: string;
+}): string {
+  const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `onboarding/${params.onboardingId}/${params.kind}/${randomUUID()}-${safeName}`;
+}
+
+/**
+ * Downloads an object's full bytes — used by the malware-scan step
+ * (src/lib/onboarding/malware-scan.ts) right after a presigned-PUT upload
+ * lands in B2, since the server never sees the bytes during the upload
+ * itself (that's the whole point of a presigned PUT — see section 16's own
+ * note on why uploads don't proxy through a Next.js route). Onboarding files
+ * are capped at 10MB (P1-04), so a full synchronous download here is cheap.
+ */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  const result = await getClient(endpoint, keyId, applicationKey).send(
+    new GetObjectCommand({ Bucket: bucketName, Key: key })
+  );
+  const byteArray = await result.Body?.transformToByteArray();
+  if (!byteArray) throw new Error(`Object body empty for key: ${key}`);
+  return Buffer.from(byteArray);
 }

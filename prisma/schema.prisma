@@ -44,6 +44,15 @@ enum Role {
   /// department), and login is phone+PIN, not email+password (see
   /// `User.phone`/`User.pinHash` below).
   SITE_SUPERVISOR
+  /// plan.md section 17 (onboarding/KYC/LOI e-sign, 2026-09-25) — the four
+  /// roles decision 4 calls for, minus ACCOUNTS/SALES/ADMIN/FRANCHISEE which
+  /// already existed and are reused as-is (checked first, per that decision's
+  /// own instruction). Narrow permission functions in permissions.ts gate
+  /// each — none of them are granted via hasFullOverride (MANAGEMENT must not
+  /// inherit these).
+  KYC_REVIEWER
+  LOI_PREPARER
+  COMPANY_SIGNATORY
 }
 
 /// Department taxonomy, used both for Task.module (SRD section 8: "task_id,
@@ -151,6 +160,90 @@ enum PasswordResetPurpose {
 }
 
 // ---------------------------------------------------------------------------
+// plan.md section 17 — franchise onboarding, KYC, payment proof, LOI e-sign
+// (added 2026-09-25). New enums grouped here, new models grouped at the end
+// of this file, so the Phase 1 core model above (section 4) stays untouched
+// and easy to diff against.
+// ---------------------------------------------------------------------------
+
+enum OnboardingAccountStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+/// StoreOnboarding.onboardingStatus — section 17 "State machines". Owned by
+/// src/lib/onboarding/state.ts; nothing else may set this field directly.
+enum OnboardingStatus {
+  AWAITING_KYC_PAYMENT
+  UNDER_REVIEW
+  CORRECTIONS_REQUESTED
+  READY_FOR_SIGNATURE
+  FRANCHISE_SIGNED
+  LOI_COMPLETE
+}
+
+enum OnboardingEntityType {
+  INDIVIDUAL
+  COMPANY
+}
+
+/// Shared by KycSubmission.status and PaymentSubmission.status — section 17
+/// "KYC and Payment review (independent)" describes one shape for both.
+enum ReviewStatus {
+  MISSING
+  SUBMITTED
+  CHANGES_REQUESTED
+  ACCEPTED
+}
+
+enum OnboardingFileKind {
+  PAN
+  AADHAAR
+  COMPANY_DOC
+  SIGNATORY_PROOF
+  PAYMENT_RECEIPT
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  ERROR
+}
+
+enum LoiVersionStatus {
+  DRAFT
+  RELEASED
+  SENT_FOR_SIGNING
+  FRANCHISE_SIGNED
+  SIGNED
+  VOID
+}
+
+enum EsignSignerRole {
+  FRANCHISEE
+  COMPANY
+}
+
+enum EsignAttemptStatus {
+  NOT_STARTED
+  SENT
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum EsignProcessingStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  IGNORED_LATE
+}
+
+// ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
@@ -186,6 +279,13 @@ model User {
   /// no lockout — out of scope for this section).
   pinFailedAttempts Int       @default(0)
   pinLockedUntil    DateTime?
+  /// Brute-force lockout for email+password login (plan.md section 17,
+  /// P1-02) — same shape as pinFailedAttempts/pinLockedUntil above (5 wrong
+  /// attempts -> 15 min lock, reset on success). Kept as its own pair of
+  /// columns rather than reusing the PIN ones since they gate different login
+  /// paths and must not interfere with each other.
+  loginFailedAttempts Int       @default(0)
+  loginLockedUntil    DateTime?
   role         Role
   department   Department?
   isActive     Boolean     @default(true)
@@ -205,6 +305,16 @@ model User {
   /// Which projects a SITE_SUPERVISOR can see/act on (plan.md section 16,
   /// decision 3: "one project = one chat"). Empty for every other role.
   projectMemberships  ProjectMember[]
+
+  // --- plan.md section 17 (onboarding/KYC/LOI e-sign) ---
+  onboardingAsFranchisee   StoreOnboarding?      @relation("OnboardingFranchisee")
+  onboardingAsSalesOwner   StoreOnboarding[]     @relation("OnboardingSalesOwner")
+  onboardingFilesUploaded  OnboardingFile[]      @relation("OnboardingFileUploadedBy")
+  kycSubmissionsReviewed   KycSubmission[]       @relation("KycReviewer")
+  paymentsUploaded         PaymentSubmission[]   @relation("PaymentUploadedBy")
+  paymentsReviewed         PaymentSubmission[]   @relation("PaymentReviewer")
+  loiVersionsReleased      LoiVersion[]          @relation("LoiReleasedBy")
+  esignAttemptsAsSigner    EsignAttempt[]        @relation("EsignSignerUser")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -270,6 +380,10 @@ model FranchiseProject {
   auditEvents    AuditEvent[]
   stageOverrides ProjectStageOverride[]
   members        ProjectMember[]
+  /// Set only when this project was created via onboarding conversion
+  /// (plan.md section 17) — null for every project created directly through
+  /// /projects/new (existing Bengaluru/Ashok Vihar included).
+  onboarding     StoreOnboarding?
 
   @@index([franchiseeId])
   @@index([ownerId])
@@ -449,6 +563,14 @@ model AuditEvent {
   id        String            @id @default(cuid())
   projectId String?
   project   FranchiseProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// plan.md section 17: AuditEvent needs to exist during onboarding, before
+  /// a FranchiseProject does — projectId and onboardingId are both nullable,
+  /// app code requires at least one (writeAuditEvent enforces this; Prisma
+  /// has no declarative "at least one of" constraint). Once conversion
+  /// happens, prior onboarding-scoped events keep pointing at the onboarding
+  /// record, not retargeted at the new project.
+  onboardingId String?
+  onboarding   StoreOnboarding? @relation(fields: [onboardingId], references: [id], onDelete: SetNull)
 
   actorId    String?
   actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
@@ -469,7 +591,323 @@ model AuditEvent {
   createdAt DateTime @default(now())
 
   @@index([projectId])
+  @@index([onboardingId])
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// plan.md section 17 — franchise onboarding, KYC, payment proof, LOI e-sign.
+// ---------------------------------------------------------------------------
+
+/// SRD section 4 minimum field list. One row per store being onboarded — the
+/// "waiting room" before a FranchiseProject exists (see section 17's mental
+/// model in the build log above). Deliberately separate from FranchiseProject
+/// so a store that never completes signing never pollutes dashboards/
+/// Action Centre/task seeding (~963 tasks) — see plan.md section 17 intro.
+model StoreOnboarding {
+  id  String @id @default(cuid())
+  /// Backs the human code (e.g. "F1-0001"), formatted at the application
+  /// layer — same pattern as FranchiseProject.seq/formatProjectCode.
+  seq Int    @unique @default(autoincrement())
+
+  /// Pre-generated on create, reused verbatim as FranchiseProject.id at LOI
+  /// Complete (see step 0's "what I found" note) — never a duplicate because
+  /// it's reserved once, here, and only ever consumed once.
+  reservedProjectId String @unique
+
+  brand              String               @default("Tulsi")
+  format             String
+  proposedLocation   String
+  legalApplicantName String
+  entityType         OnboardingEntityType
+  contactPhone       String
+
+  /// Canonical, lower-cased, unique — P1-01's "one Workspace email = one
+  /// store = one franchisee user" hard rule.
+  workspaceEmail  String  @unique
+  /// NOT DECIDED YET item 5 fallback (section 17): if the franchisee doesn't
+  /// actually control the Workspace mailbox, invite mail goes here instead —
+  /// nothing else about the flow changes. Null means "use workspaceEmail".
+  invitationEmail String?
+
+  franchiseeUserId String @unique
+  franchisee       User   @relation("OnboardingFranchisee", fields: [franchiseeUserId], references: [id])
+  salesOwnerId     String
+  salesOwner       User   @relation("OnboardingSalesOwner", fields: [salesOwnerId], references: [id])
+
+  accountStatus    OnboardingAccountStatus @default(INVITED)
+  onboardingStatus OnboardingStatus        @default(AWAITING_KYC_PAYMENT)
+  /// Denormalized mirror of the current KycSubmission/PaymentSubmission
+  /// status, kept in sync transactionally by src/lib/onboarding/state.ts
+  /// whenever the underlying row's status changes — a query convenience for
+  /// list/queue screens, not the source of truth (the submission rows are).
+  kycStatus        ReviewStatus            @default(MISSING)
+  paymentStatus    ReviewStatus            @default(MISSING)
+
+  /// Paise (integer), never float — per section 17's own data-model note.
+  expectedAmount Int
+
+  currentLoiVersionId String?     @unique
+  currentLoiVersion   LoiVersion? @relation("CurrentLoiVersion", fields: [currentLoiVersionId], references: [id], onDelete: SetNull)
+
+  /// Set once, at conversion (LOI Complete) — idempotency guard for the
+  /// conversion transaction (section 17: "skip if already set").
+  projectId String?           @unique
+  project   FranchiseProject? @relation(fields: [projectId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  files       OnboardingFile[]
+  kyc         KycSubmission?
+  payments    PaymentSubmission[]
+  loiVersions LoiVersion[]        @relation("OnboardingLoiVersions")
+  auditEvents AuditEvent[]
+
+  @@index([franchiseeUserId])
+  @@index([salesOwnerId])
+}
+
+/// KYC + payment-receipt files. Deliberately NOT the Document table (which
+/// requires a project_id that doesn't exist yet, and is visible through the
+/// department matrix — far too broad for Aadhaar). B2 key prefix
+/// `onboarding/{onboardingId}/...`. Re-upload supersedes, never deletes —
+/// same version-chain shape as Document.
+model OnboardingFile {
+  id           String             @id @default(cuid())
+  onboardingId String
+  onboarding   StoreOnboarding    @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  kind         OnboardingFileKind
+  version      Int                @default(1)
+
+  supersedesId String?         @unique
+  supersedes   OnboardingFile? @relation("OnboardingFileVersion", fields: [supersedesId], references: [id])
+  supersededBy OnboardingFile? @relation("OnboardingFileVersion")
+
+  b2Key     String
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  sha256    String
+
+  /// Nothing is reviewable until CLEAN (P1-04) — enforced in the review
+  /// queue queries/actions, not just the UI.
+  scanStatus ScanStatus @default(PENDING)
+  scanError  String?
+
+  uploadedById String
+  uploadedBy   User   @relation("OnboardingFileUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  paymentSubmission PaymentSubmission?
+
+  @@index([onboardingId])
+  @@index([kind])
+}
+
+/// One row per onboarding (status cycles; the file version history lives on
+/// OnboardingFile, not here). PAN number is stored encrypted at app level
+/// (AES-GCM) — only panNumberEncrypted is on this row; decryption + display
+/// is gated to KYC_REVIEWER/ADMIN in application code, never in a query
+/// result sent to any other role.
+model KycSubmission {
+  id           String          @id @default(cuid())
+  onboardingId String          @unique
+  onboarding   StoreOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+
+  panNumberEncrypted String?
+  panName            String?
+  /// Only ever the last 4 digits — never the full Aadhaar number, never
+  /// OTP/biometric (P1-04, section 17's own hard rule).
+  aadhaarHolderName  String?
+  aadhaarLast4       String?
+
+  // COMPANY entityType fields (section 17 KYC list default, kyc-requirements.ts).
+  companyName             String?
+  companyPan              String?
+  authorisedSignatoryName String?
+
+  status         ReviewStatus @default(MISSING)
+  reviewerId     String?
+  reviewer       User?        @relation("KycReviewer", fields: [reviewerId], references: [id])
+  decisionReason String?
+  decidedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A resubmission creates a new row (section 17: "history is kept") — the
+/// most recent row for an onboarding is the active one. Flags are computed at
+/// submission time and stored so the review queue doesn't need to
+/// re-derive them per render.
+model PaymentSubmission {
+  id             String          @id @default(cuid())
+  onboardingId   String
+  onboarding     StoreOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  declaredAmount Int
+  paymentDate    DateTime
+  mode           String
+  utr            String
+
+  receiptFileId String         @unique
+  receiptFile   OnboardingFile @relation(fields: [receiptFileId], references: [id])
+
+  status         ReviewStatus @default(SUBMITTED)
+  verifiedAmount Int?
+  verifiedDate   DateTime?
+  bankReference  String?
+
+  accountsActorId String?
+  accountsActor   User?   @relation("PaymentReviewer", fields: [accountsActorId], references: [id])
+  decisionReason  String?
+  decidedAt       DateTime?
+
+  /// DUPLICATE_UTR / AMOUNT_MISMATCH (section 17, P1-05) — a string array
+  /// rather than a new enum-per-flag table, since flags are just informational
+  /// badges on the review item, not a workflow of their own.
+  flags String[] @default([])
+
+  uploadedById String
+  uploadedBy   User   @relation("PaymentUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([onboardingId])
+  @@index([utr])
+}
+
+/// Admin-managed template versions. The placeholder shipped with this build
+/// has isApproved=false, isPlaceholder=true — see LOI engine notes.
+model LoiTemplate {
+  id             String  @id @default(cuid())
+  version        Int
+  name           String
+  body           String
+  requiredFields Json
+  isApproved     Boolean @default(false)
+  isPlaceholder  Boolean @default(true)
+  createdAt      DateTime @default(now())
+
+  loiVersions LoiVersion[]
+
+  @@unique([name, version])
+}
+
+/// One row per LOI revision for a store (1.0, 1.1, ...). Released versions
+/// are immutable — any change is a new row, never an in-place edit past
+/// RELEASED (section 17: "A released version is immutable").
+model LoiVersion {
+  id              String          @id @default(cuid())
+  onboardingId    String
+  onboarding      StoreOnboarding @relation("OnboardingLoiVersions", fields: [onboardingId], references: [id], onDelete: Cascade)
+  /// "1.0", "1.1", ... — string, not a float, so "1.10" can't collide with
+  /// float-precision surprises against "1.1".
+  versionNo       String
+  templateId      String
+  template        LoiTemplate     @relation(fields: [templateId], references: [id])
+  templateVersion Int
+  values          Json
+
+  pdfB2Key  String
+  /// Immutable once written — the hash of the exact bytes sent for signing
+  /// (section 17: "PDF sha256 stored").
+  pdfSha256 String
+
+  status LoiVersionStatus @default(DRAFT)
+
+  generatedAt DateTime  @default(now())
+  releasedById String?
+  releasedBy   User?     @relation("LoiReleasedBy", fields: [releasedById], references: [id])
+  releasedAt   DateTime?
+
+  signedPdfB2Key   String?
+  signedPdfSha256  String?
+  certificateB2Key String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  currentFor StoreOnboarding? @relation("CurrentLoiVersion")
+  attempts   EsignAttempt[]
+
+  @@unique([onboardingId, versionNo])
+  @@index([onboardingId])
+}
+
+/// One row per signer per LOI version, restartable (attemptNo increments on
+/// retry after FAILED/EXPIRED/CANCELLED — section 17: "A failed/expired
+/// attempt can be restarted as attempt n+1").
+model EsignAttempt {
+  id                 String              @id @default(cuid())
+  loiVersionId       String
+  loiVersion         LoiVersion          @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
+  signerRole         EsignSignerRole
+  attemptNo          Int
+  provider           String
+  providerEnvelopeId String?
+  /// The hash of the PDF actually sent for this attempt — checked against
+  /// the webhook's reported hash before ever marking COMPLETED.
+  pdfSha256          String
+  status             EsignAttemptStatus  @default(NOT_STARTED)
+  signerUserId       String?
+  signerUser         User?               @relation("EsignSignerUser", fields: [signerUserId], references: [id])
+  sentAt             DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  events EsignEvent[]
+
+  @@index([loiVersionId])
+  @@index([providerEnvelopeId])
+  @@unique([loiVersionId, signerRole, attemptNo])
+}
+
+/// Raw webhook/reconcile log — the idempotency ledger. Unique
+/// (provider, providerEventId) is what makes a duplicate delivery a no-op
+/// (P1-10, "duplicate and late webhooks harmless").
+model EsignEvent {
+  id               String                 @id @default(cuid())
+  attemptId        String?
+  attempt          EsignAttempt?          @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  provider         String
+  providerEventId  String
+  envelopeId       String
+  payload          Json
+  signatureValid   Boolean
+  processingStatus EsignProcessingStatus  @default(RECEIVED)
+  error            String?
+  receivedAt       DateTime               @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([envelopeId])
+  @@index([attemptId])
+}
+
+/// Seeded set of 8 keys (section 17 "Emails"), editable by Admin.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  subject   String
+  body      String
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+/// "Failure of email/notification never fails the business action" (P1-14) —
+/// every send attempt (success or failure) is logged here instead.
+model NotificationLog {
+  id           String   @id @default(cuid())
+  templateKey  String
+  to           String
+  onboardingId String?
+  status       String
+  error        String?
+  sentAt       DateTime @default(now())
+
+  @@index([onboardingId])
 }
