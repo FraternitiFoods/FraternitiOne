@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { canManageOnboardingAdmin } from "@/lib/permissions";
 import { writeAuditEvent } from "@/lib/audit";
-import { DEFAULT_EMAIL_TEMPLATES, type EmailKey } from "@/lib/onboarding/notify";
+import type { EmailKey } from "@/lib/onboarding/notify";
 
 export type UpdateTemplateState = { error?: string; success?: boolean } | undefined;
 
@@ -49,8 +49,4 @@ export async function updateEmailTemplate(
 
   revalidatePath("/admin/email-templates");
   return { success: true };
-}
-
-export function defaultsFor(key: EmailKey) {
-  return DEFAULT_EMAIL_TEMPLATES[key];
 }
