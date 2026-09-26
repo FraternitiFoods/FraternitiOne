@@ -6,10 +6,8 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
 import { canCreateProject, canDeleteProject, canEditProjectHeader, canViewProject } from "@/lib/permissions";
-import { ProjectHealth, type Department, type LifecycleStage } from "@prisma/client";
-import { LIFECYCLE_STAGE_ORDER } from "@/lib/format";
-import { STAGE_DEFAULT_DEPARTMENT, STAGE_TASK_TEMPLATES } from "@/lib/lifecycle-stage-tasks";
-import { OPS_PROGRESS_TASK_TEMPLATES } from "@/lib/ops-progress-tasks";
+import { ProjectHealth } from "@prisma/client";
+import { createProjectWithSeedTasks } from "@/lib/project-seed";
 
 const CreateProjectSchema = z.object({
   brand: z.string().trim().min(1).default("Tulsi"),
@@ -54,121 +52,17 @@ export async function createProject(
   }
 
   const project = await db.$transaction(async (tx) => {
-    const created = await tx.franchiseProject.create({
-      data: {
-        brand: data.brand,
-        format: data.format,
-        location: data.location,
-        franchiseeId: data.franchiseeId,
-        ownerId: data.ownerId,
-        targetOpening,
-        nextAction: data.nextAction || null,
-        health: ProjectHealth.GREEN,
-      },
-    });
-
-    await writeAuditEvent(tx, {
+    return createProjectWithSeedTasks(tx, {
+      brand: data.brand,
+      format: data.format,
+      location: data.location,
+      franchiseeId: data.franchiseeId,
+      ownerId: data.ownerId,
+      targetOpening,
+      nextAction: data.nextAction,
+      health: ProjectHealth.GREEN,
       actor: user,
-      projectId: created.id,
-      entityType: "FranchiseProject",
-      entityId: created.id,
-      action: "CREATE",
-      newValue: {
-        brand: created.brand,
-        format: created.format,
-        location: created.location,
-        franchiseeId: created.franchiseeId,
-        ownerId: created.ownerId,
-        targetOpening: created.targetOpening.toISOString(),
-      },
     });
-
-    // Every project starts with the full lifecycle checklist pre-seeded
-    // (franchise lifecycle tracker sheet) — the project's Owner is the
-    // default task owner since there's no per-department roster yet — plus
-    // the BOQ/Ops master checklist (plan.md section 9, 2026-09-21), tagged
-    // with `category` (the trade/dept roll-up axis) on top of the same
-    // `module`/`lifecycleStage` fields. Ops items continue each stage's
-    // `order` sequence after its checklist items, same "ad-hoc appends to
-    // the end" convention as manually-added tasks.
-    type SeedTaskInput = {
-      module: Department;
-      category: string | null;
-      lifecycleStage: LifecycleStage;
-      order: number;
-      title: string;
-    };
-
-    const seedTasks: SeedTaskInput[] = [];
-    const nextOrderByStage = new Map<LifecycleStage, number>();
-    for (const stage of LIFECYCLE_STAGE_ORDER) {
-      STAGE_TASK_TEMPLATES[stage].forEach((title, order) => {
-        seedTasks.push({
-          module: STAGE_DEFAULT_DEPARTMENT[stage],
-          category: null,
-          lifecycleStage: stage,
-          order,
-          title,
-        });
-      });
-      nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
-    }
-    for (const item of OPS_PROGRESS_TASK_TEMPLATES) {
-      const order = nextOrderByStage.get(item.lifecycleStage) ?? 0;
-      nextOrderByStage.set(item.lifecycleStage, order + 1);
-      seedTasks.push({
-        module: item.module,
-        category: item.category,
-        lifecycleStage: item.lifecycleStage,
-        order,
-        title: item.title,
-      });
-    }
-
-    // ~720 tasks/site (158 checklist + 566 BOQ/Ops) — a per-row create +
-    // per-row writeAuditEvent loop here means ~1,450 sequential round trips
-    // inside one interactive transaction, comfortably over Prisma's default
-    // 5s transaction timeout. createManyAndReturn/createMany cut that to 2
-    // round trips; the AuditEvent shape below mirrors writeAuditEvent's
-    // exactly (still one CREATE event per Task, per plan.md section 4 — not
-    // optional), just issued in bulk instead of through that helper.
-    const createdTasks = await tx.task.createManyAndReturn({
-      data: seedTasks.map((t) => ({
-        projectId: created.id,
-        module: t.module,
-        category: t.category,
-        lifecycleStage: t.lifecycleStage,
-        order: t.order,
-        title: t.title,
-        ownerId: created.ownerId,
-        createdById: user.id,
-      })),
-    });
-
-    await tx.auditEvent.createMany({
-      data: createdTasks.map((task) => ({
-        projectId: created.id,
-        actorId: user.id,
-        actorEmail: user.email ?? "(no email on file)",
-        actorName: user.name,
-        actorRole: user.role,
-        entityType: "Task",
-        entityId: task.id,
-        action: "CREATE" as const,
-        newValue: {
-          module: task.module,
-          category: task.category,
-          lifecycleStage: task.lifecycleStage,
-          title: task.title,
-          ownerId: task.ownerId,
-          status: task.status,
-        },
-        reference: "Auto-seeded from lifecycle checklist",
-        source: "web",
-      })),
-    });
-
-    return created;
   });
 
   redirect(`/projects/${project.id}`);

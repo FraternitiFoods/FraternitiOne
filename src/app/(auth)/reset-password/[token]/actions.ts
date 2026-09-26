@@ -51,7 +51,11 @@ export async function setPassword(
 
   const updatedUser = await db.user.update({
     where: { id: validated.userId },
-    data: { passwordHash },
+    // Also clears any active login lockout (P1-02, plan.md section 17) —
+    // same discipline as the admin's PIN reset clearing a PIN lockout
+    // (plan.md section 16): successfully completing this flow proves control
+    // of the account, so there's no reason to leave a stale lock in place.
+    data: { passwordHash, loginFailedAttempts: 0, loginLockedUntil: null },
   });
 
   await writeAuditEvent(db, {

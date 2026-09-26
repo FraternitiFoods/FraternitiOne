@@ -199,3 +199,54 @@ export function canActOnDocument(
   if (user.role === "FRANCHISEE" && project.franchiseeId === user.id) return true;
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// plan.md section 17 — franchise onboarding, KYC, payment proof, LOI e-sign.
+// Deliberately NOT routed through hasFullOverride: decision 4 is explicit
+// that MANAGEMENT's override must not grant any of these powers. Same narrow
+// pattern as canManageUsers/canForceCompleteStage/canDeleteProject above.
+// ---------------------------------------------------------------------------
+
+const ONBOARDING_CREATOR_ROLES: Role[] = ["SALES", "ADMIN"];
+
+export function canCreateOnboarding(user: Pick<CurrentUser, "role">): boolean {
+  return ONBOARDING_CREATOR_ROLES.includes(user.role);
+}
+
+export function canReviewKyc(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "KYC_REVIEWER" || user.role === "ADMIN";
+}
+
+/** ACCOUNTS is an existing role, reused as-is for payment review (section 17 decision 4). */
+export function canReviewPayment(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ACCOUNTS" || user.role === "ADMIN";
+}
+
+export function canPrepareLoi(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "LOI_PREPARER" || user.role === "ADMIN";
+}
+
+export function canCompanySign(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "COMPANY_SIGNATORY" || user.role === "ADMIN";
+}
+
+/** Admin-only: assign roles/signatory, manage template versions, retry/reconcile e-sign. */
+export function canManageOnboardingAdmin(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
+ * Franchisee reaches only its own onboarding (P1-03); every internal
+ * onboarding role (Sales, Admin, KYC Reviewer, Accounts, LOI Preparer,
+ * Company Signatory) sees the full list to work their queue — same shape as
+ * canViewProject's own reasoning.
+ */
+export function canViewOnboarding(
+  user: Pick<CurrentUser, "role" | "id">,
+  onboarding: { franchiseeUserId: string }
+): boolean {
+  if (user.role === "FRANCHISEE") {
+    return onboarding.franchiseeUserId === user.id;
+  }
+  return true;
+}
