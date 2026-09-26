@@ -19,7 +19,12 @@ function getFrom(): string {
 }
 
 function getAppUrl(): string {
-  return process.env.APP_URL || "http://localhost:3000";
+  if (process.env.APP_URL) return process.env.APP_URL;
+  // Vercel sets this per-deployment (prod and previews alike) but without a
+  // scheme, so preview links still resolve to the deployment they were sent
+  // from even when APP_URL isn't configured for that environment.
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
 }
 
 /**
