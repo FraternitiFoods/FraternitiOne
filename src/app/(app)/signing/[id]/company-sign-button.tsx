@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { startCompanyEsign } from "../actions";
 import { Button } from "@/components/ui/button";
 
 export function CompanySignButton({ onboardingId, canSign }: { onboardingId: string; canSign: boolean }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function handleClick() {
     setPending(true);
@@ -15,6 +17,11 @@ export function CompanySignButton({ onboardingId, canSign }: { onboardingId: str
     setPending(false);
     if ("error" in result) {
       setError(result.error);
+      return;
+    }
+    if (result.autoCompleted) {
+      window.alert("You have esigned!!");
+      router.refresh();
       return;
     }
     window.location.href = result.signingUrl;

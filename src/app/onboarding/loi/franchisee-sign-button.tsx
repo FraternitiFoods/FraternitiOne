@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { startFranchiseeEsign } from "./actions";
 import { Button } from "@/components/ui/button";
 import type { EsignAttemptStatus } from "@prisma/client";
@@ -16,6 +17,7 @@ export function FranchiseeSignButton({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   if (attemptStatus === "SENT" || attemptStatus === "IN_PROGRESS") {
     return <p className="text-sm text-muted-foreground">Signing in progress — check back shortly.</p>;
@@ -31,6 +33,11 @@ export function FranchiseeSignButton({
     setPending(false);
     if ("error" in result) {
       setError(result.error);
+      return;
+    }
+    if (result.autoCompleted) {
+      window.alert("You have esigned!!");
+      router.refresh();
       return;
     }
     window.location.href = result.signingUrl;

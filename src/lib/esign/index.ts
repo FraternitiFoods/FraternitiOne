@@ -12,12 +12,19 @@ export type { EsignProvider } from "./provider";
  * webhook route, reconcile) goes through this function, never a concrete
  * provider class directly, so there's exactly one gate to bypass, not one
  * per call site.
+ *
+ * ALLOW_MOCK_ESIGN_IN_PRODUCTION is an explicit, temporary opt-out for
+ * pre-launch testing on the production deployment before a real vendor is
+ * wired up — same shape as ALLOW_PLACEHOLDER_LOI. Every mock-signed artifact
+ * still gets watermarked "TEST SIGNATURE — NOT LEGALLY BINDING" regardless of
+ * this flag, so it can never be confused for a real signature later.
  */
 export function getEsignProvider(): EsignProvider {
   const providerName = process.env.ESIGN_PROVIDER || "mock";
 
   if (providerName === "mock") {
-    if (process.env.NODE_ENV === "production") {
+    const allowInProduction = process.env.ALLOW_MOCK_ESIGN_IN_PRODUCTION === "true";
+    if (process.env.NODE_ENV === "production" && !allowInProduction) {
       throw new Error(
         "ESIGN_PROVIDER=mock cannot run in production. Configure a real e-sign vendor before releasing an LOI for signing."
       );

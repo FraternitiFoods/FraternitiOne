@@ -1,13 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { canFranchiseeSignNow, transitionLoiVersion, transitionEsignAttempt } from "@/lib/onboarding/state";
-import { getEsignProvider } from "@/lib/esign";
+import { getEsignProvider, currentProviderName } from "@/lib/esign";
+import { processEsignEvent } from "@/lib/esign/webhook-processor";
 import { getObjectBuffer } from "@/lib/storage";
 
-export type StartSignResult = { error: string } | { signingUrl: string };
+export type StartSignResult = { error: string } | { signingUrl: string; autoCompleted?: boolean };
 
 /**
  * P1-07: the button is disabled in the UI, but this server-side re-check
@@ -132,6 +134,21 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
     }
   });
 
+  // Testing convenience while no real vendor is wired up yet: skip the
+  // separate /dev/mock-esign page and immediately fire the same
+  // processEsignEvent() a real webhook would trigger, through the exact same
+  // code path the Admin manual-reconcile action uses. Still fully watermarked
+  // "TEST SIGNATURE — NOT LEGALLY BINDING" downstream; getEsignProvider()
+  // above is the only gate on whether mock can even run in production.
+  let autoCompleted = false;
+  if (currentProviderName() === "mock") {
+    await processEsignEvent(
+      { eventId: randomUUID(), envelopeId, status: "COMPLETED", documentSha256: version.pdfSha256 },
+      true
+    );
+    autoCompleted = true;
+  }
+
   revalidatePath("/onboarding/loi");
-  return { signingUrl };
+  return { signingUrl, autoCompleted };
 }
