@@ -300,7 +300,18 @@ describe("canCompanySignNow", () => {
     ).toBe(true);
   });
 
-  it("blocks a non-COMPANY_SIGNATORY actor", () => {
+  it("blocks an actor who is neither COMPANY_SIGNATORY nor ADMIN", () => {
+    expect(
+      canCompanySignNow({
+        actorRole: "SALES",
+        franchiseAttempt: completedFranchiseAttempt,
+        loiVersion,
+        latestCompanyAttemptStatus: null,
+      })
+    ).toBe(false);
+  });
+
+  it("allows ADMIN to stand in as company signatory (permissions.ts's canCompanySign already allows ADMIN page access)", () => {
     expect(
       canCompanySignNow({
         actorRole: "ADMIN",
@@ -308,7 +319,7 @@ describe("canCompanySignNow", () => {
         loiVersion,
         latestCompanyAttemptStatus: null,
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("blocks when there is no franchisee attempt yet", () => {

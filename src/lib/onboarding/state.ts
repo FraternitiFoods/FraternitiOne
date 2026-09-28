@@ -212,9 +212,14 @@ export type CompanySignGateInput = {
   latestCompanyAttemptStatus: EsignAttemptStatus | null;
 };
 
-/** P1-08: franchisee COMPLETED on the same version+hash ∧ actor role COMPANY_SIGNATORY ∧ no open company attempt. */
+/**
+ * P1-08: franchisee COMPLETED on the same version+hash ∧ actor role
+ * COMPANY_SIGNATORY (or ADMIN, standing in until a dedicated signatory
+ * account exists — same allowance permissions.ts's canCompanySign already
+ * makes for page access) ∧ no open company attempt.
+ */
 export function canCompanySignNow(input: CompanySignGateInput): boolean {
-  if (input.actorRole !== "COMPANY_SIGNATORY") return false;
+  if (input.actorRole !== "COMPANY_SIGNATORY" && input.actorRole !== "ADMIN") return false;
   if (!input.franchiseAttempt) return false;
   if (input.franchiseAttempt.status !== "COMPLETED") return false;
   if (input.franchiseAttempt.loiVersionId !== input.loiVersion.id) return false;
