@@ -13,7 +13,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+function getAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
 export const metadata: Metadata = {
+  metadataBase: new URL(getAppUrl()),
   title: "Fraterniti One",
   description: "Franchise lifecycle management — one project, one source of truth.",
 };
