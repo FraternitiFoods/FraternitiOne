@@ -440,7 +440,7 @@ async function main() {
       await db.storeOnboarding.delete({ where: { id: oid } }).catch(() => {});
       await deleteB2Prefix(`onboarding/${oid}/`).catch((e) => console.error("B2 cleanup failed for", oid, e));
     }
-    await db.loiTemplate.deleteMany({ where: { name: "Default Placeholder LOI" } }).catch(() => {});
+    await db.loiTemplate.deleteMany({ where: { name: "Tulsi Standard LOI" } }).catch(() => {});
     for (const uid of cleanupUserIds) {
       await db.user.delete({ where: { id: uid } }).catch(() => {});
     }

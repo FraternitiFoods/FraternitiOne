@@ -6,7 +6,6 @@ import { generateLoiVersion, releaseLoiVersion, updateExpectedAmount } from "./l
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { LOI_VERSION_STATUS_LABELS, formatMoney } from "@/lib/onboarding/format";
 import type { LoiVersionStatus, OnboardingEntityType } from "@prisma/client";
@@ -101,13 +100,9 @@ export function LoiPrepPanel({
               {entityType === "COMPANY" && (
                 <div className="space-y-1 sm:col-span-2">
                   <Label htmlFor="companyName">Company name</Label>
-                  <Input id="companyName" name="companyName" />
+                  <Input id="companyName" name="companyName" required />
                 </div>
               )}
-              <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="commercialTerms">Commercial terms</Label>
-                <Textarea id="commercialTerms" name="commercialTerms" required />
-              </div>
             </div>
             {genState?.error && (
               <p className="text-sm text-destructive" role="alert">

@@ -8,7 +8,7 @@ import { canPrepareLoi, canManageOnboardingAdmin } from "@/lib/permissions";
 import { transitionLoiVersion, transitionReview, transitionEsignAttempt } from "@/lib/onboarding/state";
 import { recomputeOnboardingStatus } from "@/lib/onboarding/recompute";
 import { notifyIfNewlyReadyForSignature } from "@/lib/onboarding/notify";
-import { getActiveLoiTemplate, nextVersionNo, amountToWords } from "@/lib/onboarding/loi-template";
+import { getActiveLoiTemplate, nextVersionNo, amountToWords, maskAadhaar } from "@/lib/onboarding/loi-template";
 import { generateLoiPdf, validateLoiValues, type LoiValues } from "@/lib/onboarding/loi-pdf";
 import { uploadDocument } from "@/lib/storage";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
@@ -35,18 +35,17 @@ export async function generateLoiVersion(
 
   const onboarding = await db.storeOnboarding.findUnique({
     where: { id: onboardingId },
-    include: { currentLoiVersion: { include: { attempts: true } } },
+    include: { currentLoiVersion: { include: { attempts: true } }, kyc: true },
   });
   if (!onboarding) return { error: "Onboarding not found." };
 
   const territory = String(formData.get("territory") || "").trim();
-  const commercialTerms = String(formData.get("commercialTerms") || "").trim();
   const companyName = String(formData.get("companyName") || "").trim();
   const feeAmountRupeesRaw = formData.get("feeAmountRupees");
   const feeAmountRupees = feeAmountRupeesRaw ? Number(feeAmountRupeesRaw) : onboarding.expectedAmount / 100;
 
-  if (!territory || !commercialTerms) {
-    return { error: "Territory and commercial terms are required." };
+  if (!territory) {
+    return { error: "Territory is required." };
   }
   if (!feeAmountRupees || feeAmountRupees <= 0) {
     return { error: "Fee amount must be greater than zero." };
@@ -54,16 +53,15 @@ export async function generateLoiVersion(
 
   const template = await getActiveLoiTemplate();
 
+  const name =
+    onboarding.entityType === "COMPANY" ? companyName || "company TBD" : onboarding.legalApplicantName;
+
   const values: LoiValues = {
-    brand: onboarding.brand,
-    storeLocation: onboarding.proposedLocation,
-    applicantLegalName: onboarding.legalApplicantName,
-    entityType: onboarding.entityType,
-    companyName: onboarding.entityType === "COMPANY" ? ` (${companyName || "company TBD"})` : "",
-    feeAmount: `₹${feeAmountRupees.toLocaleString("en-IN")}`,
+    name,
+    aadhaarMasked: maskAadhaar(onboarding.kyc?.aadhaarLast4 ?? null),
+    feeAmount: feeAmountRupees.toLocaleString("en-IN"),
     feeInWords: amountToWords(feeAmountRupees),
     territory,
-    commercialTerms,
     issueDate: new Date().toLocaleDateString("en-IN"),
     versionNo: nextVersionNo(onboarding.currentLoiVersion?.versionNo ?? null),
   };
@@ -73,7 +71,6 @@ export async function generateLoiVersion(
 
   const { pdfBytes, sha256 } = await generateLoiPdf({
     templateBody: template.body,
-    isPlaceholder: template.isPlaceholder,
     values,
   });
 
