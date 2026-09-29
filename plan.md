@@ -1758,8 +1758,17 @@ sign-off** — say so in the final report.
 ### NOT DECIDED YET — ask before assuming (working default in brackets)
 
 1. **E-sign vendor, pricing, contract, sandbox** [mock provider; real adapter
-   later].
-2. **Approved LOI template text and variable fields** [placeholder template].
+   later]. Still open — `ESIGN_PROVIDER=mock` is what's wired up, watermarked
+   "TEST SIGNATURE — NOT LEGALLY BINDING" on everything it produces. One
+   change since this was first written: a new `ALLOW_MOCK_ESIGN_IN_PRODUCTION`
+   env flag (2026-09-28, see build log below) lets mock run on the production
+   deployment too, for pre-launch testing before a real vendor is live — off
+   by default, must be unset again before any real franchisee signature needs
+   to be enforceable.
+2. **Approved LOI template text and variable fields** — **resolved
+   2026-09-28.** `src/lib/onboarding/loi-template.ts` now ships the real,
+   director-signed Tulsi LOI text verbatim (not a placeholder) —
+   `isApproved: true`, `isPlaceholder: false`. See build log below.
 3. **KYC document list per entity type** [INDIVIDUAL: PAN + Aadhaar.
    COMPANY: PAN + Aadhaar of signatory + certificate of incorporation +
    company PAN + board resolution / authorisation letter. Configurable in one
@@ -1882,3 +1891,154 @@ after signing started (new LOI version) both work the same way: they don't
 mutate history, they re-open exactly the one gate that's now stale and leave
 everything already completed (old signed PDFs, prior review decisions)
 untouched and re-fetchable.
+
+**Steps 1-8 — shipped, logged retroactively (2026-09-29).** This entry is a
+reconstruction, same as sections 12/13 — the commits below landed without a
+build-log write-up at the time, which is exactly the gap section 13's own
+"process note" flagged and asked not to repeat. Reconstructed from
+`prisma/schema.prisma`, `permissions.ts`, and every file under
+`src/lib/onboarding/`, `src/app/onboarding/`, `src/app/(app)/store-onboarding/`,
+`src/app/(app)/reviews/`, `src/app/(app)/signing/`, `src/lib/esign/`, and
+`src/app/api/webhooks/esign/` — not from a fresh verification pass, so **no
+claim below should be read as "click-tested this session."**
+
+Commits covered: `b710c83` "loi signoff flow" (2026-09-26, the commit that
+also wrote this section's build order/Definition of Done/NOT DECIDED YET
+above — it shipped the code for steps 1-8 in the same commit but never logged
+the results), `727d9b9` "loi template" (2026-09-28), `61557a7` "esign mock
+flow" (2026-09-28), `4691e70` "company sign mock flow" (2026-09-28).
+
+- **Step 1 (schema + roles + permissions + state machine) — done.** Migration
+  in `b710c83` adds every enum/model this section's data model called for
+  (`StoreOnboarding`, `KycSubmission`, `PaymentSubmission`, `OnboardingFile`,
+  `LoiVersion`, `LoiTemplate`, `EsignAttempt`, `EsignProcessingEvent`,
+  `NotificationLog`, `EmailTemplate`) plus the three new roles
+  (`KYC_REVIEWER`, `LOI_PREPARER`, `COMPANY_SIGNATORY`) and
+  `AuditEvent.onboardingId` (nullable, alongside the existing nullable
+  `projectId`, app-level "at least one" enforcement per step 0's own note).
+  `permissions.ts` gates every new action with its own narrow, role-list-only
+  function (`canCreateOnboarding`, `canReviewKyc`, `canReviewPayment`,
+  `canPrepareLoi`, `canCompanySign`, `canViewOnboarding`) — none routed
+  through `hasFullOverride`, matching decision 4. `src/lib/onboarding/state.ts`
+  implements all five state machines (Account, Review, LoiVersion,
+  EsignAttempt, plus the derived `OnboardingStatus`) and both sign-gate
+  functions (`canFranchiseeSignNow`, `canCompanySignNow`) as pure functions,
+  with unit tests in `state.test.ts` (extended again in `4691e70`, see below).
+- **Step 2 (provisioning + login) — done.** `/store-onboarding/new` →
+  `createOnboarding` (`store-onboarding/actions.ts`) enforces P1-01 (one
+  Workspace email = one store = one franchisee user) by checking both
+  `StoreOnboarding.workspaceEmail` and `User.email` for a collision before
+  creating anything, inside a transaction, with a `P2002` fallback in case of
+  a race; reserves the eventual `FranchiseProject` id up front
+  (`generateReservedProjectId`) and reuses the existing invite-email
+  mechanism. P1-02 (web-login lockout) added `User.loginFailedAttempts` /
+  `loginLockedUntil` to `(auth)/login/actions.ts` — same 5-attempts/15-minute
+  shape as the mobile PIN lockout (section 16 step 3), a separate pair of
+  columns so the two login paths can't interfere with each other.
+- **Step 3 (franchisee portal + uploads) — done.** `src/app/onboarding/`
+  (documents, layout, page) plus `src/lib/onboarding/malware-scan.ts` — a real
+  (not stubbed) `basic` scanner: magic-byte match against the declared MIME
+  type, plus an EICAR-string check, so the reject path is genuinely
+  exercisable. `isProductionWithoutRealScanner()` is meant to drive an Admin
+  warning banner in production until a real scanner (open item 9) is wired
+  in — worth confirming that banner actually renders somewhere; not traced
+  during this reconstruction.
+- **Step 4 (review queues) — done.** `src/app/(app)/reviews/actions.ts` —
+  `decideKyc`/`decidePayment`, both requiring a non-empty reason on
+  `REQUEST_CHANGES` (P1-13) and both driving `transitionReview` +
+  `recomputeOnboardingStatus` inside one transaction. P1-05 (no
+  self-approval) is enforced on payment review (`payment.uploadedById ===
+  user.id` check) — worth double-checking the same guard exists on the KYC
+  side, since `decideKyc` as read during this reconstruction did not show an
+  equivalent uploader-vs-reviewer check.
+- **Step 5 (LOI engine) — done, and materially revised in `727d9b9`.** The
+  original `b710c83` LOI template was a placeholder (per this section's own
+  "NOT DECIDED YET" #2 at the time). `727d9b9` replaced it with the real,
+  approved Tulsi LOI — transcribed from a director-signed reference PDF
+  (`Tulsi LOI Format.pdf`, gitignored, not committed) into
+  `loi-template.ts` (`isApproved: true`, `isPlaceholder: false`), added a
+  logo/brand-asset file (`loi-assets.ts`), and reworked `loi-pdf.ts`'s
+  renderer (+301/-more lines) to lay out the approved clause structure
+  (§TITLE/§FIELDS/§INTRO/§DEFS/... section markers). This also changed the
+  LOI's actual field set: the free-text "commercial terms" textarea on
+  `loi-prep-panel.tsx` was removed (the approved template has fixed clauses,
+  not freeform terms), and the franchisee's masked Aadhaar
+  (`maskAadhaar(kyc.aadhaarLast4)`) is now one of the values baked into the
+  PDF. **This is a live, user-facing content change worth flagging to Apoorv
+  explicitly** — the LOI a franchisee actually signs now reads differently
+  than whatever was reviewed (if anything was) against the placeholder.
+- **Step 6 (e-sign) — done, and extended twice on 2026-09-28.** `b710c83`
+  shipped the adapter (`src/lib/esign/`, `getEsignProvider()` as the single
+  gate — refuses `ESIGN_PROVIDER=mock` in production unless explicitly
+  overridden), `MockProvider`, the `/dev/mock-esign/[envelopeId]` dev signing
+  page, the webhook route (`api/webhooks/esign`, signature-verified,
+  idempotent via `EsignProcessingEvent`, always 200s once recorded so a
+  provider won't retry-storm a logged event), `/signing` (franchisee +
+  company sign pages) and `/admin/esign-events` (manual reconcile for a
+  failed/missed webhook, P1-10). Both later commits are testing-convenience
+  additions, not new capability: `61557a7` added `ALLOW_MOCK_ESIGN_IN_
+  PRODUCTION` (env-gated, watermark-preserving — see NOT DECIDED YET #1
+  above) and made both `startFranchiseeEsign`/`startCompanyEsign` call
+  `processEsignEvent` directly (same code path the real webhook and the
+  admin reconcile action use) instead of requiring a trip through
+  `/dev/mock-esign` when `ESIGN_PROVIDER=mock` — surfaced to the user as a
+  `window.alert("You have esigned!!")`. `4691e70` widened
+  `canCompanySignNow`'s actor check from `COMPANY_SIGNATORY`-only to also
+  accept `ADMIN`, matching `permissions.ts`'s `canCompanySign` (which already
+  let ADMIN reach the signing page) — closes a gap where an ADMIN could open
+  `/signing/[id]` but the gate function would still reject the actual sign
+  action; test coverage for this was added to `state.test.ts` in the same
+  commit.
+- **Step 7 (completion + conversion) — done.** `src/lib/onboarding/
+  conversion.ts` — one transaction, idempotent (`if (onboarding.projectId)
+  return { converted: false }`), calls the shared `createProjectWithSeedTasks`
+  (not a reimplementation, per step 0's own instruction), files the signed
+  LOI + certificate as `Document` rows under the new project (category
+  Legal), and writes the project/document/onboarding-update audit trail.
+  Triggered from the webhook processor the instant company-sign completes —
+  never from a user-facing action directly.
+- **Step 8 (emails + template admin) — done; hardening/mobile-responsive pass
+  status unconfirmed.** `src/lib/onboarding/notify.ts` sends all eight
+  section-17 email keys via Resend, self-seeding `EmailTemplate` rows on
+  first send (editable after that at `/admin/email-templates`, per the same
+  file's own comment), and logs every attempt — success or failure — to
+  `NotificationLog` rather than throwing (P1-14: a failed email must never
+  fail the business action). **Not confirmed during this reconstruction**:
+  whether a responsive-mobile pass was actually done on the new onboarding
+  screens (this step's own scope explicitly includes it, "SRD: same actions
+  on mobile") — no commit message or code comment claims this was done.
+- **Step 9 (end-to-end verification) — NOT confirmed done; this is the real
+  gap.** `scripts/tmp-e2e-onboarding.ts` exists and its shape matches this
+  section's own Definition of Done closely (creates KYC/Accounts/LOI-
+  preparer/Company-signatory/second-franchisee test users, drives a real
+  Playwright browser, cleans up B2 objects and DB rows afterward) — but
+  nothing in the commit history, plan.md, or the script's own output confirms
+  it was actually **run to a passing result** on real infrastructure, the
+  way sections 9-11 and 14-16 each explicitly logged (pass/fail counts, DB
+  confirmation, zero console errors, artifact cleanup verified). Until that
+  run happens and its result is logged here, section 17 should be treated as
+  **code-complete but unverified**, not shipped — this is the concrete next
+  step, not a formality.
+
+**Also unlogged, unrelated to section 17** — five small commits between
+`b710c83` and now that this reconstruction is also filling in, since none of
+them touched plan.md either: `b9c815e` favicon updated; `12b1bdd` added
+`opengraph-image.png` for WhatsApp/social link previews; `cb9d25d` added
+`themeColor`/OG meta tags to `layout.tsx` for the WhatsApp preview card;
+`a7751c3` excluded `opengraph-image.png` from `proxy.ts`'s auth-gate matcher
+(crawlers were being redirected to `/login` instead of getting the image).
+Plus three infra-only fixes already partly covered by section 12's pattern:
+`3a2f2c2` synced `pnpm-lock.yaml` (playwright/vitest/pdf-lib/server-only had
+been added to `package.json` without it), `3106132` made the password-reset
+link fall back to `VERCEL_URL` when `APP_URL` is unset (production reset
+emails had been linking to `localhost:3000`), and `a9590e5` fixed a prod
+build break (a non-async export from a `"use server"` file) and excluded
+`scripts/` from the production typecheck.
+
+**Process note, again:** this is the second time this file has needed a
+same-day reconstruction sweep (first time was section 13, 2026-09-23) because
+real feature commits — including one that shipped most of this entire
+section — landed without a build-log entry alongside them. The habit section
+13 asked for still isn't sticking; worth treating "update plan.md in the same
+session" as a hard requirement for section 17's remaining work (step 9 and
+whatever comes after), not a nice-to-have.
