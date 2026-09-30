@@ -17,16 +17,22 @@ type PersonOption = { id: string; name: string; email: string | null };
 
 export function NewOnboardingForm({
   salesOwners,
+  existingFranchisees,
   defaultSalesOwnerId,
 }: {
   salesOwners: PersonOption[];
+  existingFranchisees: PersonOption[];
   defaultSalesOwnerId?: string;
 }) {
   const [state, action, pending] = useActionState(createOnboarding, undefined);
   const [entityType, setEntityType] = useState("INDIVIDUAL");
+  const [accountMode, setAccountMode] = useState<"new" | "existing">("new");
 
   const salesOwnerLabels = Object.fromEntries(
     salesOwners.map((u) => [u.id, `${u.name} (${u.email ?? "no email"})`])
+  );
+  const existingFranchiseeLabels = Object.fromEntries(
+    existingFranchisees.map((u) => [u.id, `${u.name} (${u.email ?? "no email"})`])
   );
 
   return (
@@ -75,30 +81,91 @@ export function NewOnboardingForm({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="franchiseeName">Franchisee name</Label>
-          <Input id="franchiseeName" name="franchiseeName" required />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="contactPhone">Contact phone</Label>
-          <Input id="contactPhone" name="contactPhone" required />
-        </div>
+      <div className="space-y-2">
+        <Label htmlFor="contactPhone">Contact phone</Label>
+        <Input id="contactPhone" name="contactPhone" required />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="workspaceEmail">Workspace email</Label>
-        <Input
-          id="workspaceEmail"
-          name="workspaceEmail"
-          type="email"
-          placeholder="franchisee@tulsi-store.example"
+        <Label htmlFor="accountMode">Franchisee account</Label>
+        <Select
+          name="accountMode"
+          value={accountMode}
+          onValueChange={(value) => setAccountMode(value === "existing" ? "existing" : "new")}
           required
-        />
+        >
+          <SelectTrigger id="accountMode" className="w-full">
+            <SelectValue placeholder="Select account type">
+              {(value: string | null) =>
+                value === "existing" ? "Use existing account" : "Create new account"
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="new">Create new account</SelectItem>
+            <SelectItem value="existing">Use existing account</SelectItem>
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">
-          Canonical login for this franchisee — one Workspace email per store (P1-01).
+          {accountMode === "existing"
+            ? "Attaches a franchisee login that already exists but isn't linked to any store yet — no new account, no second invite."
+            : "Mints a brand-new franchisee login for this store and emails an invite to set it up."}
         </p>
       </div>
+
+      {accountMode === "new" ? (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="franchiseeName">Franchisee name</Label>
+            <Input id="franchiseeName" name="franchiseeName" required />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="workspaceEmail">Workspace email</Label>
+            <Input
+              id="workspaceEmail"
+              name="workspaceEmail"
+              type="email"
+              placeholder="franchisee@tulsi-store.example"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Canonical login for this franchisee — one Workspace email per store (P1-01).
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="existingUserId">Existing franchisee account</Label>
+          {existingFranchisees.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No unlinked franchisee accounts available — create one from Users first, or use
+              &quot;Create new account&quot; above.
+            </p>
+          ) : (
+            <Select name="existingUserId" required>
+              <SelectTrigger id="existingUserId" className="w-full">
+                <SelectValue placeholder="Select existing account">
+                  {(value: string | null) =>
+                    value ? existingFranchiseeLabels[value] : "Select existing account"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {existingFranchisees.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name} ({u.email ?? "no email"})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <p className="text-xs text-muted-foreground">
+            That account&apos;s own name and email become this store&apos;s franchisee name and
+            Workspace email — one franchisee user still maps to exactly one store (P1-01).
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
