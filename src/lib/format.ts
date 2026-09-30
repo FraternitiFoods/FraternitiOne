@@ -6,11 +6,18 @@ import type {
   TaskStatus,
   TaskPriority,
   DocumentStatus,
+  ComplaintCategory,
+  ComplaintStatus,
 } from "@prisma/client";
 
 /** "FR-00001" style human-readable code from FranchiseProject.seq. */
 export function formatProjectCode(seq: number): string {
   return `FR-${String(seq).padStart(5, "0")}`;
+}
+
+/** "CMP-00001" style human-readable code from Complaint.seq. */
+export function formatComplaintCode(seq: number): string {
+  return `CMP-${String(seq).padStart(5, "0")}`;
 }
 
 export function formatDate(date: Date | string | null | undefined): string {
@@ -176,4 +183,26 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   REJECTED: "Rejected",
   EXPIRED: "Expired",
   SUPERSEDED: "Superseded",
+};
+
+export const COMPLAINT_CATEGORY_LABELS: Record<ComplaintCategory, string> = {
+  PROJECT: "Project",
+  CONSTRUCTION: "Construction",
+  INTERIOR: "Interior",
+  EQUIPMENT: "Equipment",
+  SALES: "Sales",
+  BILLING: "Billing",
+  DOCUMENTATION: "Documentation",
+  SUPPORT: "Support",
+  OTHER: "Other",
+};
+
+export const COMPLAINT_STATUS_LABELS: Record<ComplaintStatus, string> = {
+  OPEN: "Open",
+  ASSIGNED: "Assigned",
+  IN_PROGRESS: "In Progress",
+  AWAITING_FRANCHISEE: "Awaiting Franchisee",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+  REOPENED: "Reopened",
 };

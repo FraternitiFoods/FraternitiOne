@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  canActOnComplaint,
   canActOnDocument,
   canActOnTask,
   canDeleteProject,
   canEditProjectHeader,
+  canManageComplaintCategory,
   canViewProject,
   getManageableModules,
 } from "@/lib/permissions";
@@ -33,6 +35,8 @@ import { CategoryTile } from "./category-tile";
 import { DocumentUploadForm } from "./document-upload-form";
 import { DocumentCard } from "./document-card";
 import { DeleteProjectButton } from "./delete-project-button";
+import { ComplaintList } from "@/app/(app)/complaints/complaint-list";
+import { NewComplaintForm } from "@/app/(app)/complaints/new-complaint-form";
 
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
@@ -63,6 +67,17 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         include: { owner: { select: { name: true } } },
         orderBy: [{ category: "asc" }, { createdAt: "desc" }],
       },
+      complaints: {
+        include: {
+          raisedBy: { select: { name: true } },
+          assignedTo: { select: { id: true, name: true } },
+          comments: {
+            include: { author: { select: { name: true } } },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      },
       stageOverrides: true,
     },
   });
@@ -87,6 +102,9 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   const openTasks = total - completed;
   const daysToLaunch = daysUntil(project.targetOpening);
   const overriddenStages = new Set(project.stageOverrides.map((o) => o.stage));
+  const openComplaints = project.complaints.filter(
+    (c) => c.status !== "RESOLVED" && c.status !== "CLOSED"
+  ).length;
   const boqProgress = computeCategoryProgress(project.tasks, "BOQ");
   const opsProgress = computeCategoryProgress(project.tasks, "OPS");
 
@@ -132,9 +150,15 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         >
           Documents
         </a>
+        <a
+          href="#complaints"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Complaints
+        </a>
       </nav>
 
-      <div id="overview" className="grid scroll-mt-16 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div id="overview" className="grid scroll-mt-16 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Site Progress" value={`${progressPct}%`} caption={`${completed}/${total} tasks done`} />
         <StatCard
           label="Open Tasks"
@@ -159,6 +183,12 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                 ? "text-amber-600"
                 : "text-red-600"
           }
+        />
+        <StatCard
+          label="Open Complaints"
+          value={openComplaints}
+          caption={openComplaints > 0 ? "Need attention" : "All clear"}
+          captionClassName={openComplaints > 0 ? "text-amber-600" : "text-emerald-600"}
         />
       </div>
 
@@ -366,6 +396,47 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             </Card>
           </>
         )}
+      </div>
+
+      <div id="complaints" className="scroll-mt-16 space-y-4">
+        <h2 className="text-lg font-semibold">Complaints</h2>
+
+        <ComplaintList
+          complaints={project.complaints.map((complaint) => ({
+            id: complaint.id,
+            seq: complaint.seq,
+            category: complaint.category,
+            subject: complaint.subject,
+            description: complaint.description,
+            priority: complaint.priority,
+            status: complaint.status,
+            raisedBy: complaint.raisedBy,
+            assignedTo: complaint.assignedTo,
+            attachmentFileName: complaint.attachmentFileName,
+            resolutionDate: complaint.resolutionDate ? complaint.resolutionDate.toISOString() : null,
+            createdAt: complaint.createdAt.toISOString(),
+            comments: complaint.comments.map((c) => ({
+              id: c.id,
+              body: c.body,
+              createdAt: c.createdAt.toISOString(),
+              author: c.author,
+            })),
+            projectId: project.id,
+            canAct: canActOnComplaint(user, complaint, project),
+            canAssign: canManageComplaintCategory(user, complaint.category),
+          }))}
+          people={people}
+        />
+
+        <Separator />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Raise a complaint</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <NewComplaintForm projectId={project.id} />
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

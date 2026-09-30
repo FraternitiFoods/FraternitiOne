@@ -24,6 +24,11 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Lifecycle", href: null },
   { label: "Actions", href: "/actions" },
   { label: "Documents", href: "/documents" },
+  // Not part of the original SRD wireframe pack — added the same way
+  // BOQ/Operations were (see the comment below): a Complaint/Support module
+  // adapted from a separate investor-onboarding SRD (see schema.prisma's
+  // ComplaintCategory comment).
+  { label: "Complaints", href: "/complaints" },
   { label: "Payments", href: null },
   { label: "Projects", href: "/projects" },
   // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops

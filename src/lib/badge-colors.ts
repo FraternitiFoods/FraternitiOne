@@ -4,6 +4,7 @@ import type {
   TaskPriority,
   AuditAction,
   DocumentStatus,
+  ComplaintStatus,
 } from "@prisma/client";
 
 /**
@@ -49,6 +50,16 @@ export const DOCUMENT_STATUS_BADGE_CLASS: Record<DocumentStatus, string> = {
   REJECTED: "border-transparent bg-red-100 text-red-700",
   EXPIRED: "border-transparent bg-red-100 text-red-700",
   SUPERSEDED: "border-transparent bg-slate-100 text-slate-400",
+};
+
+export const COMPLAINT_STATUS_BADGE_CLASS: Record<ComplaintStatus, string> = {
+  OPEN: "border-transparent bg-slate-100 text-slate-600",
+  ASSIGNED: "border-transparent bg-blue-100 text-blue-700",
+  IN_PROGRESS: "border-transparent bg-blue-100 text-blue-700",
+  AWAITING_FRANCHISEE: "border-transparent bg-amber-100 text-amber-700",
+  RESOLVED: "border-transparent bg-emerald-100 text-emerald-700",
+  CLOSED: "border-transparent bg-slate-100 text-slate-400",
+  REOPENED: "border-transparent bg-red-100 text-red-700",
 };
 
 export const AUDIT_ACTION_BADGE_CLASS: Record<AuditAction, string> = {

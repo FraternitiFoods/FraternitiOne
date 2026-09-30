@@ -151,6 +151,16 @@ export function buildDocumentKey(params: {
 }
 
 /**
+ * Complaint attachment key — same `{projectId}/...` prefix convention as
+ * `buildDocumentKey`, own subfolder since a complaint attachment isn't part
+ * of the Document Vault's category taxonomy.
+ */
+export function buildComplaintAttachmentKey(params: { projectId: string; fileName: string }): string {
+  const safeName = params.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `${params.projectId}/complaints/${randomUUID()}-${safeName}`;
+}
+
+/**
  * plan.md section 17: onboarding files (KYC, payment receipts) must NOT
  * share the Document vault's `{projectId}/...` key space — the project may
  * not exist yet, and these files need a much tighter access rule. Own prefix

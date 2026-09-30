@@ -141,6 +141,35 @@ enum DocumentStatus {
   SUPERSEDED
 }
 
+/// Complaint/Support module (added post-Phase-1, adapted from the separate
+/// "Fraterniti One" investor-onboarding SRD's section 12 — that document's
+/// "Investor" persona maps to this app's existing FRANCHISEE role/project
+/// scoping, so this reuses Task/Document's project-scoped RBAC pattern rather
+/// than introducing a parallel Investor concept). Matches SRD section 12.3.
+enum ComplaintCategory {
+  PROJECT
+  CONSTRUCTION
+  INTERIOR
+  EQUIPMENT
+  SALES
+  BILLING
+  DOCUMENTATION
+  SUPPORT
+  OTHER
+}
+
+/// SRD section 12.4, "Waiting for Investor" renamed to match this app's
+/// franchisee-facing language (see ComplaintCategory comment above).
+enum ComplaintStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  AWAITING_FRANCHISEE
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
 /// SRD section 8: AuditEvent "action". Kept intentionally small for Phase 1 —
 /// extend as new mutation types are added.
 enum AuditAction {
@@ -299,6 +328,9 @@ model User {
   tasksCreated        Task[]                 @relation("TaskCreatedBy")
   taskComments        TaskComment[]
   documentsOwned      Document[]             @relation("DocumentOwner")
+  complaintsRaised    Complaint[]            @relation("ComplaintRaisedBy")
+  complaintsAssigned  Complaint[]            @relation("ComplaintAssignedTo")
+  complaintComments   ComplaintComment[]
   auditEvents         AuditEvent[]
   passwordResetTokens PasswordResetToken[]
   stageOverridesDone  ProjectStageOverride[]
@@ -377,6 +409,7 @@ model FranchiseProject {
 
   tasks          Task[]
   documents      Document[]
+  complaints     Complaint[]
   auditEvents    AuditEvent[]
   stageOverrides ProjectStageOverride[]
   members        ProjectMember[]
@@ -549,6 +582,69 @@ model Document {
   @@index([projectId])
   @@index([category])
   @@index([taskId])
+}
+
+/// Complaint/Support ticket (see ComplaintCategory comment above for where
+/// this came from). Project-scoped like Task/Document — reuses the same
+/// canViewProject visibility rule and the same category -> Department
+/// RBAC-mapping technique as Task.module (see complaint-categories.ts),
+/// rather than building a parallel permission system.
+model Complaint {
+  id  String @id @default(cuid())
+  /// Backs the human code (e.g. "CMP-00001"), same pattern as
+  /// FranchiseProject.seq/StoreOnboarding.seq.
+  seq Int    @unique @default(autoincrement())
+
+  projectId String
+  project   FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  raisedById String
+  raisedBy   User   @relation("ComplaintRaisedBy", fields: [raisedById], references: [id])
+
+  category    ComplaintCategory
+  subject     String
+  description String
+  priority    TaskPriority      @default(MEDIUM)
+  status      ComplaintStatus   @default(OPEN)
+
+  assignedToId String?
+  assignedTo   User?   @relation("ComplaintAssignedTo", fields: [assignedToId], references: [id])
+
+  /// Single optional attachment (SRD: "Attachment") — stored directly via
+  /// storage.ts (same B2 bucket as Document/OnboardingFile), not through the
+  /// Document table: Document requires a category/department-vault slot that
+  /// doesn't fit a one-off complaint photo, and OnboardingFile is scoped to
+  /// StoreOnboarding only.
+  attachmentFileKey  String?
+  attachmentFileName String?
+  attachmentMimeType String?
+  attachmentFileSize Int?
+
+  resolutionDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments ComplaintComment[]
+
+  @@index([projectId])
+  @@index([status])
+  @@index([category])
+  @@index([assignedToId])
+}
+
+/// Same minimal shape as TaskComment — no threading/mentions, just a flat
+/// timeline of updates on a complaint.
+model ComplaintComment {
+  id          String    @id @default(cuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  body        String
+  createdAt   DateTime  @default(now())
+
+  @@index([complaintId])
 }
 
 /// SRD section 8: "AuditEvent — event_id, user, project, object, action,

@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { Role, Department } from "@prisma/client";
+import type { Role, Department, ComplaintCategory } from "@prisma/client";
 import type { CurrentUser } from "@/lib/session";
 import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
+import { COMPLAINT_CATEGORY_DEPARTMENT } from "@/lib/complaint-categories";
 
 /**
  * Phase 1 RBAC — role-based, module-level (plan.md section 5 decision: "no
@@ -196,6 +197,48 @@ export function canActOnDocument(
 ): boolean {
   if (canManageDocumentCategory(user, document.category)) return true;
   if (document.ownerId === user.id) return true;
+  if (user.role === "FRANCHISEE" && project.franchiseeId === user.id) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Complaint/Support module — see the ComplaintCategory schema comment for
+// where this came from. Mirrors canManageTaskModule/canActOnTask's exact
+// shape via COMPLAINT_CATEGORY_DEPARTMENT rather than a new matrix.
+// ---------------------------------------------------------------------------
+
+/** Can this user create/manage complaints in this category (i.e. handle them as staff)? */
+export function canManageComplaintCategory(
+  user: Pick<CurrentUser, "role">,
+  category: ComplaintCategory
+): boolean {
+  return ownsDepartment(user, COMPLAINT_CATEGORY_DEPARTMENT[category]);
+}
+
+/**
+ * Raising a complaint isn't gated by category ownership — a franchisee
+ * describing a problem doesn't know or care which internal department owns
+ * it. Same visibility gate as everything else project-scoped.
+ */
+export function canCreateComplaint(
+  user: Pick<CurrentUser, "role" | "id">,
+  project: { franchiseeId: string }
+): boolean {
+  return canViewProject(user, project);
+}
+
+/**
+ * Broader than canManageComplaintCategory: also true for whoever it's
+ * currently assigned to, and for the franchisee on their own project —
+ * mirrors canActOnTask's exact shape, gating status updates/comments.
+ */
+export function canActOnComplaint(
+  user: Pick<CurrentUser, "role" | "id">,
+  complaint: { raisedById: string; assignedToId: string | null; category: ComplaintCategory },
+  project: { franchiseeId: string }
+): boolean {
+  if (canManageComplaintCategory(user, complaint.category)) return true;
+  if (complaint.assignedToId === user.id || complaint.raisedById === user.id) return true;
   if (user.role === "FRANCHISEE" && project.franchiseeId === user.id) return true;
   return false;
 }
