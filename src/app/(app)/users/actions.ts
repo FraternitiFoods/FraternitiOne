@@ -13,6 +13,7 @@ import { sendPasswordSetupEmail } from "@/lib/email";
 import { Role, Department, Prisma } from "@prisma/client";
 import { formatProjectCode } from "@/lib/format";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
+import { isApprovedEmailDomain, INVALID_EMAIL_DOMAIN_MESSAGE } from "@/lib/email-domain";
 
 /// plan.md section 16, decision 7 — a SITE_SUPERVISOR logs in with phone+PIN,
 /// not email+password, and has no email channel to receive an invite link
@@ -48,6 +49,8 @@ const CreateUserSchema = z
       }
     } else if (!data.email || !z.string().email().safeParse(data.email).success) {
       ctx.addIssue({ code: "custom", path: ["email"], message: "Enter a valid email." });
+    } else if (!isApprovedEmailDomain(data.email)) {
+      ctx.addIssue({ code: "custom", path: ["email"], message: INVALID_EMAIL_DOMAIN_MESSAGE });
     }
   });
 
@@ -345,7 +348,12 @@ export async function resendInvite(
 
 const UpdateUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
-  email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email({ message: "Enter a valid email." })
+    .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
   // This form is email+password only (no phone/PIN fields) — SITE_SUPERVISOR
   // isn't a valid target here, same reasoning as excluding it from the role
   // dropdown in new-user-form.tsx.

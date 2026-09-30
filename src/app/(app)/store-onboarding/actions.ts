@@ -10,6 +10,7 @@ import { canCreateOnboarding, canManageOnboardingAdmin } from "@/lib/permissions
 import { createPasswordResetToken } from "@/lib/password-reset-tokens";
 import { sendPasswordSetupEmail } from "@/lib/email";
 import { generateReservedProjectId } from "@/lib/onboarding/ids";
+import { isApprovedEmailDomain, INVALID_EMAIL_DOMAIN_MESSAGE } from "@/lib/email-domain";
 import { Prisma } from "@prisma/client";
 
 const CreateOnboardingSchema = z.object({
@@ -24,7 +25,8 @@ const CreateOnboardingSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .email({ message: "Enter a valid Workspace email." }),
+    .email({ message: "Enter a valid Workspace email." })
+    .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
   salesOwnerId: z.string().min(1, "Sales owner is required."),
   expectedAmountRupees: z.coerce.number().positive("Fee amount must be greater than zero."),
 });
