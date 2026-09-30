@@ -74,6 +74,7 @@ export default async function StoreOnboardingListPage() {
                 <TableHead>KYC</TableHead>
                 <TableHead>Payment</TableHead>
                 <TableHead>Fee</TableHead>
+                <TableHead>Project</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -94,6 +95,15 @@ export default async function StoreOnboardingListPage() {
                   <TableCell>{REVIEW_STATUS_LABELS[o.kycStatus]}</TableCell>
                   <TableCell>{REVIEW_STATUS_LABELS[o.paymentStatus]}</TableCell>
                   <TableCell>{formatMoney(o.expectedAmount)}</TableCell>
+                  <TableCell>
+                    {o.projectId ? (
+                      <Link href={`/projects/${o.projectId}`} className="underline underline-offset-4">
+                        View →
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -54,7 +54,18 @@ export default async function StoreOnboardingDetailPage({
             {formatOnboardingCode(onboarding.seq)} — {onboarding.brand} {onboarding.proposedLocation}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Reserved Project ID: <code>{onboarding.reservedProjectId}</code>
+            {onboarding.projectId ? (
+              <>
+                Project:{" "}
+                <Link href={`/projects/${onboarding.projectId}`} className="underline underline-offset-4">
+                  View project →
+                </Link>
+              </>
+            ) : (
+              <>
+                Reserved Project ID: <code>{onboarding.reservedProjectId}</code>
+              </>
+            )}
           </p>
         </div>
         <Badge variant="outline">{ONBOARDING_STATUS_LABELS[onboarding.onboardingStatus]}</Badge>

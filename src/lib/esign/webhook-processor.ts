@@ -137,7 +137,9 @@ async function processWithinTransaction(
 
     const attempt = await tx.esignAttempt.findFirst({
       where: { providerEnvelopeId: parsed.envelopeId },
-      include: { loiVersion: { include: { onboarding: { include: { franchisee: true } } } } },
+      include: {
+        loiVersion: { include: { onboarding: { include: { franchisee: true, salesOwner: true } } } },
+      },
     });
 
     if (!attempt) {
@@ -259,7 +261,9 @@ async function processWithinTransaction(
 }
 
 type AttemptWithLoi = Prisma.EsignAttemptGetPayload<{
-  include: { loiVersion: { include: { onboarding: { include: { franchisee: true } } } } };
+  include: {
+    loiVersion: { include: { onboarding: { include: { franchisee: true; salesOwner: true } } } };
+  };
 }>;
 
 async function handleAttemptCompleted(
@@ -341,17 +345,28 @@ async function handleAttemptCompleted(
   // Both signers complete — convert to FranchiseProject now (idempotent,
   // skip if already converted; see conversion.ts).
   const conversion = await convertOnboardingToProject(tx, onboardingId);
-  if (conversion.converted && conversion.franchiseeEmail) {
-    notifications.push({
-      key: "loi_complete",
-      to: conversion.franchiseeEmail,
-      onboardingId,
-      vars: {
-        name: conversion.franchiseeName,
-        store: conversion.storeLabel,
-        link: `${process.env.APP_URL || "http://localhost:3000"}/projects/${conversion.projectId}`,
-      },
-    });
+  if (conversion.converted) {
+    const link = `${process.env.APP_URL || "http://localhost:3000"}/projects/${conversion.projectId}`;
+    if (conversion.franchiseeEmail) {
+      notifications.push({
+        key: "loi_complete",
+        to: conversion.franchiseeEmail,
+        onboardingId,
+        vars: { name: conversion.franchiseeName, store: conversion.storeLabel, link },
+      });
+    }
+    // Mirrors the FRANCHISEE branch's signatories loop above (lines ~289-293)
+    // — the franchisee isn't the only one who needs to know the project now
+    // exists; the sales owner is the internal staff tied to this onboarding
+    // and otherwise has no way to discover the FranchiseProject was created.
+    if (onboarding.salesOwner.email) {
+      notifications.push({
+        key: "loi_complete",
+        to: onboarding.salesOwner.email,
+        onboardingId,
+        vars: { name: onboarding.salesOwner.name, store: conversion.storeLabel, link },
+      });
+    }
   }
 
   return notifications;

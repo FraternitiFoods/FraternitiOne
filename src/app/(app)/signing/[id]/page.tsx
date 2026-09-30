@@ -64,7 +64,17 @@ export default async function SigningDetailPage({ params }: PageProps<"/signing/
           {latestCompanyAttempt?.status === "SENT" || latestCompanyAttempt?.status === "IN_PROGRESS" ? (
             <p className="text-sm text-muted-foreground">Signing in progress — check back shortly.</p>
           ) : latestCompanyAttempt?.status === "COMPLETED" ? (
-            <p className="text-sm text-emerald-600">Signed.</p>
+            <div className="space-y-2">
+              <p className="text-sm text-emerald-600">Signed.</p>
+              {onboarding.projectId && (
+                <Link
+                  href={`/projects/${onboarding.projectId}`}
+                  className="text-sm text-primary underline underline-offset-4"
+                >
+                  View project →
+                </Link>
+              )}
+            </div>
           ) : (
             <CompanySignButton onboardingId={onboarding.id} canSign={canSign} />
           )}
