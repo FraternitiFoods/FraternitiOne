@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { deleteUser, type DeleteUserState } from "./actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,9 +45,28 @@ export function DeleteUserButton({ userId, name, email }: { userId: string; name
         </DialogHeader>
 
         {state?.error && (
-          <p className="text-sm text-destructive" role="alert">
-            {state.error}
-          </p>
+          <div className="space-y-2" role="alert">
+            <p className="text-sm text-destructive">{state.error}</p>
+            {state.blockers && state.blockers.length > 0 && (
+              <ul className="space-y-1 rounded-md bg-destructive/5 p-2 text-sm">
+                {state.blockers.map((b) => (
+                  <li key={b.href + b.label}>
+                    <Link
+                      href={b.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      {b.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {state.blockersNote && (
+              <p className="text-xs text-muted-foreground">{state.blockersNote}</p>
+            )}
+          </div>
         )}
 
         <DialogFooter>

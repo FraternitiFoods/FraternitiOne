@@ -2,10 +2,11 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
-import { canCreateOnboarding } from "@/lib/permissions";
+import { canCreateOnboarding, canManageOnboardingAdmin } from "@/lib/permissions";
 import { createPasswordResetToken } from "@/lib/password-reset-tokens";
 import { sendPasswordSetupEmail } from "@/lib/email";
 import { generateReservedProjectId } from "@/lib/onboarding/ids";
@@ -161,4 +162,65 @@ export async function createOnboarding(
   }
 
   redirect(`/store-onboarding/${onboardingId}`);
+}
+
+export type DeleteOnboardingState = { error?: string; success?: boolean } | undefined;
+
+/**
+ * Admin-only. Hard delete — OnboardingFile, KycSubmission, PaymentSubmission
+ * and LoiVersion (and its EsignAttempt/EsignEvent chain) all cascade via
+ * `onDelete: Cascade` back to StoreOnboarding (see schema.prisma), so this is
+ * the single entry point for wiping a store's onboarding history.
+ * AuditEvent.onboardingId is `onDelete: SetNull`, so the audit trail survives.
+ *
+ * Deliberately does NOT touch the franchisee User row — that account may
+ * still be a live login, and it's deletable on its own (via the Users page)
+ * once nothing else references it. Also refuses once `projectId` is set:
+ * past that point this onboarding is the historical record behind a real,
+ * live FranchiseProject, not a leftover to clean up — delete the project
+ * instead if that's really the intent.
+ */
+export async function deleteOnboarding(
+  onboardingId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _prevState: DeleteOnboardingState,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _formData: FormData
+): Promise<DeleteOnboardingState> {
+  const user = await requireUser();
+
+  if (!canManageOnboardingAdmin(user)) {
+    return { error: "You don't have permission to do this." };
+  }
+
+  const onboarding = await db.storeOnboarding.findUnique({ where: { id: onboardingId } });
+  if (!onboarding) {
+    return { error: "Onboarding not found." };
+  }
+  if (onboarding.projectId) {
+    return {
+      error: "Can't delete — this onboarding already converted to a live project. Delete the project instead.",
+    };
+  }
+
+  await db.$transaction(async (tx) => {
+    await writeAuditEvent(tx, {
+      actor: user,
+      onboardingId: onboarding.id,
+      entityType: "StoreOnboarding",
+      entityId: onboarding.id,
+      action: "DELETE",
+      oldValue: {
+        brand: onboarding.brand,
+        proposedLocation: onboarding.proposedLocation,
+        workspaceEmail: onboarding.workspaceEmail,
+        franchiseeUserId: onboarding.franchiseeUserId,
+      },
+      reference: "Deleted via Store Onboarding admin controls",
+    });
+    await tx.storeOnboarding.delete({ where: { id: onboardingId } });
+  });
+
+  revalidatePath("/store-onboarding");
+  return { success: true };
 }

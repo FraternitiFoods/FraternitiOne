@@ -104,7 +104,7 @@ export function TaskCard({
   const [titleState, titleFormAction, titlePending] = titleActionState;
 
   return (
-    <div className="rounded-lg bg-card p-4 space-y-3 ring-1 ring-foreground/10">
+    <div id={`task-${task.id}`} className="scroll-mt-16 rounded-lg bg-card p-4 space-y-3 ring-1 ring-foreground/10">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2">

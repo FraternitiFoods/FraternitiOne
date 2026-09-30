@@ -11,6 +11,8 @@ import { canManageUsers } from "@/lib/permissions";
 import { createPasswordResetToken } from "@/lib/password-reset-tokens";
 import { sendPasswordSetupEmail } from "@/lib/email";
 import { Role, Department, Prisma } from "@prisma/client";
+import { formatProjectCode } from "@/lib/format";
+import { formatOnboardingCode } from "@/lib/onboarding/ids";
 
 /// plan.md section 16, decision 7 — a SITE_SUPERVISOR logs in with phone+PIN,
 /// not email+password, and has no email channel to receive an invite link
@@ -499,7 +501,121 @@ export async function setUserActive(
   return { success: true };
 }
 
-export type DeleteUserState = { error?: string; success?: boolean } | undefined;
+export type DeletionBlocker = { label: string; href: string };
+
+export type DeleteUserState =
+  | {
+      error?: string;
+      success?: boolean;
+      /** Specific records blocking deletion, each linking straight to where
+       * an admin can reassign/delete it — see findDeletionBlockers below. */
+      blockers?: DeletionBlocker[];
+      /** Set when there's more blocking the delete than `blockers` lists
+       * (e.g. a prolific task author) — a plain-text hint, not another link. */
+      blockersNote?: string;
+    }
+  | undefined;
+
+// Kept low: this is a "here's where to go" list for a modal, not a full
+// report — an account genuinely too entangled to unblock item-by-item should
+// be deactivated (see setUserActive) instead of chased across dozens of links.
+const BLOCKER_LIST_LIMIT = 5;
+
+/**
+ * Looks up exactly what's still pointing at this user, for every FK that's
+ * `ON DELETE RESTRICT` and would otherwise surface as an opaque P2003 (see
+ * deleteUser below). Each result links straight to the project/task/
+ * document/onboarding record so the admin can reassign or delete it there,
+ * instead of having to go hunting for it.
+ */
+async function findDeletionBlockers(userId: string): Promise<{
+  blockers: DeletionBlocker[];
+  note?: string;
+}> {
+  const [
+    projectsOwned,
+    projectsFranchisee,
+    tasksOwned,
+    tasksCreated,
+    documentsOwned,
+    commentCount,
+    onboardings,
+    onboardingFilesCount,
+  ] = await Promise.all([
+    db.franchiseProject.findMany({
+      where: { ownerId: userId },
+      select: { id: true, seq: true, brand: true, location: true },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.franchiseProject.findMany({
+      where: { franchiseeId: userId },
+      select: { id: true, seq: true, brand: true, location: true },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.task.findMany({
+      where: { ownerId: userId },
+      select: { id: true, title: true, lifecycleStage: true, projectId: true, project: { select: { seq: true } } },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.task.findMany({
+      where: { createdById: userId },
+      select: { id: true, title: true, lifecycleStage: true, projectId: true, project: { select: { seq: true } } },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.document.findMany({
+      where: { ownerId: userId },
+      select: { id: true, title: true, projectId: true, project: { select: { seq: true } } },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.taskComment.count({ where: { authorId: userId } }),
+    db.storeOnboarding.findMany({
+      where: { OR: [{ franchiseeUserId: userId }, { salesOwnerId: userId }] },
+      select: { id: true, seq: true, legalApplicantName: true },
+      take: BLOCKER_LIST_LIMIT,
+    }),
+    db.onboardingFile.count({ where: { uploadedById: userId } }),
+  ]);
+
+  const blockers: DeletionBlocker[] = [
+    ...projectsOwned.map((p) => ({
+      label: `${formatProjectCode(p.seq)} — ${p.brand} ${p.location} (project owner)`,
+      href: `/projects/${p.id}`,
+    })),
+    ...projectsFranchisee.map((p) => ({
+      label: `${formatProjectCode(p.seq)} — ${p.brand} ${p.location} (franchisee)`,
+      href: `/projects/${p.id}`,
+    })),
+    ...tasksOwned.map((t) => ({
+      label: `"${t.title}" in ${formatProjectCode(t.project.seq)} (task owner)`,
+      href: `/projects/${t.projectId}/stages/${t.lifecycleStage}#task-${t.id}`,
+    })),
+    ...tasksCreated.map((t) => ({
+      label: `"${t.title}" in ${formatProjectCode(t.project.seq)} (created task)`,
+      href: `/projects/${t.projectId}/stages/${t.lifecycleStage}#task-${t.id}`,
+    })),
+    ...documentsOwned.map((d) => ({
+      label: `"${d.title}" in ${formatProjectCode(d.project.seq)} (document owner)`,
+      href: `/projects/${d.projectId}#document-${d.id}`,
+    })),
+    ...onboardings.map((o) => ({
+      label: `${formatOnboardingCode(o.seq)} — ${o.legalApplicantName} (onboarding)`,
+      href: `/store-onboarding/${o.id}`,
+    })),
+  ];
+
+  const noteParts: string[] = [];
+  if (commentCount > 0) {
+    noteParts.push(`${commentCount} task comment${commentCount === 1 ? "" : "s"} authored`);
+  }
+  if (onboardingFilesCount > 0) {
+    noteParts.push(`${onboardingFilesCount} onboarding file${onboardingFilesCount === 1 ? "" : "s"} uploaded`);
+  }
+
+  return {
+    blockers,
+    note: noteParts.length > 0 ? `Also has: ${noteParts.join(", ")}.` : undefined,
+  };
+}
 
 /**
  * Every ownership FK on User (FranchiseProject.franchiseeId/ownerId,
@@ -548,9 +664,14 @@ export async function deleteUser(
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      const { blockers, note } = await findDeletionBlockers(userId);
       return {
         error:
-          "Can't delete — this user owns a project, task, or document. Remove/reassign those first.",
+          blockers.length > 0
+            ? "Can't delete — reassign or delete these first:"
+            : "Can't delete — this user owns a project, task, or document. Remove/reassign those first.",
+        blockers,
+        blockersNote: note,
       };
     }
     throw err;

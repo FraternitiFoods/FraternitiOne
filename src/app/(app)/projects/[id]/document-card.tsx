@@ -59,7 +59,7 @@ export function DocumentCard({
   const [versionState, versionFormAction, versionPending] = versionAction;
 
   return (
-    <div className="rounded-lg bg-card p-4 space-y-3 ring-1 ring-foreground/10">
+    <div id={`document-${document.id}`} className="scroll-mt-16 rounded-lg bg-card p-4 space-y-3 ring-1 ring-foreground/10">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

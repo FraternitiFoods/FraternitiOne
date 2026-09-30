@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DeleteOnboardingButton } from "./delete-onboarding-button";
 
 export default async function StoreOnboardingListPage() {
   const user = await requireUser();
@@ -46,6 +47,8 @@ export default async function StoreOnboardingListPage() {
     orderBy: { createdAt: "desc" },
     include: { franchisee: { select: { name: true, email: true } } },
   });
+
+  const canDelete = canManageOnboardingAdmin(user);
 
   return (
     <div className="space-y-6">
@@ -75,6 +78,7 @@ export default async function StoreOnboardingListPage() {
                 <TableHead>Payment</TableHead>
                 <TableHead>Fee</TableHead>
                 <TableHead>Project</TableHead>
+                {canDelete && <TableHead />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -104,6 +108,15 @@ export default async function StoreOnboardingListPage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
+                  {canDelete && (
+                    <TableCell>
+                      <DeleteOnboardingButton
+                        onboardingId={o.id}
+                        storeLabel={`${formatOnboardingCode(o.seq)} — ${o.brand} ${o.proposedLocation}`}
+                        franchiseeEmail={o.franchisee.email}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

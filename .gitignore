@@ -40,8 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-Fraterniti_One_Software_Requirement_and_Wireframes.pdf
-Tulsi LOI Format.pdf
+
+# spec/reference PDFs dropped into the repo root — not meant to be committed
+*.pdf
 
 
 .vercel
