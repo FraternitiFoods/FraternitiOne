@@ -135,10 +135,30 @@ export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
           </div>
         </>
       ) : (
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" required placeholder="name@fraterniti.co.in" />
-        </div>
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" name="email" type="email" required placeholder="name@fraterniti.co.in" />
+          </div>
+          {(role === "COMPANY_SIGNATORY" || role === "ADMIN") && (
+            <div className="space-y-2">
+              <Label htmlFor="phone">Mobile number{role === "ADMIN" ? " (optional)" : ""}</Label>
+              <Input
+                id="phone"
+                name="phone"
+                type="tel"
+                inputMode="numeric"
+                required={role === "COMPANY_SIGNATORY"}
+                placeholder="10-digit mobile number"
+              />
+              <p className="text-xs text-muted-foreground">
+                {role === "COMPANY_SIGNATORY"
+                  ? "plan.md section 19 — the company signatory signs the LOI by entering an OTP sent to this number."
+                  : "Set this if this Admin should also be able to countersign LOIs by OTP, standing in for the company signatory."}
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {!isSupervisor && (

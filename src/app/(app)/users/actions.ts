@@ -51,6 +51,19 @@ const CreateUserSchema = z
       ctx.addIssue({ code: "custom", path: ["email"], message: "Enter a valid email." });
     } else if (!isApprovedEmailDomain(data.email)) {
       ctx.addIssue({ code: "custom", path: ["email"], message: INVALID_EMAIL_DOMAIN_MESSAGE });
+    } else if (data.role === "COMPANY_SIGNATORY" && (!data.phone || !PHONE_PATTERN.test(data.phone))) {
+      // plan.md section 19, "NOT DECIDED YET" #4 (resolved): the company
+      // signatory signs by OTP to this number, so it can't be left empty —
+      // same 10-digit shape as the SITE_SUPERVISOR phone above, just a
+      // second purpose for the same column (login credential there, OTP
+      // destination here).
+      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number for the company signatory's OTP." });
+    } else if (data.role === "ADMIN" && data.phone && !PHONE_PATTERN.test(data.phone)) {
+      // Optional for Admin (canCompanySignNow lets ADMIN stand in for the
+      // company signatory) — only validated if they choose to set one, so
+      // they can also countersign LOIs by OTP without needing a dedicated
+      // COMPANY_SIGNATORY account.
+      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number." });
     }
   });
 
@@ -106,6 +119,12 @@ export async function createUser(
   if (existing) {
     return { error: "A user with this email already exists." };
   }
+  if ((data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN") && data.phone) {
+    const existingPhone = await db.user.findUnique({ where: { phone: data.phone } });
+    if (existingPhone) {
+      return { error: "A user with this phone number already exists." };
+    }
+  }
 
   const user = await db.$transaction(async (tx) => {
     const created = await tx.user.create({
@@ -114,6 +133,7 @@ export async function createUser(
         email: data.email,
         role: data.role,
         department: data.department,
+        phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
         // No passwordHash — set via the invite link below.
       },
     });
@@ -346,22 +366,32 @@ export async function resendInvite(
   return { success: true };
 }
 
-const UpdateUserSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email({ message: "Enter a valid email." })
-    .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
-  // This form is email+password only (no phone/PIN fields) — SITE_SUPERVISOR
-  // isn't a valid target here, same reasoning as excluding it from the role
-  // dropdown in new-user-form.tsx.
-  role: z.nativeEnum(Role).refine((r) => r !== "SITE_SUPERVISOR", {
-    message: "Site supervisors can't be edited from this form yet.",
-  }),
-  department: z.nativeEnum(Department).optional(),
-});
+const UpdateUserSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required."),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email({ message: "Enter a valid email." })
+      .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
+    // This form is email+password only (no phone/PIN fields) — SITE_SUPERVISOR
+    // isn't a valid target here, same reasoning as excluding it from the role
+    // dropdown in new-user-form.tsx. COMPANY_SIGNATORY is the one other role
+    // that needs a phone (OTP destination, plan.md section 19), handled below.
+    role: z.nativeEnum(Role).refine((r) => r !== "SITE_SUPERVISOR", {
+      message: "Site supervisors can't be edited from this form yet.",
+    }),
+    department: z.nativeEnum(Department).optional(),
+    phone: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === "COMPANY_SIGNATORY" && (!data.phone || !PHONE_PATTERN.test(data.phone))) {
+      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number for the company signatory's OTP." });
+    } else if (data.role === "ADMIN" && data.phone && !PHONE_PATTERN.test(data.phone)) {
+      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number." });
+    }
+  });
 
 export type UpdateUserState = { error?: string } | undefined;
 
@@ -382,6 +412,7 @@ export async function updateUser(
     email: formData.get("email"),
     role: formData.get("role"),
     department: formData.get("department") || undefined,
+    phone: formData.get("phone") || undefined,
   });
 
   if (!parsed.success) {
@@ -406,6 +437,12 @@ export async function updateUser(
   if (emailTaken) {
     return { error: "A user with this email already exists." };
   }
+  if ((data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN") && data.phone) {
+    const phoneTaken = await db.user.findFirst({ where: { phone: data.phone, id: { not: userId } } });
+    if (phoneTaken) {
+      return { error: "A user with this phone number already exists." };
+    }
+  }
 
   // Prevent a lockout: if this is the last active ADMIN, its role can't be
   // changed away from ADMIN (there would be nobody left who can manage users).
@@ -426,6 +463,7 @@ export async function updateUser(
         email: data.email,
         role: data.role,
         department: data.department ?? null,
+        phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
       },
     });
 
@@ -434,10 +472,11 @@ export async function updateUser(
       entityType: "User",
       entityId: updated.id,
       action: "UPDATE",
-      oldValue: { name: user.name, email: user.email, role: user.role, department: user.department },
+      oldValue: { name: user.name, email: user.email, role: user.role, department: user.department, phone: user.phone },
       newValue: {
         name: updated.name,
         email: updated.email,
+        phone: updated.phone,
         role: updated.role,
         department: updated.department,
       },

@@ -24,7 +24,8 @@ export type EmailKey =
   | "signing_ready"
   | "franchise_signed"
   | "company_signed"
-  | "loi_complete";
+  | "loi_complete"
+  | "loi_feedback";
 
 export const DEFAULT_EMAIL_TEMPLATES: Record<EmailKey, { subject: string; body: string }> = {
   invitation: {
@@ -58,6 +59,12 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailKey, { subject: string; body: 
   loi_complete: {
     subject: "LOI complete — {{store}} project created",
     body: "Hi {{name}},\n\nThe LOI for {{store}} is fully signed and your project has been created. Log in to view it: {{link}}",
+  },
+  loi_feedback: {
+    subject: "LOI query from {{franchiseeName}} — {{store}}",
+    body:
+      "Hi {{name}},\n\n{{franchiseeName}} has a question/concern about the LOI for {{store}} before signing:\n\n" +
+      "\"{{message}}\"\n\nView the store: {{link}}",
   },
 };
 

@@ -9,6 +9,18 @@ const PUBLIC_ROUTES = new Set(["/login", "/forgot-password", "/m/login"]);
 // /reset-password/[token] is dynamic, so it's matched by prefix below rather
 // than added to the exact-match PUBLIC_ROUTES set.
 const PUBLIC_ROUTE_PREFIXES = ["/reset-password/"];
+// /dev/mock-sms (plan.md section 19) stands in for the signer's own phone —
+// reachable with NO session (same reasoning as /dev/mock-esign, section 17)
+// AND reachable WITH one (unlike /login/-forgot-password, which bounce an
+// already-authenticated visitor away): the whole point is a logged-in
+// franchisee/company signatory opens it in a second tab to read their own
+// code. It needs the same "never redirect either way" carve-out
+// isResetPasswordRoute already gets below — a plain PUBLIC_ROUTES entry was
+// wrong (that set's "already authenticated -> bounce to /dashboard" rule
+// bounced the franchisee's /dev/mock-sms tab straight back to /onboarding).
+// The real production gate stays the page/provider's own NODE_ENV/
+// SMS_PROVIDER check, not this list.
+const ALWAYS_REACHABLE_ROUTES = new Set(["/dev/mock-sms"]);
 
 /**
  * Optimistic auth gate only — checks whether the session cookie is present,
@@ -20,6 +32,11 @@ const PUBLIC_ROUTE_PREFIXES = ["/reset-password/"];
  */
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (ALWAYS_REACHABLE_ROUTES.has(pathname)) {
+    return NextResponse.next();
+  }
+
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   const isPublicRoute =
     PUBLIC_ROUTES.has(pathname) ||

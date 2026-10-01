@@ -41,8 +41,10 @@ Do not build these yet, even if referenced in the SRD:
 - Notifications (WhatsApp/email/SMS) (FR-009) — Phase 4/deferred. Exception:
   section 17 needs the small fixed set of onboarding **emails via Resend**
   (invitation, correction request, payment accepted/rejected, signing ready,
-  franchise signed, company signed, LOI complete). No WhatsApp/SMS, no
-  general notification engine.
+  franchise signed, company signed, LOI complete). No WhatsApp, no
+  general notification engine. Second exception (section 19, 2026-10-01): the
+  one-time LOI signing OTP goes out by SMS through its own small SMS adapter
+  (mock first), still no general SMS/notification engine.
 - Management Command Centre, portfolio-level views — Phase 4
 
 ## 3. Phase 1 scope — functional requirements in play
@@ -1394,7 +1396,7 @@ so there is never a duplicate (SRD section 1).
    touched or migrated (Bengaluru and Ashok Vihar keep their 963 tasks each).
 3. **E-sign provider: adapter + mock first.** Build a provider-agnostic
    `EsignProvider` interface and a `mock` provider that exercises the whole
-   flow locally. The real vendor (Leegality or other) is a later drop-in
+   flow locally. The real vendor is a later drop-in
    adapter; nothing outside `src/lib/esign/` may know the vendor.
 4. **Four new roles:** `KYC_REVIEWER`, `ACCOUNTS`, `LOI_PREPARER`,
    `COMPANY_SIGNATORY`. Existing `SALES`, `ADMIN`, `FRANCHISEE` are reused.
@@ -1765,6 +1767,8 @@ sign-off** — say so in the final report.
    deployment too, for pre-launch testing before a real vendor is live — off
    by default, must be unset again before any real franchisee signature needs
    to be enforceable.
+   **2026-10-01: superseded as the default by section 19** — LOI signing is by
+   mobile OTP; this adapter stays, switchable via `SIGNING_METHOD`.
 2. **Approved LOI template text and variable fields** — **resolved
    2026-09-28.** `src/lib/onboarding/loi-template.ts` now ships the real,
    director-signed Tulsi LOI text verbatim (not a placeholder) —
@@ -2227,3 +2231,394 @@ tracking (Petpooja/CSV import), dashboard widgets (profile completion %, LOI
 status, sales/complaint summaries) + expanded KYC document types (Address
 Proof/Photograph/Bank Statement/Cancelled Cheque/GST), and OTP login (blocked
 on an SMS/OTP provider decision) — none of these four are built yet.
+
+---
+
+## 19. LOI signing by mobile OTP (added 2026-10-01)
+
+**Where this came from:** boss's decision, relayed by Apoorv on 2026-10-01.
+The requirement, in his words: when a person has to sign the LOI, an OTP comes
+to their mobile; if they enter the right OTP, the LOI is e-signed. "Bas itna sa."
+Keep everything simple. Whether Aadhaar is used at all is left to Claude Code
+(see decision 2).
+
+### Mental model (read this first)
+
+```
+Section 17 (unchanged)                     Section 19 (this section)
+──────────────────────────────────────     ──────────────────────────────────────────
+KYC accepted + payment accepted            same gates, nothing new to unlock
++ LOI released
+        │  canFranchiseSign() = true
+        ▼
+Franchisee opens LOI preview               opens preview (we record that they did)
+        │                                          │
+        ▼                                          ▼
+"Sign" button                              ticks consent → "Send OTP"
+        │                                          │
+        ▼                                          ▼
+(vendor page / Aadhaar, outside our app)   OUR app sends a 6-digit SMS through the
+                                           SMS adapter → franchisee types it on OUR page
+        │                                          │
+        ▼                                          ▼
+processEsignEvent(COMPLETED)               right OTP → LoiAcceptance evidence row, then
+                                           the SAME processEsignEvent(COMPLETED)
+        │                                          │
+        ▼                                          ▼
+company signatory signs (same idea)        company signatory does the same, own mobile
+        │
+        ▼
+LOI COMPLETE → FranchiseProject created   (existing conversion.ts, untouched)
+```
+
+Cause → effect: gates pass → preview opened → consent ticked → OTP sent →
+correct OTP entered in time → acceptance evidence saved + attempt `COMPLETED` →
+(franchisee done, company side unlocks) → company repeats → certificate PDF
+made → LOI Complete → project created by existing code.
+
+Reused unchanged: state machines, `canFranchiseSign` / `canCompanySign`,
+`processEsignEvent`, `conversion.ts`, emails, review queues, roles. The OTP
+only replaces *how the "signed" event is produced*, nothing downstream moves.
+
+### Decisions (2026-10-01)
+
+1. **Signing method = mobile OTP via SMS**, sent by our app to the signer's
+   mobile. The OTP is a second step on top of the signer being logged in; it
+   never replaces login.
+2. **Aadhaar e-sign: Claude Code's call, default = do not use it now.** It
+   needs a paid vendor, per-signature credits and a contract, and the boss
+   wants simple. Do **not** delete the existing e-sign adapter; keep it behind
+   `SIGNING_METHOD=SMS_OTP | AADHAAR_ESIGN` (default `SMS_OTP`) so it can be
+   switched on later. If Claude Code believes Aadhaar is needed after all, it
+   must say why and state the cost/blocker before building it.
+3. **Do everything that costs nothing first.** Code is free. Build and test the
+   whole flow with a mock SMS provider; the real SMS provider is a later
+   drop-in (see "Human-intervention rule").
+4. **Evidence is stored for every acceptance** (below). The LOI PDF itself is
+   never modified, so its sha256 stays valid; proof lives in a separate
+   Acceptance Certificate PDF.
+5. **Honesty about strength:** a simple OTP acceptance is weaker than an
+   Aadhaar eSign. It is "authenticated accept with proof". Whether that is
+   legally enough for the LOI is a call for Sushant ji / the company lawyer.
+   The UI copy and the final report must say this plainly, not hide it.
+
+### Human-intervention rule (applies to the whole section — Apoorv's explicit ask)
+
+Claude Code does **all the work it can without payment or a human**, and keeps
+a running list of everything that needs a human. It never signs up for a paid
+service, enters a card, pays, invents credentials, or switches on real SMS
+itself.
+
+- Keep the list in a new file `BLOCKERS.md` at the repo root (create it in
+  step 0, update it after every step). Each item: **what** is blocked · **why**
+  · **who** can unblock (Apoorv / Sushant ji / lawyer / Vercel owner) ·
+  **cost or effort** if known · **exact steps** for the human · **what was
+  built meanwhile**.
+- At the end of **every step**, and in the final report, print the open
+  blockers in plain words, with a clear marker for anything that costs money.
+- Build the unblocked part fully anyway (mock provider, config flags, env
+  placeholders in `.env.example`, ready-to-paste text for forms the human must
+  fill). Do not stop the whole build because one item is blocked.
+
+Blockers already known (put these into `BLOCKERS.md` on day one):
+
+| # | Blocker | Who | Money? |
+|---|---|---|---|
+| 1 | **Real SMS provider account** (e.g. MSG91, Fast2SMS, Twilio — Claude Code compares and recommends one with current per-SMS price) + API key + SMS credits | Apoorv / Sushant ji | **Yes**, small per-SMS |
+| 2 | **India DLT registration** for the company: entity registration, approved sender ID, approved OTP message template. Real SMS in India is blocked without it; takes days. Claude Code writes the exact template text to submit. | Sushant ji (company documents) | Usually a small registration fee |
+| 3 | **Production env vars** in Vercel (`OTP_HMAC_SECRET`, SMS keys, `SIGNING_METHOD`) | Apoorv (holds Vercel access) | No |
+| 4 | **Production database migration** for the new tables, if prod is not migrated automatically by the deploy | Apoorv | No |
+| 5 | **Legal sign-off** on consent wording and on "is OTP acceptance enough for this LOI" | Sushant ji / lawyer | Maybe |
+| 6 | **Company signatory's mobile number** on their user account (needed to send them an OTP) | Apoorv / Admin | No |
+| 7 | **A real-phone test** once real SMS is live (mock cannot prove delivery) | Apoorv | No |
+
+If Claude Code finds free ways to reduce a blocker (for example a provider with
+a free test allowance, or doing the DLT template text for the human), it says so
+in `BLOCKERS.md`; it does not act on it without Apoorv's go-ahead when money or
+company documents are involved.
+
+### What gets built
+
+**1. OTP module** — `src/lib/otp/` (pure functions, unit-tested):
+- 6 digits via `crypto.randomInt`; valid **10 minutes**.
+- Store only `HMAC-SHA256(OTP_HMAC_SECRET, challengeId + ":" + otp)`; compare
+  with `timingSafeEqual`. **The plain OTP is never stored, logged, audited or
+  put in `NotificationLog`** (only the dev mock page may display it).
+- **5 wrong tries → challenge `LOCKED`**; a new OTP is needed. Resend cooldown
+  60 s; max 3 sends per 30 minutes per onboarding+signer.
+- A new send marks the previous pending one `SUPERSEDED`. A verified challenge
+  can never be reused.
+- Bound to one `loiVersionId` + its `pdfSha256`. If a newer LOI version exists
+  or the hash differs at verify time, verify fails with a clear message.
+- All limits live as constants in one file.
+
+**2. Tables (migration)**
+- `OtpChallenge`: `onboardingId`, `loiVersionId`, `signerRole`
+  (`FRANCHISEE` | `COMPANY`), `signerUserId`, `phoneE164`, `codeHash`,
+  `pdfSha256`, `expiresAt`, `attempts`, `status` (`PENDING` | `VERIFIED` |
+  `EXPIRED` | `LOCKED` | `SUPERSEDED`), `sendCount`, `lastSentAt`, `ip`,
+  `userAgent`, timestamps.
+- `LoiAcceptance` (the evidence row; **unique on `(loiVersionId, signerRole)`**):
+  `signerUserId`, `signerName`, `phoneMasked` (like `+91 98•••••210`),
+  `otpChallengeId`, `acceptedAt`, `ip`, `userAgent`, `pdfSha256`,
+  `consentText` (exact snapshot), `consentTextVersion`, `previewOpenedAt`,
+  `method = SMS_OTP`.
+- `NotificationLog`: add `channel` (`EMAIL` | `SMS`).
+- `EsignAttempt.provider` gets the value `sms_otp`; `providerEnvelopeId` =
+  the `OtpChallenge.id`.
+
+**3. SMS adapter** — `src/lib/sms/provider.ts`, same pattern as the e-sign
+adapter: `send({ to, templateKey: 'LOI_OTP', vars }) → { providerMessageId }`.
+- `SMS_PROVIDER=mock` (default): sends nothing, shows the OTP on a dev-only page
+  `/dev/mock-sms`. Refuse to run in production unless
+  `ALLOW_MOCK_SMS_IN_PRODUCTION=true`; when that flag is on, the certificate is
+  watermarked "TEST OTP — NOT A REAL SMS".
+- Real provider = one new file + env vars, added only after blockers 1-2 are
+  cleared. If a send fails, show "Could not send OTP, try again", log it, and
+  do **not** leave a pending challenge that looks sent.
+
+**4. Actions + wiring** — `requestLoiOtp(loiVersionId, role)` and
+`verifyLoiOtp(challengeId, code)`. On a correct code, in **one transaction**:
+mark challenge `VERIFIED`, insert `LoiAcceptance`, write audit events, then call
+the **existing** `processEsignEvent` with `COMPLETED`, using the challenge id
+as the event id (the existing unique `(provider, providerEventId)` makes a
+replay harmless). Everything after that (company unlock, conversion, emails)
+runs as today. The two start actions branch on `SIGNING_METHOD`; the
+`AADHAAR_ESIGN` path stays untouched.
+
+**5. Rules checked at both request and verify time (UI and server)**
+- Everything `canFranchiseSign` / `canCompanySign` already requires, re-checked
+  at the moment of verify, not just when the OTP was requested.
+- The signer has opened the LOI preview for this exact version (record
+  `previewOpenedAt` server-side where the preview/download route is served) and
+  ticked the consent box.
+- The OTP goes to the number on file (`contactPhone` for the franchisee,
+  `User.phone` for the company signatory), shown **masked**; the signer cannot
+  edit it on this screen. Changing the number is Sales/Admin only, audited, and
+  voids pending challenges.
+- Company signer can only accept after the franchisee accepted the same
+  version and hash.
+
+**6. Consent text** (versioned, shown verbatim and snapshotted). Placeholder
+until legal approves, clearly marked "PLACEHOLDER — NOT APPROVED LEGAL TEXT":
+"I, {{name}}, have read LOI {{versionNo}} (document fingerprint {{first 12
+characters of pdfSha256}}) and agree to its terms. I understand that entering
+the OTP sent to {{phoneMasked}} is my electronic acceptance of this LOI."
+
+**7. Acceptance Certificate PDF** (`pdf-lib`, no headless Chrome): generated
+once both acceptances exist; lists both signers (name, masked mobile, time in
+IST, IP, OTP verified), LOI version, LOI `pdfSha256`, consent text version,
+challenge ids. Stored in B2 with its own hash. `conversion.ts` files the
+**unchanged** LOI PDF as the signed LOI and the certificate as the certificate,
+under the new project (Legal category), as it does today.
+
+**8. UI** — keep the existing "LOI & E-Sign" layout (`/onboarding/loi`): the
+purple button reads **"Sign LOI with OTP"** when `SIGNING_METHOD=SMS_OTP`.
+Steps on the page: open preview → consent box → Send OTP → 6-box code input
+with masked number, resend timer and attempts left → success state. Company
+signatory gets the same on `/signing/[id]`. Must work on a phone-sized screen.
+
+**9. Audit** — events for: OTP requested, send failed, OTP verified, wrong
+attempt, locked/expired/superseded, acceptance recorded, certificate generated,
+mobile number changed (masked old → new), signing method changed. No OTP value
+in any `oldValue` / `newValue`.
+
+**10. Env vars** (names only in `.env.example`, never values): `SIGNING_METHOD`,
+`SMS_PROVIDER`, `OTP_HMAC_SECRET`, `ALLOW_MOCK_SMS_IN_PRODUCTION`, and the real
+provider's keys / DLT ids once known.
+
+### Build order (test each step before the next, per section 7 step 5)
+
+0. **Read first, change nothing:** `src/lib/esign/*`, `webhook-processor.ts`
+   (`processEsignEvent`), `startFranchiseeEsign` / `startCompanyEsign`,
+   `/onboarding/loi`, `/signing/[id]`, `conversion.ts`, `loi-pdf.ts`,
+   `notify.ts`, `state.ts` gates, the mock e-sign page, where the LOI preview
+   route lives. Append a short "What I found" note under this section, create
+   `BLOCKERS.md`, then **give Apoorv the plain-words mental model and wait for
+   his go-ahead** before changing code.
+1. Schema + OTP module + unit tests (correct code passes; wrong code counts;
+   5th wrong locks; expired fails; verified challenge can't be reused;
+   cooldown and send cap; resend supersedes; new LOI version or hash mismatch
+   fails).
+2. SMS adapter + mock + `/dev/mock-sms` + production safety refusal.
+3. Request/verify actions wired into `processEsignEvent` (one transaction,
+   idempotent) with all the gates.
+4. Franchisee UI (desktop + phone).
+5. Company signatory UI and gate.
+6. Acceptance Certificate PDF + conversion filing (LOI PDF unchanged).
+7. Audit events, admin visibility in `/admin/esign-events`, copy review
+   (including the honesty note from decision 5).
+8. End-to-end test in a real browser (Playwright, desktop + phone) on the mock
+   SMS; delete every test artifact afterwards (users, onboardings, B2 objects,
+   OTP/acceptance rows); confirm Bengaluru and Ashok Vihar still have 963
+   tasks each; log results in this section like sections 15-17.
+9. Final report: what works, what is mock-only, and the full open-blockers list.
+
+### Definition of done
+
+One test store completes the whole flow with real role separation on the mock
+SMS: gates pass → franchisee previews, ticks consent, gets the OTP at
+`/dev/mock-sms`, enters it → company signatory does the same → certificate PDF
+downloadable → `FranchiseProject` created with the reserved ID.
+Negative tests that must pass: 5 wrong OTPs lock; expired OTP rejected; old OTP
+rejected after a resend; OTP for LOI v1.0 rejected once v1.1 is released; cannot
+request/verify before KYC + payment gates; cannot verify without opening the
+preview; company cannot accept before the franchisee; a second franchisee
+cannot touch the first store by URL or action; replaying a verified challenge
+does nothing; a failed SMS send leaves no pending challenge; the OTP value
+appears in no log, audit or `NotificationLog` row.
+**Mock success is not production sign-off** — say so, and say that real SMS
+needs blockers 1-3 cleared first.
+
+### NOT DECIDED YET — ask before assuming (working default in brackets)
+
+1. **SMS provider, price, DLT** [mock only; real provider after blockers 1-2].
+2. **Is simple OTP legally enough for the LOI?** [built as specified; legal
+   confirmation pending; certificate + consent text kept so a stronger method
+   can be added later].
+3. **Approved consent text** [placeholder, marked not approved].
+4. **Company signatory also signs by OTP** [yes, to `User.phone`; make that
+   field required for the `COMPANY_SIGNATORY` role].
+5. **OTP limits** [10 min, 5 attempts, 60 s cooldown, 3 sends / 30 min].
+6. **IP / user-agent retention** [stored with the acceptance, no auto-delete;
+   privacy owner to confirm].
+7. **Aadhaar later** [kept switchable via `SIGNING_METHOD`; not built now].
+
+### Build log
+
+**Step 0 — what I found (read-only, 2026-10-01):**
+
+- **The e-sign adapter's shape is exactly what section 19 assumes, with one
+  real wrinkle.** `src/lib/esign/index.ts`'s `getEsignProvider()` is the single
+  gate that refuses `ESIGN_PROVIDER=mock` in production — the template to copy
+  for a parallel `getSmsProvider()` gate (`SMS_PROVIDER=mock`,
+  `ALLOW_MOCK_SMS_IN_PRODUCTION`, identical refusal logic).
+  `webhook-processor.ts`'s `processEsignEvent()` is shared today by the real
+  webhook route, the Admin manual-reconcile action, and a testing-convenience
+  shortcut already living in both `startFranchiseeEsign` and
+  `startCompanyEsign` (when `ESIGN_PROVIDER=mock`, those actions call
+  `processEsignEvent()` directly instead of round-tripping through
+  `/dev/mock-esign`) — so OTP verify calling `processEsignEvent()` the same
+  way is a proven pattern, not a new one.
+- **The wrinkle:** `processEsignEvent`'s `handleAttemptCompleted` (the
+  `COMPANY` branch, `webhook-processor.ts` lines ~301-319) hardcodes
+  `getEsignProvider().fetchSignedPdf(envelopeId)` /
+  `.fetchCertificate(envelopeId)` to produce the two files filed at
+  conversion. That's vendor-shaped behaviour — it asks "the configured e-sign
+  provider" for a signed copy and a certificate. Section 19 decision 4 wants
+  the opposite for OTP: the **original, unmodified** LOI PDF filed as the
+  signed copy (hash must stay identical — no provider ever touches the bytes)
+  and **our own** Acceptance Certificate PDF (built from both `LoiAcceptance`
+  rows) filed as the certificate, not anything fetched from a provider. So
+  "processEsignEvent is reused unchanged" needs one small, explicit exception:
+  `handleAttemptCompleted` gets a branch keyed on `attempt.provider`
+  (`"sms_otp"` vs. an Aadhaar-shaped provider name) that sources those two
+  files differently. Everything around that one branch — idempotency, state
+  transitions, audit, notifications, the conversion trigger — stays exactly as
+  written. Flagging this now because it's the one place section 19's "nothing
+  downstream moves" isn't quite literally true; it's a small, contained
+  exception, not a redesign.
+- **A second, smaller wrinkle in the same function:** `EsignEvent.provider`
+  (the idempotency-log column) is written from `currentProviderName()`, which
+  reads `process.env.ESIGN_PROVIDER` unconditionally — not from the attempt
+  that was actually completed. An OTP-driven event would currently get logged
+  under whatever `ESIGN_PROVIDER` happens to be set to (e.g. `"mock"`),
+  mislabeling it in `/admin/esign-events`. Fix is additive and narrow: give
+  `processEsignEvent()` an optional explicit provider-name parameter
+  (defaulting to today's `currentProviderName()` call, so the Aadhaar path is
+  byte-for-byte unchanged) and pass `"sms_otp"` from the OTP verify action.
+- **Preview-opened tracking needs a home that exists before the evidence row
+  does.** Section 19's data model lists `LoiAcceptance.previewOpenedAt` as a
+  field on the acceptance/evidence row — but that row is only created once an
+  OTP is verified, which is necessarily *after* the signer opened the preview
+  (opening the preview is a precondition for requesting an OTP at all, decision
+  5). So "did this signer open the preview for this LOI version" has to be
+  remembered somewhere that exists earlier. Simplest fit, no new table: two
+  nullable `DateTime` columns directly on `LoiVersion`
+  (`franchiseePreviewOpenedAt`, `companyPreviewOpenedAt`) — set by the
+  existing `GET /api/loi-versions/[versionId]/download` route (which already
+  resolves the signer's role via `canViewOnboarding`/`requireUser`, no new
+  lookup needed), then copied into `LoiAcceptance.previewOpenedAt` at verify
+  time. A newer LOI version naturally resets both to null (new row).
+- **`User.phone` already exists and is reusable as-is.** `String? @unique` on
+  `User`, currently populated only for `SITE_SUPERVISOR` phone+PIN login
+  (plan.md section 16). Nothing about that conflicts with also using it as the
+  `COMPANY_SIGNATORY`'s OTP destination — just a different purpose for the
+  same column, still unique. No schema change needed for this field itself; it
+  does need to become a required-in-practice field for that one role (enforced
+  in the user-creation/edit form + a server check, not a DB-level
+  per-role-required constraint, since Prisma can't express that).
+  `StoreOnboarding.contactPhone` (the franchisee's number) is a required plain
+  string today with no format validation — `"9000000000"` in the existing
+  seed/e2e data, no `+91` prefix. The OTP module needs its own
+  normalize-to-E.164 and mask (`+91 98•••••210`) helpers; no change to
+  `contactPhone` itself or anywhere else that already reads it.
+- **Gate functions are already exactly reusable.** `canFranchiseeSignNow` /
+  `canCompanySignNow` (`src/lib/onboarding/state.ts`) take plain data, not a
+  provider-specific shape — `requestLoiOtp`/`verifyLoiOtp` can call them
+  identically to how `startFranchiseeEsign`/`startCompanyEsign` do today, at
+  both request and verify time (decision 5's own requirement). Same for
+  `permissions.ts`'s `canCompanySign(user)` role check and `EsignSignerRole`
+  (`FRANCHISEE` | `COMPANY`) — OTP's `signerRole` is the same enum, no parallel
+  type needed.
+- **`/dev/mock-esign` is the direct template for `/dev/mock-sms`.** Its own
+  comment says "No app session/auth here on purpose: this page stands in for
+  an *external* vendor's signing page" — but it isn't in `proxy.ts`'s
+  `PUBLIC_ROUTES`, so today it only actually works unauthenticated-page-wise
+  because the signer is always already logged in when `window.location.href`
+  navigates them there (the session cookie just rides along). `/dev/mock-sms`
+  can follow the identical pattern — no `proxy.ts` change required, same as
+  section 17's own step-0 note concluded for `/dev/mock-esign`.
+- **No new enum needed for signing method state** — `EsignAttemptStatus`
+  (`NOT_STARTED → SENT → IN_PROGRESS → COMPLETED` etc.) already fits an OTP
+  challenge's lifecycle one-for-one (`SENT` = OTP dispatched, `COMPLETED` =
+  verified). The attempt row's `provider` string field (already free-text, not
+  an enum) is what carries `"sms_otp"` vs. an Aadhaar vendor name — no schema
+  change needed there either.
+- **Test infrastructure is already in place.** `vitest` (unit tests,
+  `state.test.ts` is the pattern to mirror for the OTP module) and
+  `@playwright/test` + `scripts/tmp-e2e-onboarding.ts` (end-to-end, already
+  creates/cleans up KYC/Accounts/LOI-preparer/Company-signatory/second-
+  franchisee test users and B2 objects) are both already wired up from section
+  17 — step 8 of this section's build order can extend that script rather than
+  writing a new harness.
+- **`NotificationLog` has no `channel` column yet** — confirmed by reading
+  `schema.prisma`; every row today is implicitly an email send
+  (`src/lib/onboarding/notify.ts`). Adding `channel` (`EMAIL` | `SMS`,
+  default `EMAIL` so existing rows/call sites don't need touching) is a
+  straightforward additive migration.
+- **SMS provider price check (free research, no account opened — blocker #1
+  in `BLOCKERS.md`):** Twilio prices India SMS around $0.08–0.11/segment
+  (≈ ₹7–9 at current rates — the ₹0.45/OTP figure some trackers quote folds in
+  a DLT-registration surcharge and forex handling, not the per-SMS rate
+  alone), billed in USD with forex exposure, plus its own separate ~$80/yr
+  DLT template fee — expensive and awkward for an India-only OTP use case.
+  MSG91 and Fast2SMS both quote roughly ₹0.11–0.25 per SMS depending on
+  volume, INR billing, India-first DLT support built into onboarding.
+  Between those two: MSG91 handles DLT registration assistance as part of
+  onboarding; Fast2SMS is marginally cheaper at volume but expects the
+  customer to manage DLT registration/template approval more directly. Net
+  recommendation to put in front of Apoorv/Sushant ji: **MSG91 or Fast2SMS**,
+  not Twilio, for this use case — final pick is still their call since it's a
+  paid account either way (see `BLOCKERS.md` #1). Sources: provider pricing
+  pages as of 2026-10, via web search — not a quote, confirm current price
+  before paying.
+
+**Mental model given to Apoorv, plain words, before any code changed:** see
+the chat for this session — summarized here for the record: an LOI version
+has two signers, franchisee then company, each going through the identical
+four-click sequence (open preview → tick consent → get a 6-digit SMS code →
+type it back correctly within 10 minutes). Entering the right code is treated
+exactly like the moment a real e-sign vendor would have told us "signed" —
+the same downstream code that already exists for Aadhaar e-sign (state
+machine, company-unlock gate, conversion into a real project, emails) runs
+unchanged from that point on; OTP only replaces the one step that currently
+says "go sign with the vendor" with "type the code we just texted you". The
+only genuinely new things being built are: the 6-digit-code module itself
+(generate, hash, rate-limit, expire), a pluggable SMS sender (mock today,
+vendor later, same pattern as the existing e-sign adapter), one evidence
+record per signer proving they accepted (who, when, which exact document by
+hash, from where), and a small one-page "Acceptance Certificate" PDF that
+states both of those once both signers are done — replacing the vendor's own
+certificate, since there is no vendor. Nothing about KYC, payment review, the
+LOI document itself, or what happens after both signatures land is touched.

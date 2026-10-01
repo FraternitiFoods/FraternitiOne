@@ -9,14 +9,14 @@ generator client {
 }
 
 datasource db {
-  provider           = "postgresql"
-  url                = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
   // `migrate dev`'s shadow-database step needs CREATEDB, which the native
   // Postgres role backing DATABASE_URL (port 5432) doesn't have. Point it at
   // the docker-compose Postgres instead (port 5433, docker-compose.yml) —
   // that container's user is a real superuser, and it's already sitting
   // there unused for exactly this workflow.
-  shadowDatabaseUrl  = env("SHADOW_DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -280,46 +280,46 @@ enum EsignProcessingStatus {
 /// permissions, contact, project access". Organisation/multi-org access is
 /// out of scope for Phase 1 (single-brand, plan.md section 5 decisions).
 model User {
-  id    String  @id @default(cuid())
-  name  String
+  id                  String      @id @default(cuid())
+  name                String
   /// Optional as of plan.md section 16 (2026-09-24): a site supervisor logs
   /// in with phone+PIN and may have no email at all. Still unique when
   /// present — Postgres allows multiple NULLs under a unique constraint, so
   /// this doesn't collide across supervisor accounts. Every pre-existing user
   /// keeps their email untouched; this migration only widens the column.
-  email String? @unique
+  email               String?     @unique
   /// Site-supervisor login credential (plan.md section 16, decision 7: phone
   /// + PIN, no OTP/SMS). Hashed the same way as passwordHash — never store
   /// the raw PIN. Null for every non-supervisor account.
-  phone String? @unique
+  phone               String?     @unique
   /// Nullable: an admin-created user (see PasswordResetToken, purpose
   /// INVITE) starts with no password until they follow their setup link.
   /// login() treats a null hash the same as a wrong password — no separate
   /// error message — so this doesn't become a way to enumerate which emails
   /// exist in the system.
-  passwordHash String?
+  passwordHash        String?
   /// Hashed PIN for phone-based supervisor login (plan.md section 16). Same
   /// null-means-"can't log in yet" discipline as passwordHash.
-  pinHash      String?
+  pinHash             String?
   /// Brute-force lockout for phone+PIN login (plan.md section 16, "NOT
   /// DECIDED YET" item 3, resolved 2026-09-24: 5 wrong attempts -> 15-minute
   /// lock). Reset to 0/null on a correct login, and by the admin's
   /// "Reset PIN" action. Unused by every other login path (email+password has
   /// no lockout — out of scope for this section).
-  pinFailedAttempts Int       @default(0)
-  pinLockedUntil    DateTime?
+  pinFailedAttempts   Int         @default(0)
+  pinLockedUntil      DateTime?
   /// Brute-force lockout for email+password login (plan.md section 17,
   /// P1-02) — same shape as pinFailedAttempts/pinLockedUntil above (5 wrong
   /// attempts -> 15 min lock, reset on success). Kept as its own pair of
   /// columns rather than reusing the PIN ones since they gate different login
   /// paths and must not interfere with each other.
-  loginFailedAttempts Int       @default(0)
+  loginFailedAttempts Int         @default(0)
   loginLockedUntil    DateTime?
-  role         Role
-  department   Department?
-  isActive     Boolean     @default(true)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  role                Role
+  department          Department?
+  isActive            Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
   sessions            Session[]
   ownedProjects       FranchiseProject[]     @relation("ProjectOwner")
@@ -339,14 +339,18 @@ model User {
   projectMemberships  ProjectMember[]
 
   // --- plan.md section 17 (onboarding/KYC/LOI e-sign) ---
-  onboardingAsFranchisee   StoreOnboarding?      @relation("OnboardingFranchisee")
-  onboardingAsSalesOwner   StoreOnboarding[]     @relation("OnboardingSalesOwner")
-  onboardingFilesUploaded  OnboardingFile[]      @relation("OnboardingFileUploadedBy")
-  kycSubmissionsReviewed   KycSubmission[]       @relation("KycReviewer")
-  paymentsUploaded         PaymentSubmission[]   @relation("PaymentUploadedBy")
-  paymentsReviewed         PaymentSubmission[]   @relation("PaymentReviewer")
-  loiVersionsReleased      LoiVersion[]          @relation("LoiReleasedBy")
-  esignAttemptsAsSigner    EsignAttempt[]        @relation("EsignSignerUser")
+  onboardingAsFranchisee  StoreOnboarding?    @relation("OnboardingFranchisee")
+  onboardingAsSalesOwner  StoreOnboarding[]   @relation("OnboardingSalesOwner")
+  onboardingFilesUploaded OnboardingFile[]    @relation("OnboardingFileUploadedBy")
+  kycSubmissionsReviewed  KycSubmission[]     @relation("KycReviewer")
+  paymentsUploaded        PaymentSubmission[] @relation("PaymentUploadedBy")
+  paymentsReviewed        PaymentSubmission[] @relation("PaymentReviewer")
+  loiVersionsReleased     LoiVersion[]        @relation("LoiReleasedBy")
+  esignAttemptsAsSigner   EsignAttempt[]      @relation("EsignSignerUser")
+
+  // --- plan.md section 19 (LOI signing by mobile OTP) ---
+  otpChallengesAsSigner  OtpChallenge[]  @relation("OtpChallengeSigner")
+  loiAcceptancesAsSigner LoiAcceptance[] @relation("LoiAcceptanceSigner")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -656,9 +660,9 @@ model ComplaintComment {
 /// history, which the FK alone can't guarantee once a user record changes or
 /// is deactivated.
 model AuditEvent {
-  id        String            @id @default(cuid())
-  projectId String?
-  project   FranchiseProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id           String            @id @default(cuid())
+  projectId    String?
+  project      FranchiseProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   /// plan.md section 17: AuditEvent needs to exist during onboarding, before
   /// a FranchiseProject does — projectId and onboardingId are both nullable,
   /// app code requires at least one (writeAuditEvent enforces this; Prisma
@@ -666,7 +670,7 @@ model AuditEvent {
   /// happens, prior onboarding-scoped events keep pointing at the onboarding
   /// record, not retargeted at the new project.
   onboardingId String?
-  onboarding   StoreOnboarding? @relation(fields: [onboardingId], references: [id], onDelete: SetNull)
+  onboarding   StoreOnboarding?  @relation(fields: [onboardingId], references: [id], onDelete: SetNull)
 
   actorId    String?
   actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
@@ -756,11 +760,12 @@ model StoreOnboarding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  files       OnboardingFile[]
-  kyc         KycSubmission?
-  payments    PaymentSubmission[]
-  loiVersions LoiVersion[]        @relation("OnboardingLoiVersions")
-  auditEvents AuditEvent[]
+  files         OnboardingFile[]
+  kyc           KycSubmission?
+  payments      PaymentSubmission[]
+  loiVersions   LoiVersion[]        @relation("OnboardingLoiVersions")
+  auditEvents   AuditEvent[]
+  otpChallenges OtpChallenge[]
 
   @@index([franchiseeUserId])
   @@index([salesOwnerId])
@@ -858,7 +863,7 @@ model PaymentSubmission {
   bankReference  String?
 
   accountsActorId String?
-  accountsActor   User?   @relation("PaymentReviewer", fields: [accountsActorId], references: [id])
+  accountsActor   User?     @relation("PaymentReviewer", fields: [accountsActorId], references: [id])
   decisionReason  String?
   decidedAt       DateTime?
 
@@ -879,13 +884,13 @@ model PaymentSubmission {
 /// Admin-managed template versions. The placeholder shipped with this build
 /// has isApproved=false, isPlaceholder=true — see LOI engine notes.
 model LoiTemplate {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   version        Int
   name           String
   body           String
   requiredFields Json
-  isApproved     Boolean @default(false)
-  isPlaceholder  Boolean @default(true)
+  isApproved     Boolean  @default(false)
+  isPlaceholder  Boolean  @default(true)
   createdAt      DateTime @default(now())
 
   loiVersions LoiVersion[]
@@ -915,7 +920,7 @@ model LoiVersion {
 
   status LoiVersionStatus @default(DRAFT)
 
-  generatedAt DateTime  @default(now())
+  generatedAt  DateTime  @default(now())
   releasedById String?
   releasedBy   User?     @relation("LoiReleasedBy", fields: [releasedById], references: [id])
   releasedAt   DateTime?
@@ -924,11 +929,23 @@ model LoiVersion {
   signedPdfSha256  String?
   certificateB2Key String?
 
+  /// plan.md section 19 step-0 finding: LoiAcceptance.previewOpenedAt is
+  /// copied from here, not set directly — these two columns are the only
+  /// place "did this signer open this exact version" can live, since a
+  /// signer opens the preview *before* an OtpChallenge/LoiAcceptance row
+  /// exists (verify requires it to already be true). Set by
+  /// GET /api/loi-versions/[versionId]/download. A new LOI version is a new
+  /// row, so both naturally start null again — no reset logic needed.
+  franchiseePreviewOpenedAt DateTime?
+  companyPreviewOpenedAt    DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  currentFor StoreOnboarding? @relation("CurrentLoiVersion")
-  attempts   EsignAttempt[]
+  currentFor    StoreOnboarding? @relation("CurrentLoiVersion")
+  attempts      EsignAttempt[]
+  otpChallenges OtpChallenge[]
+  acceptances   LoiAcceptance[]
 
   @@unique([onboardingId, versionNo])
   @@index([onboardingId])
@@ -938,9 +955,9 @@ model LoiVersion {
 /// retry after FAILED/EXPIRED/CANCELLED — section 17: "A failed/expired
 /// attempt can be restarted as attempt n+1").
 model EsignAttempt {
-  id                 String              @id @default(cuid())
+  id                 String             @id @default(cuid())
   loiVersionId       String
-  loiVersion         LoiVersion          @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
+  loiVersion         LoiVersion         @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
   signerRole         EsignSignerRole
   attemptNo          Int
   provider           String
@@ -948,36 +965,36 @@ model EsignAttempt {
   /// The hash of the PDF actually sent for this attempt — checked against
   /// the webhook's reported hash before ever marking COMPLETED.
   pdfSha256          String
-  status             EsignAttemptStatus  @default(NOT_STARTED)
+  status             EsignAttemptStatus @default(NOT_STARTED)
   signerUserId       String?
-  signerUser         User?               @relation("EsignSignerUser", fields: [signerUserId], references: [id])
+  signerUser         User?              @relation("EsignSignerUser", fields: [signerUserId], references: [id])
   sentAt             DateTime?
   completedAt        DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   events EsignEvent[]
 
+  @@unique([loiVersionId, signerRole, attemptNo])
   @@index([loiVersionId])
   @@index([providerEnvelopeId])
-  @@unique([loiVersionId, signerRole, attemptNo])
 }
 
 /// Raw webhook/reconcile log — the idempotency ledger. Unique
 /// (provider, providerEventId) is what makes a duplicate delivery a no-op
 /// (P1-10, "duplicate and late webhooks harmless").
 model EsignEvent {
-  id               String                 @id @default(cuid())
+  id               String                @id @default(cuid())
   attemptId        String?
-  attempt          EsignAttempt?          @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  attempt          EsignAttempt?         @relation(fields: [attemptId], references: [id], onDelete: SetNull)
   provider         String
   providerEventId  String
   envelopeId       String
   payload          Json
   signatureValid   Boolean
-  processingStatus EsignProcessingStatus  @default(RECEIVED)
+  processingStatus EsignProcessingStatus @default(RECEIVED)
   error            String?
-  receivedAt       DateTime               @default(now())
+  receivedAt       DateTime              @default(now())
 
   @@unique([provider, providerEventId])
   @@index([envelopeId])
@@ -997,13 +1014,125 @@ model EmailTemplate {
 /// "Failure of email/notification never fails the business action" (P1-14) —
 /// every send attempt (success or failure) is logged here instead.
 model NotificationLog {
-  id           String   @id @default(cuid())
+  id           String              @id @default(cuid())
   templateKey  String
   to           String
   onboardingId String?
   status       String
   error        String?
-  sentAt       DateTime @default(now())
+  /// plan.md section 19 — every row before this was implicitly an email;
+  /// default EMAIL so no existing call site needs to change.
+  channel      NotificationChannel @default(EMAIL)
+  sentAt       DateTime            @default(now())
 
   @@index([onboardingId])
+}
+
+// ---------------------------------------------------------------------------
+// plan.md section 19 — LOI signing by mobile OTP (added 2026-10-01). OTP
+// replaces *how* the "signed" event is produced (see EsignAttempt.provider
+// = "sms_otp", EsignAttempt.providerEnvelopeId = OtpChallenge.id); it does
+// not introduce a parallel signer-role or attempt-status shape — both reuse
+// EsignSignerRole / EsignAttemptStatus from section 17 above.
+// ---------------------------------------------------------------------------
+
+enum OtpChallengeStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+  LOCKED
+  SUPERSEDED
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+/// One row per OTP send attempt for one signer on one LOI version — the
+/// rate-limit/attempt ledger. A new send supersedes the previous PENDING row
+/// rather than reusing it (section 19 "What gets built" #1). Bound to one
+/// exact loiVersionId + its pdfSha256 snapshot at send time; verify re-checks
+/// both are still current (a newer LOI version or changed hash fails verify
+/// with a clear message, same section).
+model OtpChallenge {
+  id           String          @id @default(cuid())
+  onboardingId String
+  onboarding   StoreOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  loiVersionId String
+  loiVersion   LoiVersion      @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
+  signerRole   EsignSignerRole
+  signerUserId String
+  signerUser   User            @relation("OtpChallengeSigner", fields: [signerUserId], references: [id])
+
+  phoneE164 String
+  /// HMAC-SHA256(OTP_HMAC_SECRET, challengeId + ":" + otp) — the plain code
+  /// is never stored, logged, audited, or put in NotificationLog (section 19
+  /// hard rule; only the dev-only mock-sms page may display it).
+  codeHash  String
+  pdfSha256 String
+
+  expiresAt DateTime
+  attempts  Int                @default(0)
+  status    OtpChallengeStatus @default(PENDING)
+
+  /// Sends within the current 30-minute rate-limit window for this
+  /// onboarding+signer — the DB-side wrapper around src/lib/otp/core.ts
+  /// computes this by counting sibling rows, so the pure core module stays
+  /// DB-free and unit-testable (same split as state.ts vs. its callers).
+  sendCount  Int      @default(1)
+  lastSentAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  acceptance LoiAcceptance?
+
+  @@index([onboardingId])
+  @@index([loiVersionId])
+  @@index([signerUserId])
+  @@index([loiVersionId, signerRole, status])
+}
+
+/// The evidence row (section 19 decision 4: "Evidence is stored for every
+/// acceptance"). Unique on (loiVersionId, signerRole) — one acceptance per
+/// signer per version, never overwritten or reused.
+model LoiAcceptance {
+  id           String          @id @default(cuid())
+  loiVersionId String
+  loiVersion   LoiVersion      @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
+  signerRole   EsignSignerRole
+  signerUserId String
+  signerUser   User            @relation("LoiAcceptanceSigner", fields: [signerUserId], references: [id])
+  signerName   String
+  /// e.g. "+91 98•••••210" — never the full number (same masking discipline
+  /// as KycSubmission's maskAadhaar).
+  phoneMasked  String
+
+  otpChallengeId String       @unique
+  otpChallenge   OtpChallenge @relation(fields: [otpChallengeId], references: [id])
+
+  acceptedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+  /// The LOI PDF's hash at the moment of acceptance — matched against
+  /// LoiVersion.pdfSha256 at verify time; the LOI PDF itself is never
+  /// modified (section 19 decision 4), so this stays valid forever.
+  pdfSha256  String
+
+  /// Exact snapshot of what the signer saw and agreed to — a later wording
+  /// change (consentTextVersion bump) never retroactively changes what an
+  /// already-accepted signer is considered to have agreed to.
+  consentText        String
+  consentTextVersion Int
+  /// Copied from LoiVersion.franchiseePreviewOpenedAt /
+  /// companyPreviewOpenedAt at the moment this row is created (see that
+  /// field's own comment for why the timestamp has to live there first).
+  previewOpenedAt    DateTime?
+
+  method String @default("SMS_OTP")
+
+  @@unique([loiVersionId, signerRole])
 }

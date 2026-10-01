@@ -3,9 +3,15 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canFranchiseeSignNow } from "@/lib/onboarding/state";
 import { LOI_VERSION_STATUS_LABELS } from "@/lib/onboarding/format";
+import { currentSigningMethod } from "@/lib/onboarding/signing-method";
+import { renderConsentText } from "@/lib/otp/consent";
+import { normalizePhoneToE164, maskPhoneE164 } from "@/lib/otp/phone";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OtpSignPanel } from "@/components/otp-sign-panel";
+import { LoiFeedbackForm } from "@/components/loi-feedback-form";
 import { FranchiseeSignButton } from "./franchisee-sign-button";
+import { requestFranchiseeLoiOtp, verifyFranchiseeLoiOtp, submitLoiFeedback } from "./actions";
 
 export default async function OnboardingLoiPage() {
   const user = await requireUser();
@@ -33,6 +39,10 @@ export default async function OnboardingLoiPage() {
         latestFranchiseAttemptStatus: latestAttempt?.status ?? null,
       })
     : false;
+
+  const signingMethod = currentSigningMethod();
+  const normalizedPhone = normalizePhoneToE164(onboarding.contactPhone);
+  const phoneMasked = normalizedPhone ? maskPhoneE164(normalizedPhone) : "(no mobile number on file)";
 
   return (
     <div className="space-y-6">
@@ -79,11 +89,37 @@ export default async function OnboardingLoiPage() {
               </div>
             )}
 
-            <FranchiseeSignButton
-              onboardingId={onboarding.id}
-              canSign={canSign}
-              attemptStatus={latestAttempt?.status ?? null}
-            />
+            {latestAttempt?.status === "IN_PROGRESS" ? (
+              <p className="text-sm text-muted-foreground">Signing in progress — check back shortly.</p>
+            ) : latestAttempt?.status === "COMPLETED" ? (
+              <p className="text-sm text-emerald-600">You&apos;ve signed — waiting on the company signatory.</p>
+            ) : signingMethod === "AADHAAR_ESIGN" ? (
+              <FranchiseeSignButton
+                onboardingId={onboarding.id}
+                canSign={canSign}
+                attemptStatus={latestAttempt?.status ?? null}
+              />
+            ) : (
+              <OtpSignPanel
+                onboardingId={onboarding.id}
+                canSign={canSign}
+                initiallySent={latestAttempt?.provider === "sms_otp" && latestAttempt.status === "SENT"}
+                consentText={renderConsentText({
+                  name: user.name,
+                  versionNo: version.versionNo,
+                  pdfSha256: version.pdfSha256,
+                  phoneMasked,
+                })}
+                phoneMasked={phoneMasked}
+                buttonLabel="Sign LOI with OTP"
+                requestAction={requestFranchiseeLoiOtp}
+                verifyAction={verifyFranchiseeLoiOtp}
+              />
+            )}
+
+            {latestAttempt?.status !== "COMPLETED" && (
+              <LoiFeedbackForm onboardingId={onboarding.id} submitAction={submitLoiFeedback} />
+            )}
           </CardContent>
         </Card>
       )}

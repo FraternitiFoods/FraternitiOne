@@ -5,8 +5,12 @@ import { transitionEsignAttempt, transitionLoiVersion, type EsignAttemptEvent } 
 import { recomputeOnboardingStatus } from "@/lib/onboarding/recompute";
 import { sendOnboardingEmail, type EmailKey } from "@/lib/onboarding/notify";
 import { getEsignProvider, currentProviderName } from "./index";
-import { uploadDocument } from "@/lib/storage";
+import { uploadDocument, getObjectBuffer } from "@/lib/storage";
 import { convertOnboardingToProject } from "@/lib/onboarding/conversion";
+import { formatOnboardingCode } from "@/lib/onboarding/ids";
+import { generateAcceptanceCertificatePdf } from "@/lib/onboarding/acceptance-certificate";
+import { CONSENT_TEXT_VERSION } from "@/lib/otp/consent";
+import { isMockSmsActive } from "@/lib/sms";
 import type { ParsedWebhookEvent } from "./provider";
 import type { Prisma } from "@prisma/client";
 
@@ -79,9 +83,20 @@ export type ProcessOutcome = {
  */
 export async function processEsignEvent(
   parsed: ParsedWebhookEvent,
-  signatureValid: boolean
+  signatureValid: boolean,
+  /**
+   * plan.md section 19 step-0 finding: without this, every event — Aadhaar
+   * or OTP — would log under whatever ESIGN_PROVIDER happens to be set to
+   * (currentProviderName()'s only source), mislabeling OTP-driven
+   * completions in /admin/esign-events. The OTP verify path
+   * (src/lib/otp/challenge.ts) passes "sms_otp" explicitly; every existing
+   * caller (the real webhook route, Admin reconcile, the mock-autocomplete
+   * convenience in startFranchiseeEsign/startCompanyEsign) omits this and
+   * gets byte-for-byte the same behavior as before.
+   */
+  providerNameOverride?: string
 ): Promise<ProcessOutcome> {
-  const providerName = currentProviderName();
+  const providerName = providerNameOverride ?? currentProviderName();
 
   const existing = await db.esignEvent.findUnique({
     where: { provider_providerEventId: { provider: providerName, providerEventId: parsed.eventId } },
@@ -307,15 +322,54 @@ async function handleAttemptCompleted(
 
   // Never overwrite an existing signed copy (P1-08 / section 17's own rule).
   if (!signedPdfB2Key) {
-    const provider = getEsignProvider();
-    const signedPdf = await provider.fetchSignedPdf(attempt.providerEnvelopeId!);
-    const certificate = await provider.fetchCertificate(attempt.providerEnvelopeId!);
-    const { createHash } = await import("node:crypto");
-    signedPdfSha256 = createHash("sha256").update(signedPdf).digest("hex");
     signedPdfB2Key = `onboarding/${onboardingId}/loi/${loiVersion.versionNo}/signed.pdf`;
     certificateB2Key = `onboarding/${onboardingId}/loi/${loiVersion.versionNo}/certificate.pdf`;
-    await uploadDocument({ key: signedPdfB2Key, body: signedPdf, contentType: "application/pdf" });
-    await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
+
+    if (attempt.provider === "sms_otp") {
+      // plan.md section 19 step-0 finding + decision 4: no vendor to ask for
+      // a "signed copy" — the original LOI PDF is filed unchanged (its hash
+      // never moves), and the certificate is OUR OWN Acceptance Certificate,
+      // built from both signers' LoiAcceptance rows (the franchisee's was
+      // committed in an earlier transaction; the company's was committed by
+      // verifyOtp just before it called processEsignEvent — both are visible
+      // here under read-committed isolation).
+      const original = await getObjectBuffer(loiVersion.pdfB2Key);
+      signedPdfSha256 = loiVersion.pdfSha256;
+      await uploadDocument({ key: signedPdfB2Key, body: original, contentType: "application/pdf" });
+
+      const acceptances = await tx.loiAcceptance.findMany({ where: { loiVersionId: loiVersion.id } });
+      const franchiseeAcceptance = acceptances.find((a) => a.signerRole === "FRANCHISEE");
+      const companyAcceptance = acceptances.find((a) => a.signerRole === "COMPANY");
+      const orderedAcceptances = [franchiseeAcceptance, companyAcceptance].filter(
+        (a): a is NonNullable<typeof a> => a != null
+      );
+
+      const certificate = await generateAcceptanceCertificatePdf({
+        onboardingCode: formatOnboardingCode(onboarding.seq),
+        storeLabel,
+        loiVersionNo: loiVersion.versionNo,
+        pdfSha256: loiVersion.pdfSha256,
+        consentTextVersion: orderedAcceptances[0]?.consentTextVersion ?? CONSENT_TEXT_VERSION,
+        signers: orderedAcceptances.map((a) => ({
+          role: a.signerRole,
+          name: a.signerName,
+          phoneMasked: a.phoneMasked,
+          acceptedAt: a.acceptedAt,
+          ip: a.ip,
+          otpChallengeId: a.otpChallengeId,
+        })),
+        watermark: isMockSmsActive(),
+      });
+      await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
+    } else {
+      const provider = getEsignProvider();
+      const signedPdf = await provider.fetchSignedPdf(attempt.providerEnvelopeId!);
+      const certificate = await provider.fetchCertificate(attempt.providerEnvelopeId!);
+      const { createHash } = await import("node:crypto");
+      signedPdfSha256 = createHash("sha256").update(signedPdf).digest("hex");
+      await uploadDocument({ key: signedPdfB2Key, body: signedPdf, contentType: "application/pdf" });
+      await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
+    }
   }
 
   await tx.loiVersion.update({

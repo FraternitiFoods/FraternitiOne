@@ -15,7 +15,7 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
 
   const user = await db.user.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, role: true, department: true },
+    select: { id: true, name: true, email: true, role: true, department: true, phone: true },
   });
 
   if (!user) {
