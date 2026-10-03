@@ -155,12 +155,14 @@ function FileUploader({
 export function KycSection({
   entityType,
   requiredKinds,
+  optionalKinds,
   files,
   kyc,
   editable,
 }: {
   entityType: OnboardingEntityType;
   requiredKinds: OnboardingFileKind[];
+  optionalKinds: OnboardingFileKind[];
   files: FileInfo[];
   kyc: KycInfo | null;
   editable: boolean;
@@ -190,6 +192,18 @@ export function KycSection({
           <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} />
         ))}
       </div>
+
+      {optionalKinds.length > 0 && (
+        <div className="space-y-2 border-t pt-4">
+          <div className="text-sm font-medium">Additional documents (optional)</div>
+          <p className="text-xs text-muted-foreground">
+            Not required to submit your KYC, but upload any that apply — it can speed up review.
+          </p>
+          {optionalKinds.map((kind) => (
+            <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} />
+          ))}
+        </div>
+      )}
 
       <form action={detailsAction} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">

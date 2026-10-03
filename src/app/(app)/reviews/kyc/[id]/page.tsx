@@ -36,6 +36,14 @@ export default async function KycReviewDetailPage({ params }: PageProps<"/review
   }
 
   const requiredKinds = requiredKycFileKinds(onboarding.entityType);
+  // plan.md 20C: optional kinds (not in requiredKinds) that the franchisee
+  // actually uploaded still need to be visible to the reviewer — review
+  // stays whole-KYC (one accept/changes-requested decision), but a reviewer
+  // can't account for a document they can't see.
+  const requiredKindSet = new Set(requiredKinds);
+  const optionalUploadedKinds = onboarding.files
+    .map((f) => f.kind)
+    .filter((kind) => !requiredKindSet.has(kind));
 
   return (
     <div className="space-y-6">
@@ -108,6 +116,37 @@ export default async function KycReviewDetailPage({ params }: PageProps<"/review
           })}
         </CardContent>
       </Card>
+
+      {optionalUploadedKinds.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Additional documents (optional)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {optionalUploadedKinds.map((kind) => {
+              const file = onboarding.files.find((f) => f.kind === kind);
+              if (!file) return null;
+              return (
+                <div key={kind} className="flex items-center justify-between rounded-md border p-2 text-sm">
+                  <span>{FILE_KIND_LABELS[kind]}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={file.scanStatus === "CLEAN" ? "default" : "destructive"}>
+                      {file.scanStatus}
+                    </Badge>
+                    <Link
+                      href={`/api/onboarding-files/${file.id}/download`}
+                      className="text-primary hover:underline"
+                      target="_blank"
+                    >
+                      Open
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {onboarding.kyc.status === "SUBMITTED" ? (
         <DecisionForm

@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { requiredKycFileKinds, FILE_KIND_LABELS } from "@/lib/onboarding/kyc-requirements";
+import { requiredKycFileKinds, FILE_KIND_LABELS, OPTIONAL_FILE_KINDS } from "@/lib/onboarding/kyc-requirements";
 import { REVIEW_STATUS_LABELS } from "@/lib/onboarding/format";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +48,7 @@ export default async function OnboardingDocumentsPage() {
           <KycSection
             entityType={onboarding.entityType}
             requiredKinds={requiredKinds}
+            optionalKinds={OPTIONAL_FILE_KINDS}
             files={kycFiles.map((f) => ({
               kind: f.kind,
               fileName: f.fileName,

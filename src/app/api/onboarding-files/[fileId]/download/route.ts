@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { canReviewKyc, canReviewPayment, canManageOnboardingAdmin } from "@/lib/permissions";
 import { getDocumentDownloadUrl } from "@/lib/storage";
 import { writeAuditEvent } from "@/lib/audit";
+import { AUDITED_ON_OPEN_KINDS } from "@/lib/onboarding/kyc-requirements";
 
 /**
  * plan.md section 17, P1-04/P1-03: restricted download route for
@@ -45,15 +46,18 @@ export async function GET(
     return NextResponse.json({ error: "File has not passed the malware scan yet." }, { status: 403 });
   }
 
-  // P1-04: "every open of an Aadhaar file writes an AuditEvent" — unconditional.
-  if (file.kind === "AADHAAR") {
+  // P1-04, widened by plan.md 20C: "every open of an Aadhaar file writes an
+  // AuditEvent" — now every open of any kind in AUDITED_ON_OPEN_KINDS
+  // (Aadhaar plus the new sensitive kinds, bank statement/cancelled cheque
+  // included) — unconditional, regardless of who opened it.
+  if (AUDITED_ON_OPEN_KINDS.includes(file.kind)) {
     await writeAuditEvent(db, {
       actor: user,
       onboardingId: file.onboardingId,
       entityType: "OnboardingFile",
       entityId: file.id,
       action: "UPDATE",
-      reference: "Aadhaar file opened",
+      reference: `${file.kind} file opened`,
     });
   }
 

@@ -232,6 +232,18 @@ enum OnboardingFileKind {
   COMPANY_DOC
   SIGNATORY_PROOF
   PAYMENT_RECEIPT
+  // plan.md 20C — seven additional KYC document kinds (SRD 8.1), all
+  // optional (not added to kyc-requirements.ts's mandatory lists) until
+  // Sushant ji says which are mandatory. PARTNERSHIP_DEED also covers an
+  // LLP agreement; COMPANY_DOC already stands for the incorporation
+  // certificate so it is not duplicated here.
+  ADDRESS_PROOF
+  PHOTOGRAPH
+  BANK_STATEMENT
+  CANCELLED_CHEQUE
+  GST_CERT
+  PARTNERSHIP_DEED
+  OTHER_SUPPORTING
 }
 
 enum ScanStatus {

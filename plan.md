@@ -3197,3 +3197,194 @@ section the one inconsistent with how every other section preserved its own
 verification script. Flagging the disagreement explicitly here rather than
 silently overriding the instruction or silently complying with one that
 contradicts the visible evidence.
+
+**Step 3 — expanded KYC document types (2026-10-03):** 20C shipped. Built
+exactly to the section's own scope — 20B (widgets), 20D (search/export) and
+`/store-onboarding`'s list page were not touched; see "Scope discipline"
+below.
+
+- **Schema** (additive migration
+  `prisma/migrations/20261003112146_add_expanded_kyc_document_types/`): seven
+  new `OnboardingFileKind` values — `ADDRESS_PROOF`, `PHOTOGRAPH`,
+  `BANK_STATEMENT`, `CANCELLED_CHEQUE`, `GST_CERT`, `PARTNERSHIP_DEED`
+  (covers an LLP agreement too), `OTHER_SUPPORTING`. Plain `ALTER TYPE ...
+  ADD VALUE` statements, nothing else touched. **Note on how this migration
+  was created**: `prisma migrate dev --create-only` couldn't run — the shadow
+  database (the Docker container on host port 5433, per
+  `docker-compose.yml`'s own comment distinguishing it from the native
+  Postgres on 5432) wasn't running and Docker Desktop itself wasn't running
+  either (`docker ps` failed to reach the engine). Since an additive enum
+  migration is simple enough to hand-write safely, I wrote the migration
+  folder/SQL by hand (same shape Prisma itself generates for enum adds) and
+  applied it with `prisma migrate deploy` against the real dev DB directly —
+  deploy doesn't need a shadow database, only `migrate dev`'s diffing does.
+  Flagging this as a judgment call rather than silently working around it:
+  if Docker Desktop is expected to be running for shadow-db diffing in this
+  environment, that's worth fixing separately; I didn't start Docker Desktop
+  myself since that's an environment change outside this task's scope.
+  `npx prisma generate` ran clean afterward (dev server stopped first, per
+  plan.md section 18b's documented Windows EPERM note).
+- **Config** (`src/lib/onboarding/kyc-requirements.ts`): the seven new kinds
+  added to `FILE_KIND_LABELS` only — **not** to `KYC_REQUIREMENTS`'s
+  mandatory arrays, exactly per the section's own decision (optional until
+  Sushant ji says otherwise). Two new exported lists: `OPTIONAL_FILE_KINDS`
+  (what the franchisee's documents page offers beyond the required kinds)
+  and `AUDITED_ON_OPEN_KINDS` (which kinds write an `AuditEvent` on every
+  open — see restricted-file rule below).
+- **Upload UI** (`src/app/onboarding/documents/kyc-section.tsx` +
+  `page.tsx`): a new "Additional documents (optional)" block renders one
+  `FileUploader` per `OPTIONAL_FILE_KINDS` entry, reusing the exact same
+  component/upload pipeline as the required kinds (same presign ->
+  `finalizeKycFileUpload` -> malware scan -> version-history chain; no
+  parallel path was built). `src/app/onboarding/documents/actions.ts` needed
+  **no changes at all** — `finalizeKycFileUpload` already accepted any
+  `OnboardingFileKind` other than `PAYMENT_RECEIPT`, so it was already
+  generic over kind; only the UI was gated to `requiredKinds`. Optional
+  uploads share the same editability window as required ones (`kycStatus
+  MISSING | CHANGES_REQUESTED`) — no separate state.
+- **Restricted-file rule** (`src/app/api/onboarding-files/[fileId]/download/route.ts`):
+  the open-access check (owner, or `KYC_REVIEWER`/`ADMIN` for any
+  non-`PAYMENT_RECEIPT` kind) was **already** kind-agnostic — it applied to
+  every file kind except `PAYMENT_RECEIPT` before this change, so the seven
+  new kinds inherited the correct access restriction automatically, no edit
+  needed there. The part that *was* keyed off `kind === "AADHAAR"`
+  specifically was only the "every open writes an `AuditEvent`" clause —
+  widened to `AUDITED_ON_OPEN_KINDS.includes(file.kind)`, which now covers
+  Aadhaar plus all seven new kinds (bank statement and cancelled cheque
+  included, as the plan calls out by name). **Judgment call, flagged
+  explicitly**: `PAN`, `COMPANY_DOC` and `SIGNATORY_PROOF` were deliberately
+  **not** added to the audited-on-open list — section 17 never asked for
+  audit-on-open for those three, and section 20C's instruction is "every new
+  kind gets... the restricted-file rule Aadhaar has", not "audit every
+  existing kind too". Widening further than asked felt like scope creep on
+  an already-shipped section; if Sushant ji wants PAN/company-doc opens
+  audited too, that's a one-line addition to `AUDITED_ON_OPEN_KINDS`.
+- **Review UI** (`src/app/(app)/reviews/kyc/[id]/page.tsx`): the review
+  detail page previously only rendered `requiredKycFileKinds(entityType)` —
+  an optional kind the franchisee actually uploaded was invisible to the
+  reviewer entirely (not even an "open" link). Fixed by adding a second card
+  ("Additional documents (optional)") listing any uploaded file whose kind
+  isn't in the required set. Review stays whole-KYC — one accept/
+  changes-requested decision per onboarding, no per-file state machine; the
+  new card has no decision controls of its own, it only makes the files
+  visible/openable to the one whole-KYC decision already on the page. The
+  top-level `/reviews?tab=kyc` queue list itself needed no change — it lists
+  onboardings by `kycStatus`, not by file kind.
+- **No new vitest tests added** — every change was either a pure
+  config/label addition (`kyc-requirements.ts`) or widening an existing
+  kind-agnostic/kind-keyed check with a list (download route, review page);
+  nothing met the bar of "new logic worth unit-testing" the task set, so
+  per its own instruction I didn't force one. `tsc --noEmit`, `eslint`,
+  `vitest run` all clean (169 tests, same count as 20A — none added, none
+  broken).
+
+**Cause-effect #1 (already-ACCEPTED onboarding unaffected) — verified
+explicitly, not assumed**: the one pre-existing onboarding at `kycStatus =
+ACCEPTED` / `onboardingStatus = FRANCHISE_SIGNED` in this dev DB
+(`franchisee.demo@fraterniti.co.in`'s store) was snapshotted *before* any of
+the verification run's uploads/reviews happened, and re-checked identical
+(`kycStatus`, `onboardingStatus`, `KycSubmission.status`) at the end, in the
+same script run, not a separate assumption. Nothing in `state.ts`,
+`recompute.ts` or the gate functions (`canFranchiseeSignNow`,
+`canCompanySignNow`) was touched — they don't reference `OnboardingFileKind`
+at all, so this was true by construction, and the DB check above confirms it
+held in practice too.
+
+**Verification — real Playwright browser pass**
+(`scripts/tmp-e2e-kyc-doctypes.ts`, kept committed as a regression check for
+20C, same precedent as `tmp-e2e-sales.ts`/`tmp-e2e-onboarding.ts`/
+`tmp-e2e-otp-signing.ts`): used the existing `tech@fraterniti.co.in` (Admin,
+also stands in for `KYC_REVIEWER` review via `canReviewKyc`'s own
+ADMIN-inclusive rule) and `kyc.demo@fraterniti.co.in` (`KYC_REVIEWER`,
+already present from an earlier session's `tmp-demo-setup.ts`, a standing
+multi-role demo-account helper — not created by this task) and
+`sales.demo@fraterniti.co.in` (`SALES`, for the unrelated-role negative
+check) dev accounts. One throwaway `FRANCHISEE` + `StoreOnboarding` was
+created through the real `/store-onboarding/new` UI (not a direct DB
+insert) and deleted at the end through the real `DeleteOnboardingButton` /
+`deleteOnboarding` action — never a direct `db.storeOnboarding.delete`
+except as a documented fallback if the UI path itself failed. The one real
+onboarding in this dev DB was only read (for the cause-effect #1 check),
+never modified.
+
+Checks, all passing on the final run (ran clean twice in a row before being
+treated as done, per the task's instruction to verify reliability, not just
+a single green run):
+- Franchisee: the "Additional documents (optional)" section and all seven
+  new kinds' uploaders are visible on `/onboarding/documents`; uploading a
+  bank statement reached `scanStatus = CLEAN` (real malware-scan round trip,
+  not mocked); re-uploading the same kind produced version 2 with
+  `supersedesId` pointing at version 1 (old row not deleted); a cancelled
+  cheque upload also reached `CLEAN`.
+- Franchisee can open their own cancelled-cheque file via the download
+  route (owner access, unaffected by the restricted-file widening).
+- KYC reviewer (`kyc.demo`): both new kinds appear in the review detail
+  page's new "Additional documents (optional)" card; opening the bank
+  statement file wrote exactly one new `AuditEvent` (count compared
+  before/after, not just "an event exists"), whose `reference` names the
+  specific kind (`"BANK_STATEMENT file opened"`).
+- `SALES` (unrelated role, no stake in this onboarding): blocked with 404 on
+  a direct `GET` to the bank-statement file's download route (API-level
+  check, not just a hidden UI link); redirected away from the KYC review
+  detail page entirely (`/reviews` itself redirects `SALES` on to
+  `/dashboard` since they have no visible review tab at all — confirmed the
+  final URL never contains the review detail path, rather than asserting a
+  specific intermediate URL).
+- Cause-effect #1: the pre-existing `ACCEPTED`/`FRANCHISE_SIGNED` onboarding
+  was byte-for-byte unchanged (`kycStatus`, `onboardingStatus`,
+  `KycSubmission.status`) after the entire run.
+- Cleanup: throwaway onboarding deleted via the real UI delete dialog
+  (confirmed gone by a direct query, not assumed from a 200 response);
+  throwaway franchisee user deleted directly (the delete action
+  intentionally leaves the login account untouched per its own confirmation
+  text, so this script deletes it itself, same as `tmp-e2e-onboarding.ts`
+  does for its own throwaway users); `StoreOnboarding`/`User`/`OnboardingFile`
+  row counts confirmed back to the exact pre-run baseline; the B2 objects
+  this run uploaded were also deleted by prefix
+  (`onboarding/{throwawayId}/`) — `deleteOnboarding` itself only removes DB
+  rows, not B2 objects (existing app behavior, out of 20C's scope to
+  change), so the script cleans up B2 itself, same precedent as
+  `tmp-e2e-onboarding.ts`.
+- `AuditEvent` row count **grew** by the end (expected, not a leak): the
+  onboarding delete nulls `AuditEvent.onboardingId` rather than deleting the
+  rows (`onDelete: SetNull` in the schema, existing section 17 design, not
+  something this task changed) — same orphaned-but-harmless audit trail
+  shape every other onboarding deletion in this app already produces.
+
+**A bug caught in my own verification script, not the shipped feature**:
+the first version of `tmp-e2e-kyc-doctypes.ts` used the URL-match regex
+`/\/store-onboarding\/[a-z0-9]+$/` to confirm the onboarding-creation form
+had actually submitted — but `/store-onboarding/new` itself matches that
+same regex (`new` is lowercase alphanumeric), so the check silently passed
+even on a page that hadn't navigated anywhere. Fixed by copying
+`tmp-e2e-onboarding.ts`'s own more specific regex
+(`[a-z0-9]*\d[a-z0-9]*$`, requiring at least one digit — real onboarding IDs
+always have one, `new` doesn't) — the same regex that script already uses
+for exactly this reason, which I should have reused from the start instead
+of re-deriving a weaker one. Once fixed, the real failure underneath it
+surfaced immediately and was a second script bug, not an app bug: the
+throwaway workspace email (`...@example.com`) was rejected by the email
+domain whitelist (section 18a, `src/lib/email-domain.ts` — `tulsi.world`,
+`fraterniti.co.in`, `zoca.co.in` only), which only applies to
+`/store-onboarding/new`'s server-side validation and not to the direct-
+Prisma-insert throwaway users other e2e scripts create — switched to an
+`@tulsi.world` address and the form submitted correctly. Neither bug ever
+touched the shipped 20C code.
+
+**Scope discipline confirmed**: `src/lib/esign/`, `src/lib/otp/`,
+`src/lib/sms/`, `/onboarding/loi`, `/signing`, `webhook-processor.ts`,
+`src/lib/sales/`, `src/app/(app)/sales/`, `src/app/api/sales/` — all
+untouched (confirmed via `git status` showing no changes under any of
+those paths). `src/app/(app)/store-onboarding/page.tsx` (the list page) was
+not touched at all, including no widgets/search added — 20B and 20D are
+still open. `src/lib/onboarding/state.ts` was read-only, as instructed, and
+is unchanged. `scripts/tmp-check.ts` and
+`scripts/tmp-inspect-kyc-db.ts` (a one-off DB read used while locating a
+usable KYC-reviewer account and an in-progress onboarding before writing
+the real verification script) were deleted after use — no lasting value.
+`scripts/tmp-demo-setup.ts` already existed in this repo from an earlier
+session; it was run (not created) to make sure the demo accounts'
+passwords were in a known state, same documented "re-sync after a seed
+mismatch" situation 20A's build log already flagged once.
+
+Next up per the section's own build order: 20B (dashboard widgets).
