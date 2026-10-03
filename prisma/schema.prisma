@@ -272,6 +272,17 @@ enum EsignProcessingStatus {
   IGNORED_LATE
 }
 
+/// plan.md section 20A — sales tracking (SRD 10). CSV covers the MVP import;
+/// MANUAL is the Admin single-day fallback (SRD 10.2); API is reserved for a
+/// future live POS puller (Phase 2, section 20A "Out of bounds") — not built
+/// here, but a later API puller writes SalesDay rows with this same source
+/// value rather than needing a schema change.
+enum SalesSource {
+  CSV
+  MANUAL
+  API
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -351,6 +362,11 @@ model User {
   // --- plan.md section 19 (LOI signing by mobile OTP) ---
   otpChallengesAsSigner  OtpChallenge[]  @relation("OtpChallengeSigner")
   loiAcceptancesAsSigner LoiAcceptance[] @relation("LoiAcceptanceSigner")
+
+  // --- plan.md section 20A (sales tracking) ---
+  salesDaysCreated          SalesDay[]          @relation("SalesDayCreatedBy")
+  salesDaysUpdated          SalesDay[]          @relation("SalesDayUpdatedBy")
+  salesImportBatchesCreated SalesImportBatch[]  @relation("SalesImportBatchCreatedBy")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -421,6 +437,10 @@ model FranchiseProject {
   /// (plan.md section 17) — null for every project created directly through
   /// /projects/new (existing Bengaluru/Ashok Vihar included).
   onboarding     StoreOnboarding?
+
+  // --- plan.md section 20A (sales tracking) ---
+  salesDays          SalesDay[]
+  salesImportBatches SalesImportBatch[]
 
   @@index([franchiseeId])
   @@index([ownerId])
@@ -1135,4 +1155,71 @@ model LoiAcceptance {
   method String @default("SMS_OTP")
 
   @@unique([loiVersionId, signerRole])
+}
+
+// ---------------------------------------------------------------------------
+// plan.md section 20A — sales tracking (SRD 10, added 2026-10-01). Revenue
+// only (no cost/P&L/royalty — see that section's "Out of bounds"). Monthly/
+// yearly totals, AOV and trend series are derived on read from SalesDay, not
+// stored anywhere.
+// ---------------------------------------------------------------------------
+
+/// One row = one store, one business day. `onDelete: Cascade` on project,
+/// same as Task (plan.md section 4). `(projectId, date)` unique means a
+/// re-import of the same file updates these rows in place rather than
+/// double-counting (section 20A cause -> effect #1).
+model SalesDay {
+  id        String           @id @default(cuid())
+  projectId String
+  project   FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The IST business day this row represents — date-only column, no time of
+  /// day (section 20A: "date (@db.Date, the IST business day)").
+  date      DateTime         @db.Date
+
+  /// Paise (integer), never float — same discipline as
+  /// StoreOnboarding.expectedAmount (section 17/20A shared rule).
+  grossSales Int
+  netSales   Int
+  orders     Int
+
+  source        SalesSource       @default(CSV)
+  importBatchId String?
+  importBatch   SalesImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("SalesDayCreatedBy", fields: [createdById], references: [id])
+  updatedById String
+  updatedBy   User   @relation("SalesDayUpdatedBy", fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, date])
+  @@index([projectId])
+  @@index([importBatchId])
+}
+
+/// One row per confirmed CSV import — a dry-run preview writes nothing at
+/// all (section 20A cause -> effect #2). `errors` mirrors what the preview
+/// showed: `[{ line: number, reason: string }]`.
+model SalesImportBatch {
+  id        String           @id @default(cuid())
+  projectId String
+  project   FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  fileName     String
+  fileSha256   String
+  rowsRead     Int
+  rowsInserted Int
+  rowsUpdated  Int
+  rowsRejected Int
+  errors       Json
+
+  createdById String
+  createdBy   User     @relation("SalesImportBatchCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  days SalesDay[]
+
+  @@index([projectId])
 }

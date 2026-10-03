@@ -293,3 +293,49 @@ export function canViewOnboarding(
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// plan.md section 20A — sales tracking (SRD 10). Deliberately NOT routed
+// through hasFullOverride, same narrow pattern as the section 17 block above
+// (canManageUsers/canForceCompleteStage/canDeleteProject) — these are their
+// own narrow grants, not a cross-department override.
+// ---------------------------------------------------------------------------
+
+/**
+ * `FRANCHISEE` only their own store; `SALES` only a store whose
+ * `StoreOnboarding.salesOwnerId` is them (passed in via `project.onboarding`
+ * — callers `include`/`select` it, this function doesn't query); `ADMIN`,
+ * `MANAGEMENT`, `ACCOUNTS` see every store's sales (section 20A "NOT DECIDED
+ * YET" #9: Management read-only access confirmed as a working default);
+ * `SITE_SUPERVISOR` and every other role: no. A project with no onboarding
+ * record (created directly via /projects/new, e.g. the original Bengaluru/
+ * Ashok Vihar projects) has no salesOwnerId at all, so a SALES user never
+ * matches it — same "no match = no access" shape as canViewProject.
+ */
+export function canViewSales(
+  user: Pick<CurrentUser, "role" | "id">,
+  project: { franchiseeId: string; onboarding?: { salesOwnerId: string } | null }
+): boolean {
+  switch (user.role) {
+    case "FRANCHISEE":
+      return project.franchiseeId === user.id;
+    case "SALES":
+      return project.onboarding?.salesOwnerId === user.id;
+    case "ADMIN":
+    case "MANAGEMENT":
+    case "ACCOUNTS":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Who may import a CSV or manually add/edit a sales day (section 20A "NOT
+ * DECIDED YET" #2: working default is Admin only). Narrower than
+ * `canViewSales` on purpose — viewing and writing sales are different
+ * questions, same as `canManageUsers` vs. general visibility.
+ */
+export function canManageSales(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}

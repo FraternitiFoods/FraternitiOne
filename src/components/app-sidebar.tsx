@@ -29,6 +29,11 @@ const BASE_NAV_ITEMS: NavItem[] = [
   // adapted from a separate investor-onboarding SRD (see schema.prisma's
   // ComplaintCategory comment).
   { label: "Complaints", href: "/complaints" },
+  // plan.md section 20A — visible to every role canViewSales(permissions.ts)
+  // grants anything to (Franchisee/Sales/Admin/Management/Accounts); the
+  // page itself re-checks with the real permission function, same reasoning
+  // as "Store Onboarding" below (permissions.ts is server-only).
+  { label: "Sales", href: "/sales" },
   { label: "Payments", href: null },
   { label: "Projects", href: "/projects" },
   // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops
@@ -73,9 +78,18 @@ export function AppSidebar({ name, role }: { name: string; role: Role }) {
   // hidden entirely (not "Soon") for roles with no stake in it — Franchisee
   // uses their own /onboarding portal instead (different sidebar).
   const ONBOARDING_NAV_LABELS = ["Store Onboarding", "Reviews", "Signing"];
+
+  // plan.md section 20A — mirrors canViewSales(permissions.ts) exactly
+  // (FRANCHISEE/SALES always have *a* store to check; ADMIN/MANAGEMENT/
+  // ACCOUNTS always pass). SITE_SUPERVISOR and the department-specific
+  // internal roles (LEGAL, INTERIORS, ...) have no stake in sales, so "Sales"
+  // is hidden entirely for them rather than shown as a disabled "Soon" link.
+  const SALES_VISIBLE_ROLES: Role[] = ["FRANCHISEE", "SALES", "ADMIN", "MANAGEMENT", "ACCOUNTS"];
+
   const navItems = BASE_NAV_ITEMS.filter(
     (item) => !ONBOARDING_NAV_LABELS.includes(item.label) || ONBOARDING_ROLES.includes(role)
   )
+    .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
     .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
     .concat(
       role === "ADMIN"
