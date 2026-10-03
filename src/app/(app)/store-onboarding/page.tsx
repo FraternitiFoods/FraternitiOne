@@ -18,6 +18,7 @@ import {
 } from "@/lib/onboarding/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/stat-card";
 import {
   Table,
   TableBody,
@@ -50,6 +51,24 @@ export default async function StoreOnboardingListPage() {
 
   const canDelete = canManageOnboardingAdmin(user);
 
+  // plan.md section 20B — lightweight summary strip, additive only (no
+  // search/filter/export UI here — that's 20D, the next task, and it will
+  // build on top of this same list/table). Deliberately computed from the
+  // `onboardings` array already fetched above rather than a second query, so
+  // it's always in sync with the table below — on purpose, this strip
+  // carries over today's known pre-20D scope gap (Step 0's build-log note:
+  // the list has no `where` at all, every onboarding-touching role sees
+  // every onboarding) rather than introducing a new one. Once 20D adds
+  // SALES scoping to this page's query, this strip scopes correctly too,
+  // automatically, since it reads from that same array.
+  const summary = {
+    total: onboardings.length,
+    kycPending: onboardings.filter((o) => o.kycStatus !== "ACCEPTED").length,
+    paymentPending: onboardings.filter((o) => o.paymentStatus !== "ACCEPTED").length,
+    loiPending: onboardings.filter((o) => o.onboardingStatus !== "LOI_COMPLETE").length,
+    converted: onboardings.filter((o) => o.onboardingStatus === "LOI_COMPLETE").length,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -62,6 +81,14 @@ export default async function StoreOnboardingListPage() {
         {canCreateOnboarding(user) && (
           <Button nativeButton={false} render={<Link href="/store-onboarding/new">New Onboarding</Link>} />
         )}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard label="Total Onboardings" value={summary.total} />
+        <StatCard label="KYC Pending" value={summary.kycPending} />
+        <StatCard label="Payment Pending" value={summary.paymentPending} />
+        <StatCard label="LOI Pending" value={summary.loiPending} />
+        <StatCard label="Converted (LOI Complete)" value={summary.converted} />
       </div>
 
       {onboardings.length === 0 ? (

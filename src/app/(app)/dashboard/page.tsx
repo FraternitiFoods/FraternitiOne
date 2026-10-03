@@ -15,7 +15,17 @@ import {
   PROJECT_HEALTH_LABELS,
   splitPascalCase,
 } from "@/lib/format";
-import type { Department, TaskStatus } from "@prisma/client";
+import { REVIEW_STATUS_LABELS, LOI_VERSION_STATUS_LABELS } from "@/lib/onboarding/format";
+import { computeOnboardingCompletion } from "@/lib/onboarding/completion";
+import { formatPaiseAsRupees } from "@/lib/sales/format";
+import {
+  getSalesThisMonth,
+  getRecentEmails,
+  isOpenComplaintStatus,
+  OPEN_COMPLAINT_STATUS_FILTER,
+} from "@/lib/dashboard/widgets";
+import { RecentEmailsCard } from "@/components/recent-emails-card";
+import type { Department, Role, TaskStatus } from "@prisma/client";
 
 // FR-002: lifecycle stage, progress %, target opening, owner, next action —
 // rendered differently per role: franchisees get a single-project "Franchise
@@ -28,7 +38,14 @@ export default async function DashboardPage() {
   if (user.role === "FRANCHISEE") {
     return <FranchiseeDashboard franchiseeId={user.id} />;
   }
-  return <InternalDashboard />;
+  // plan.md section 20B — SALES gets its own scoped pipeline view (today's
+  // InternalDashboard has no SALES-specific branch); every other internal
+  // role keeps the existing portfolio pulse, with an extra widget row for
+  // ADMIN/MANAGEMENT only (see InternalDashboard's own role check below).
+  if (user.role === "SALES") {
+    return <SalesDashboard userId={user.id} />;
+  }
+  return <InternalDashboard role={user.role} />;
 }
 
 async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
@@ -36,6 +53,23 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
     where: { franchiseeId },
     include: {
       tasks: { select: { status: true, module: true } },
+      // plan.md section 20B — additive: these two relations back the new
+      // widget row below (Open Complaints, Onboarding/KYC/Payment/LOI
+      // status). `onboarding` is null for a project created directly via
+      // /projects/new (pre-section-17 data) — every widget that depends on
+      // it is skipped, not crashed, in that case.
+      complaints: { select: { status: true } },
+      onboarding: {
+        select: {
+          id: true,
+          entityType: true,
+          kycStatus: true,
+          paymentStatus: true,
+          kyc: true,
+          files: { where: { supersededBy: null }, select: { kind: true } },
+          currentLoiVersion: { select: { status: true } },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -74,6 +108,23 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
     orderBy: { createdAt: "desc" },
     take: 6,
   });
+
+  // plan.md section 20B — Franchisee widget row. Every number below is a
+  // fresh query/computation for this request, nothing stored or cached.
+  const onboarding = project.onboarding;
+  const completion = onboarding
+    ? computeOnboardingCompletion({
+        entityType: onboarding.entityType,
+        kyc: onboarding.kyc,
+        uploadedFileKinds: onboarding.files.map((f) => f.kind),
+        paymentStatus: onboarding.paymentStatus,
+      })
+    : null;
+  const openComplaints = project.complaints.filter((c) => isOpenComplaintStatus(c.status)).length;
+  const [salesThisMonth, recentEmails] = await Promise.all([
+    getSalesThisMonth(project.id),
+    onboarding ? getRecentEmails(onboarding.id) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -190,6 +241,61 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
         </Card>
       </div>
 
+      {/* plan.md section 20B — additive widget row: onboarding/KYC/payment/
+          LOI status, sales this month, open complaints, latest emails. Shown
+          only when this project came from the onboarding flow (`onboarding`
+          is null for pre-section-17 projects created directly via
+          /projects/new) — Sales This Month and Open Complaints don't need an
+          onboarding record and always render. */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Onboarding & Store
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {onboarding && completion && (
+            <StatCard
+              label="Onboarding Completion"
+              value={`${completion.completed}/${completion.total}`}
+              caption="Required items submitted"
+            />
+          )}
+          {onboarding && (
+            <StatCard label="KYC Status" value={REVIEW_STATUS_LABELS[onboarding.kycStatus]} />
+          )}
+          {onboarding && (
+            <StatCard label="Payment Status" value={REVIEW_STATUS_LABELS[onboarding.paymentStatus]} />
+          )}
+          {onboarding && (
+            <StatCard
+              label="LOI Status"
+              value={
+                onboarding.currentLoiVersion
+                  ? LOI_VERSION_STATUS_LABELS[onboarding.currentLoiVersion.status]
+                  : "Not yet generated"
+              }
+            />
+          )}
+          <StatCard
+            label="Sales This Month"
+            value={formatPaiseAsRupees(salesThisMonth.netSales)}
+            caption={`${salesThisMonth.orders} orders · net`}
+          />
+          <StatCard
+            label="Open Complaints"
+            value={openComplaints}
+            caption={openComplaints > 0 ? "Needs attention" : "All clear"}
+            captionClassName={openComplaints > 0 ? "text-amber-600" : "text-emerald-600"}
+          />
+        </div>
+      </div>
+
+      {onboarding && (
+        <RecentEmailsCard
+          emails={recentEmails}
+          subtitle="Most recent notifications about your onboarding"
+        />
+      )}
+
       {project.nextAction && (
         <Card>
           <CardContent className="py-4 text-sm">
@@ -208,7 +314,7 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
   );
 }
 
-async function InternalDashboard() {
+async function InternalDashboard({ role }: { role: Role }) {
   const projects = await db.franchiseProject.findMany({
     select: { health: true },
   });
@@ -225,6 +331,13 @@ async function InternalDashboard() {
     take: 8,
     include: { project: { select: { seq: true, brand: true, location: true } } },
   });
+
+  // plan.md section 20B — ADMIN/MANAGEMENT widget row, added alongside the
+  // existing portfolio-health stat row above (not replacing it). Every
+  // other internal role (LEGAL, HR, ACCOUNTS, KYC_REVIEWER, ...) keeps
+  // today's InternalDashboard exactly as it was.
+  const showAdminRow = role === "ADMIN" || role === "MANAGEMENT";
+  const adminWidgets = showAdminRow ? await getAdminWidgets() : null;
 
   return (
     <div className="space-y-6">
@@ -296,6 +409,156 @@ async function InternalDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {adminWidgets && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Franchise Pipeline (Admin / Management)
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Total Onboardings" value={adminWidgets.totalOnboardings} />
+            <StatCard label="Sales Users" value={adminWidgets.salesUsers} />
+            <StatCard label="KYC Pending" value={adminWidgets.kycPending} />
+            <StatCard label="KYC Accepted" value={adminWidgets.kycAccepted} />
+            <StatCard label="LOI Pending" value={adminWidgets.loiPending} />
+            <StatCard label="LOI Complete" value={adminWidgets.loiComplete} />
+            <StatCard
+              label="Open Complaints"
+              value={adminWidgets.openComplaints}
+              caption={adminWidgets.openComplaints > 0 ? "Needs attention" : "All clear"}
+              captionClassName={adminWidgets.openComplaints > 0 ? "text-amber-600" : "text-emerald-600"}
+            />
+            <StatCard
+              label="Sales This Month"
+              value={formatPaiseAsRupees(adminWidgets.salesThisMonth.netSales)}
+              caption={`${adminWidgets.salesThisMonth.orders} orders · net, portfolio-wide`}
+            />
+            <StatCard
+              label="Review Workload"
+              value={adminWidgets.kycQueueSize + adminWidgets.paymentQueueSize}
+              caption={`${adminWidgets.kycQueueSize} KYC · ${adminWidgets.paymentQueueSize} payment`}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * plan.md section 20B — ADMIN/MANAGEMENT widget row. Every count is its own
+ * direct Prisma query (no stored counters); "KYC/payment queue size" uses the
+ * same `status === "SUBMITTED"` definition /reviews's own queues use
+ * (src/app/(app)/reviews/page.tsx), so this number always matches what
+ * clicking through to Reviews would show.
+ */
+async function getAdminWidgets() {
+  const [
+    totalOnboardings,
+    salesUsers,
+    kycPending,
+    loiPending,
+    openComplaints,
+    salesThisMonth,
+    kycQueueSize,
+    paymentQueueSize,
+  ] = await Promise.all([
+    db.storeOnboarding.count(),
+    db.user.count({ where: { role: "SALES" } }),
+    db.storeOnboarding.count({ where: { kycStatus: { not: "ACCEPTED" } } }),
+    db.storeOnboarding.count({ where: { onboardingStatus: { not: "LOI_COMPLETE" } } }),
+    db.complaint.count({ where: { status: OPEN_COMPLAINT_STATUS_FILTER } }),
+    getSalesThisMonth(),
+    db.storeOnboarding.count({ where: { kycStatus: "SUBMITTED" } }),
+    db.storeOnboarding.count({ where: { paymentStatus: "SUBMITTED" } }),
+  ]);
+
+  return {
+    totalOnboardings,
+    salesUsers,
+    kycPending,
+    kycAccepted: totalOnboardings - kycPending,
+    loiPending,
+    loiComplete: totalOnboardings - loiPending,
+    openComplaints,
+    salesThisMonth,
+    kycQueueSize,
+    paymentQueueSize,
+  };
+}
+
+/**
+ * plan.md section 20B — SALES home. Everything here is scoped to
+ * `salesOwnerId = userId`; a SALES user never sees another rep's stores or
+ * portfolio-wide figures (cause-effect #2: "a SALES user's widgets must only
+ * reflect stores where salesOwnerId = them").
+ */
+async function SalesDashboard({ userId }: { userId: string }) {
+  const stores = await db.storeOnboarding.findMany({
+    where: { salesOwnerId: userId },
+    select: {
+      id: true,
+      seq: true,
+      brand: true,
+      proposedLocation: true,
+      kycStatus: true,
+      onboardingStatus: true,
+      projectId: true,
+    },
+  });
+
+  const myStores = stores.length;
+  let kycPending = 0;
+  let loiPending = 0;
+  const activeProjectIds: string[] = [];
+  for (const s of stores) {
+    if (s.kycStatus !== "ACCEPTED") kycPending++;
+    if (s.onboardingStatus !== "LOI_COMPLETE") loiPending++;
+    if (s.projectId !== null) activeProjectIds.push(s.projectId);
+  }
+  const kycAccepted = myStores - kycPending;
+  const activeProjects = activeProjectIds.length;
+  const openComplaints =
+    activeProjectIds.length === 0
+      ? 0
+      : await db.complaint.count({
+          where: { projectId: { in: activeProjectIds }, status: OPEN_COMPLAINT_STATUS_FILTER },
+        });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Sales Dashboard"
+        subtitle="Your onboarding pipeline and store portfolio"
+        isFranchisee={false}
+        action={
+          <Link href="/store-onboarding" className="text-sm underline underline-offset-4">
+            View onboarding queue →
+          </Link>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard label="My Stores" value={myStores} />
+        <StatCard label="KYC Pending" value={kycPending} />
+        <StatCard label="KYC Accepted" value={kycAccepted} />
+        <StatCard label="LOI Pending" value={loiPending} caption="Not yet LOI Complete" />
+        <StatCard label="Active Projects" value={activeProjects} caption="Converted stores" />
+        <StatCard
+          label="Open Complaints"
+          value={openComplaints}
+          caption="On your stores"
+          captionClassName={openComplaints > 0 ? "text-amber-600" : "text-emerald-600"}
+        />
+      </div>
+
+      {myStores === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No stores assigned to you yet.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
