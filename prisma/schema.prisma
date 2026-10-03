@@ -374,10 +374,6 @@ model User {
   loiVersionsReleased     LoiVersion[]        @relation("LoiReleasedBy")
   esignAttemptsAsSigner   EsignAttempt[]      @relation("EsignSignerUser")
 
-  // --- plan.md section 19 (LOI signing by mobile OTP) ---
-  otpChallengesAsSigner  OtpChallenge[]  @relation("OtpChallengeSigner")
-  loiAcceptancesAsSigner LoiAcceptance[] @relation("LoiAcceptanceSigner")
-
   // --- plan.md section 20A (sales tracking) ---
   salesDaysCreated          SalesDay[]          @relation("SalesDayCreatedBy")
   salesDaysUpdated          SalesDay[]          @relation("SalesDayUpdatedBy")
@@ -795,12 +791,11 @@ model StoreOnboarding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  files         OnboardingFile[]
-  kyc           KycSubmission?
-  payments      PaymentSubmission[]
-  loiVersions   LoiVersion[]        @relation("OnboardingLoiVersions")
-  auditEvents   AuditEvent[]
-  otpChallenges OtpChallenge[]
+  files       OnboardingFile[]
+  kyc         KycSubmission?
+  payments    PaymentSubmission[]
+  loiVersions LoiVersion[]        @relation("OnboardingLoiVersions")
+  auditEvents AuditEvent[]
 
   @@index([franchiseeUserId])
   @@index([salesOwnerId])
@@ -964,23 +959,11 @@ model LoiVersion {
   signedPdfSha256  String?
   certificateB2Key String?
 
-  /// plan.md section 19 step-0 finding: LoiAcceptance.previewOpenedAt is
-  /// copied from here, not set directly — these two columns are the only
-  /// place "did this signer open this exact version" can live, since a
-  /// signer opens the preview *before* an OtpChallenge/LoiAcceptance row
-  /// exists (verify requires it to already be true). Set by
-  /// GET /api/loi-versions/[versionId]/download. A new LOI version is a new
-  /// row, so both naturally start null again — no reset logic needed.
-  franchiseePreviewOpenedAt DateTime?
-  companyPreviewOpenedAt    DateTime?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  currentFor    StoreOnboarding? @relation("CurrentLoiVersion")
-  attempts      EsignAttempt[]
-  otpChallenges OtpChallenge[]
-  acceptances   LoiAcceptance[]
+  currentFor StoreOnboarding? @relation("CurrentLoiVersion")
+  attempts   EsignAttempt[]
 
   @@unique([onboardingId, versionNo])
   @@index([onboardingId])
@@ -1049,127 +1032,15 @@ model EmailTemplate {
 /// "Failure of email/notification never fails the business action" (P1-14) —
 /// every send attempt (success or failure) is logged here instead.
 model NotificationLog {
-  id           String              @id @default(cuid())
+  id           String   @id @default(cuid())
   templateKey  String
   to           String
   onboardingId String?
   status       String
   error        String?
-  /// plan.md section 19 — every row before this was implicitly an email;
-  /// default EMAIL so no existing call site needs to change.
-  channel      NotificationChannel @default(EMAIL)
-  sentAt       DateTime            @default(now())
+  sentAt       DateTime @default(now())
 
   @@index([onboardingId])
-}
-
-// ---------------------------------------------------------------------------
-// plan.md section 19 — LOI signing by mobile OTP (added 2026-10-01). OTP
-// replaces *how* the "signed" event is produced (see EsignAttempt.provider
-// = "sms_otp", EsignAttempt.providerEnvelopeId = OtpChallenge.id); it does
-// not introduce a parallel signer-role or attempt-status shape — both reuse
-// EsignSignerRole / EsignAttemptStatus from section 17 above.
-// ---------------------------------------------------------------------------
-
-enum OtpChallengeStatus {
-  PENDING
-  VERIFIED
-  EXPIRED
-  LOCKED
-  SUPERSEDED
-}
-
-enum NotificationChannel {
-  EMAIL
-  SMS
-}
-
-/// One row per OTP send attempt for one signer on one LOI version — the
-/// rate-limit/attempt ledger. A new send supersedes the previous PENDING row
-/// rather than reusing it (section 19 "What gets built" #1). Bound to one
-/// exact loiVersionId + its pdfSha256 snapshot at send time; verify re-checks
-/// both are still current (a newer LOI version or changed hash fails verify
-/// with a clear message, same section).
-model OtpChallenge {
-  id           String          @id @default(cuid())
-  onboardingId String
-  onboarding   StoreOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
-  loiVersionId String
-  loiVersion   LoiVersion      @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
-  signerRole   EsignSignerRole
-  signerUserId String
-  signerUser   User            @relation("OtpChallengeSigner", fields: [signerUserId], references: [id])
-
-  phoneE164 String
-  /// HMAC-SHA256(OTP_HMAC_SECRET, challengeId + ":" + otp) — the plain code
-  /// is never stored, logged, audited, or put in NotificationLog (section 19
-  /// hard rule; only the dev-only mock-sms page may display it).
-  codeHash  String
-  pdfSha256 String
-
-  expiresAt DateTime
-  attempts  Int                @default(0)
-  status    OtpChallengeStatus @default(PENDING)
-
-  /// Sends within the current 30-minute rate-limit window for this
-  /// onboarding+signer — the DB-side wrapper around src/lib/otp/core.ts
-  /// computes this by counting sibling rows, so the pure core module stays
-  /// DB-free and unit-testable (same split as state.ts vs. its callers).
-  sendCount  Int      @default(1)
-  lastSentAt DateTime @default(now())
-  ip         String?
-  userAgent  String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  acceptance LoiAcceptance?
-
-  @@index([onboardingId])
-  @@index([loiVersionId])
-  @@index([signerUserId])
-  @@index([loiVersionId, signerRole, status])
-}
-
-/// The evidence row (section 19 decision 4: "Evidence is stored for every
-/// acceptance"). Unique on (loiVersionId, signerRole) — one acceptance per
-/// signer per version, never overwritten or reused.
-model LoiAcceptance {
-  id           String          @id @default(cuid())
-  loiVersionId String
-  loiVersion   LoiVersion      @relation(fields: [loiVersionId], references: [id], onDelete: Cascade)
-  signerRole   EsignSignerRole
-  signerUserId String
-  signerUser   User            @relation("LoiAcceptanceSigner", fields: [signerUserId], references: [id])
-  signerName   String
-  /// e.g. "+91 98•••••210" — never the full number (same masking discipline
-  /// as KycSubmission's maskAadhaar).
-  phoneMasked  String
-
-  otpChallengeId String       @unique
-  otpChallenge   OtpChallenge @relation(fields: [otpChallengeId], references: [id])
-
-  acceptedAt DateTime @default(now())
-  ip         String?
-  userAgent  String?
-  /// The LOI PDF's hash at the moment of acceptance — matched against
-  /// LoiVersion.pdfSha256 at verify time; the LOI PDF itself is never
-  /// modified (section 19 decision 4), so this stays valid forever.
-  pdfSha256  String
-
-  /// Exact snapshot of what the signer saw and agreed to — a later wording
-  /// change (consentTextVersion bump) never retroactively changes what an
-  /// already-accepted signer is considered to have agreed to.
-  consentText        String
-  consentTextVersion Int
-  /// Copied from LoiVersion.franchiseePreviewOpenedAt /
-  /// companyPreviewOpenedAt at the moment this row is created (see that
-  /// field's own comment for why the timestamp has to live there first).
-  previewOpenedAt    DateTime?
-
-  method String @default("SMS_OTP")
-
-  @@unique([loiVersionId, signerRole])
 }
 
 // ---------------------------------------------------------------------------

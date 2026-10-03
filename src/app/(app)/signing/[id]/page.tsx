@@ -6,14 +6,9 @@ import { canCompanySign } from "@/lib/permissions";
 import { canCompanySignNow } from "@/lib/onboarding/state";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
 import { LOI_VERSION_STATUS_LABELS } from "@/lib/onboarding/format";
-import { currentSigningMethod } from "@/lib/onboarding/signing-method";
-import { renderConsentText } from "@/lib/otp/consent";
-import { normalizePhoneToE164, maskPhoneE164 } from "@/lib/otp/phone";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { OtpSignPanel } from "@/components/otp-sign-panel";
 import { CompanySignButton } from "./company-sign-button";
-import { requestCompanyLoiOtp, verifyCompanyLoiOtp } from "../actions";
 
 export default async function SigningDetailPage({ params }: PageProps<"/signing/[id]">) {
   const user = await requireUser();
@@ -41,15 +36,7 @@ export default async function SigningDetailPage({ params }: PageProps<"/signing/
     latestCompanyAttemptStatus: latestCompanyAttempt?.status ?? null,
   });
 
-  const signingMethod = currentSigningMethod();
-  const signatory = await db.user.findUniqueOrThrow({ where: { id: user.id }, select: { phone: true } });
-  const normalizedPhone = signatory.phone ? normalizePhoneToE164(signatory.phone) : null;
-  const phoneMasked = normalizedPhone ? maskPhoneE164(normalizedPhone) : "(no mobile number on file)";
-
-  const isOtpInFlight = latestCompanyAttempt?.provider === "sms_otp" && latestCompanyAttempt.status === "SENT";
-  const isVendorInFlight =
-    latestCompanyAttempt?.provider !== "sms_otp" &&
-    (latestCompanyAttempt?.status === "SENT" || latestCompanyAttempt?.status === "IN_PROGRESS");
+  const isSigningInFlight = latestCompanyAttempt?.status === "SENT" || latestCompanyAttempt?.status === "IN_PROGRESS";
 
   return (
     <div className="space-y-6">
@@ -76,7 +63,7 @@ export default async function SigningDetailPage({ params }: PageProps<"/signing/
             Franchisee attempt: {franchiseAttempt?.status ?? "not started"}
           </p>
 
-          {isVendorInFlight ? (
+          {isSigningInFlight ? (
             <p className="text-sm text-muted-foreground">Signing in progress — check back shortly.</p>
           ) : latestCompanyAttempt?.status === "COMPLETED" ? (
             <div className="space-y-2">
@@ -90,24 +77,8 @@ export default async function SigningDetailPage({ params }: PageProps<"/signing/
                 </Link>
               )}
             </div>
-          ) : signingMethod === "AADHAAR_ESIGN" ? (
-            <CompanySignButton onboardingId={onboarding.id} canSign={canSign} />
           ) : (
-            <OtpSignPanel
-              onboardingId={onboarding.id}
-              canSign={canSign}
-              initiallySent={isOtpInFlight}
-              consentText={renderConsentText({
-                name: user.name,
-                versionNo: version.versionNo,
-                pdfSha256: version.pdfSha256,
-                phoneMasked,
-              })}
-              phoneMasked={phoneMasked}
-              buttonLabel="Countersign LOI with OTP"
-              requestAction={requestCompanyLoiOtp}
-              verifyAction={verifyCompanyLoiOtp}
-            />
+            <CompanySignButton onboardingId={onboarding.id} canSign={canSign} />
           )}
         </CardContent>
       </Card>

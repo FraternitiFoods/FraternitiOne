@@ -51,18 +51,13 @@ const CreateUserSchema = z
       ctx.addIssue({ code: "custom", path: ["email"], message: "Enter a valid email." });
     } else if (!isApprovedEmailDomain(data.email)) {
       ctx.addIssue({ code: "custom", path: ["email"], message: INVALID_EMAIL_DOMAIN_MESSAGE });
-    } else if (data.role === "COMPANY_SIGNATORY" && (!data.phone || !PHONE_PATTERN.test(data.phone))) {
-      // plan.md section 19, "NOT DECIDED YET" #4 (resolved): the company
-      // signatory signs by OTP to this number, so it can't be left empty —
-      // same 10-digit shape as the SITE_SUPERVISOR phone above, just a
-      // second purpose for the same column (login credential there, OTP
-      // destination here).
-      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number for the company signatory's OTP." });
-    } else if (data.role === "ADMIN" && data.phone && !PHONE_PATTERN.test(data.phone)) {
-      // Optional for Admin (canCompanySignNow lets ADMIN stand in for the
-      // company signatory) — only validated if they choose to set one, so
-      // they can also countersign LOIs by OTP without needing a dedicated
-      // COMPANY_SIGNATORY account.
+    } else if (
+      (data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN") &&
+      data.phone &&
+      !PHONE_PATTERN.test(data.phone)
+    ) {
+      // Optional contact number for these two roles — only validated (10
+      // digits) if one is provided.
       ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number." });
     }
   });
@@ -377,8 +372,8 @@ const UpdateUserSchema = z
       .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
     // This form is email+password only (no phone/PIN fields) — SITE_SUPERVISOR
     // isn't a valid target here, same reasoning as excluding it from the role
-    // dropdown in new-user-form.tsx. COMPANY_SIGNATORY is the one other role
-    // that needs a phone (OTP destination, plan.md section 19), handled below.
+    // dropdown in new-user-form.tsx. COMPANY_SIGNATORY and ADMIN get an
+    // optional contact phone field, handled below.
     role: z.nativeEnum(Role).refine((r) => r !== "SITE_SUPERVISOR", {
       message: "Site supervisors can't be edited from this form yet.",
     }),
@@ -386,9 +381,7 @@ const UpdateUserSchema = z
     phone: z.string().trim().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.role === "COMPANY_SIGNATORY" && (!data.phone || !PHONE_PATTERN.test(data.phone))) {
-      ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number for the company signatory's OTP." });
-    } else if (data.role === "ADMIN" && data.phone && !PHONE_PATTERN.test(data.phone)) {
+    if ((data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN") && data.phone && !PHONE_PATTERN.test(data.phone)) {
       ctx.addIssue({ code: "custom", path: ["phone"], message: "Enter a 10-digit mobile number." });
     }
   });

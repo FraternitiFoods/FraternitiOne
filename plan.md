@@ -2944,6 +2944,160 @@ Leegality call made).**
 Gave Apoorv the plain-words mental model and the open questions above in one
 batch in chat; waiting for go-ahead before starting L1.
 
+**L1 — SMS OTP removed (2026-10-03).** Apoorv's answers to L0: the dev-only
+`sms_otp` test row is harmless (leave it); production row counts skipped
+("no new users yet, chill out" — Apoorv's words); the Bengaluru/Ashok Vihar
+regression check against this dev DB — "leave it"; the pre-existing
+uncommitted plan.md rewrite + section 20D work — "commit them safely." Both
+committed first (`77e7e31` section 20D search/export, `67affa8` plan.md
+rewrite + L0 recon), confirming neither broke `tsc`/`vitest`/`eslint` before
+touching any OTP code.
+
+Deleted exactly the files L0 listed: `src/lib/otp/` (8 files),
+`src/lib/sms/` (3 files), `src/app/dev/mock-sms/` (2 files),
+`src/components/otp-sign-panel.tsx`, `src/lib/onboarding/
+acceptance-certificate.ts`, `src/lib/onboarding/signing-method.ts`,
+`scripts/tmp-e2e-otp-signing.ts`. No `fast2sms` file existed to delete
+(confirmed in L0).
+
+Edited (undoing the OTP-only branch in each, kept everything else):
+`webhook-processor.ts` (`handleAttemptCompleted`'s `sms_otp` branch removed
+— the real-provider path, previously the `else`, is now unconditional);
+`onboarding/loi/actions.ts` (removed `requestFranchiseeLoiOtp`/
+`verifyFranchiseeLoiOtp` + their now-unused imports, kept
+`startFranchiseeEsign` and `submitLoiFeedback` — the franchisee "request
+changes" feature — untouched); `onboarding/loi/page.tsx` (removed the
+`currentSigningMethod()` ternary — `FranchiseeSignButton` ["Proceed to
+Aadhaar e-sign"] always renders now, `OtpSignPanel` import gone);
+`signing/actions.ts` (removed `requestCompanyLoiOtp`/`verifyCompanyLoiOtp` +
+`loadCompanySigningContext`, kept `startCompanyEsign`); `signing/[id]/
+page.tsx` (same ternary removal, `CompanySignButton` always renders,
+collapsed the two `isOtpInFlight`/`isVendorInFlight` flags into one
+`isSigningInFlight`); `admin/esign-events/page.tsx` (dropped the "Signing
+method" / "SMS provider" badges and the `sms_otp` special-casing in the
+events table — every row now shows its provider plainly); `proxy.ts`
+(removed the `/dev/mock-sms` entry and `ALWAYS_REACHABLE_ROUTES` — nothing
+else used that mechanism); `api/loi-versions/[versionId]/download/route.ts`
+(removed the two `franchiseePreviewOpenedAt`/`companyPreviewOpenedAt` writes
+— L0 had already confirmed nothing outside the OTP flow read them).
+
+**`User.phone` requirement reverted to optional** for `COMPANY_SIGNATORY`
+(and the `ADMIN` stand-in case), per the prompt's explicit instruction — in
+both `new-user-form.tsx`/`edit-user-form.tsx` (dropped `required={...}`,
+replaced the OTP-specific help text with a plain "Contact number on file")
+and `users/actions.ts` (both `CreateUserSchema` and `UpdateUserSchema` now
+only *format*-validate the phone, 10 digits, when one is actually provided
+— never require it). The column itself was already nullable before
+`bccb75b` (section 16) and is unchanged.
+
+**Schema**: one new migration, `20261003160000_remove_loi_otp_signing`
+(hand-written, not generated — the dev shadow-database container
+(`docker compose`) wasn't running and Docker Desktop itself wasn't
+reachable in this environment, so the usual `prisma migrate dev` flow
+wasn't available; wrote the exact reverse of `20261001062755_
+add_loi_otp_signing`'s SQL by hand, applied it with `prisma db execute`,
+then marked it applied with `prisma migrate resolve --applied` so
+`_prisma_migrations` stays authoritative, same end state `migrate dev`
+would have produced). Drops `LoiAcceptance`, `OtpChallenge`,
+`OtpChallengeStatus` enum, `NotificationChannel` enum +
+`NotificationLog.channel`, and `LoiVersion.franchiseePreviewOpenedAt`/
+`companyPreviewOpenedAt` — exactly L0's list, nothing more. Also applied
+the already-committed, still-pending `20261003150000_add_export_audit_
+action` migration in the same pass (unrelated to section 19, just hadn't
+been run yet). `prisma generate` + `prisma migrate status` confirm the dev
+DB is clean. No production access from this environment either way — per
+Apoorv's answer to L0 question 2, this is deliberately not chased right
+now.
+
+**`.env.example`**: removed `SIGNING_METHOD`, `SMS_PROVIDER`,
+`OTP_HMAC_SECRET`, `ALLOW_MOCK_SMS_IN_PRODUCTION`; added the names (no
+values) for `LEEGALITY_BASE_URL`, `LEEGALITY_AUTH_TOKEN`,
+`LEEGALITY_PRIVATE_SALT`, `LEEGALITY_PROFILE_ID`, `LEEGALITY_LOW_CREDITS`
+ahead of step L4, since section 19's own env-var list calls for the names
+to be documented regardless of which step wires them up; no secrets
+involved since all values are empty. `COMPANY_SIGN_MODE` is untouched —
+it's section 19's own L4-era cleanup item ("remove if nothing reads it"),
+not part of the OTP deletion list, so left alone this step.
+
+**`BLOCKERS.md`**: replaced in full — every SMS row closed with "dropped
+2026-10-03", replaced with section 19's 9-row Leegality blockers table
+(Leegality API+token+salt, workflow setup, credits, production domain,
+Vercel env vars + migration, company signatory's legal name, the approved
+template / Luxury-vs-Foods naming question, the one real L6 test, and the
+stamp-duty legal question).
+
+**Checks**: `tsc --noEmit` clean (after regenerating `.next/dev/types`,
+which this session's own `rm -rf .next/dev/types` had wiped — a self-
+inflicted gap, not a real break: Next's ambient `PageProps`/`RouteContext`
+types live there and aren't checked into git). `eslint .`: 0 errors, same 7
+pre-existing unrelated warnings as L0's baseline. `vitest run`: 3 files,
+150 tests, all passing (down from L0's baseline of 5 files/177 tests by
+exactly the 2 deleted OTP test files/27 tests — `otp/phone.test.ts` had 9,
+`otp/core.test.ts` had 18, matching L0's prediction once corrected: 177-27 =
+150, not the "159" L0 guessed from a wrong subtraction). `grep -ri
+"otp\|sms" src/` afterward: only two pre-existing, unrelated hits left
+(`User.phone`'s own doc-comment "no OTP/SMS" referring to supervisor PIN
+login, and `aadhaarLast4`'s "never OTP/biometric" comment on
+`KycSubmission`) plus one stale comment this step also fixed (`parse-csv.ts`
+referenced the now-deleted `otp/core.ts` as a precedent example — repointed
+to `state.ts` alone).
+
+**`scripts/tmp-e2e-onboarding.ts` — could not be run to a passing result,
+for two reasons unrelated to this step's own changes, not a regression it
+caused:**
+1. The script hardcodes logging in as `tech@fraterniti.co.in` using
+   `SEED_DEV_PASSWORD`. That account is seeded with the dev password at
+   `seed.ts` time, but it is also the real Admin's actual login (the
+   address this plan's own front-matter lists as "the user's email") — its
+   live password no longer matches the seed default, almost certainly
+   because the real Admin changed it since the last seed run. Confirmed
+   with a standalone login-only check: real login + a real password works
+   and sets a cookie correctly (so nothing in this step's `proxy.ts`/
+   session-touching edits broke auth); the seed password against that
+   specific account does not. Did **not** touch or reset that account's
+   password (a real person's live credential), and did not run `npm run
+   db:seed` either, since the one `upsert` for that user would silently
+   overwrite that same password back to the dev default. Worked around it
+   for this one diagnostic run only by minting a disposable
+   `e2e-admin@example.com` ADMIN account (same pattern the script already
+   uses for its other throwaway accounts), running once, then `git
+   checkout`-ing the script back to its committed form and deleting the
+   temp account — nothing about this is left in the repo.
+2. With that unblocked, the very next step — admin fills the "New Store
+   Onboarding" form — also failed: the form no longer matches the script
+   (`git log` shows `src/app/(app)/store-onboarding/new/new-onboarding-
+   form.tsx` was reshaped by `e73ca2a` "can add existing user in an
+   onboarding form", a commit with no connection to section 19, to support
+   picking an existing user instead of only creating one). The script was
+   never updated to match.
+
+Both issues predate this session's section 19 work and sit upstream of
+every line this step touched (login/session code and the onboarding-create
+form are both outside this step's edit list). Section 17's own build log
+already flagged this exact script as "code-complete but unverified... never
+run to a passing result" before today — this is further confirmation of
+that gap, not a new one. **Did not attempt to fix the onboarding-form drift
+or touch the real Admin's password** — both are out of scope for an SMS-OTP
+removal step and the second one needs Apoorv's steer on which form shape is
+now correct. Everything this step *could* verify without that script —
+unit tests, typecheck, lint, a real login+cookie round trip, and a close
+manual read of every touched file — passed clean.
+
+**Cleanup**: no test artifacts left behind (the one partial e2e run's users/
+onboarding were deleted by the script's own `finally` block even though the
+run failed partway; confirmed zero `e2e-*`/`@example.com` rows and the
+`StoreOnboarding` count back to the pre-run baseline of 1 afterward). One
+unrelated, pre-existing stray row noticed in passing and **not** touched:
+a `LoiTemplate` named "Tulsi Standard LOI" that predates this session (not
+created by today's partial run, which never got far enough to create a
+template) — flagging it, not cleaning it, since its origin isn't known.
+
+Committed as its own step (not yet pushed, per standing instruction).
+
+**Open for Apoorv, carried forward to L2:** the "Fraterniti Luxury Pvt Ltd"
+vs. "Fraterniti Foods Pvt. Ltd." naming question from L0 — not yet
+answered, still blocking the watermark text choice.
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)

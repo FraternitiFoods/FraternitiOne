@@ -91,21 +91,16 @@ export function EditUserForm({ user }: { user: EditableUser }) {
 
       {(role === "COMPANY_SIGNATORY" || role === "ADMIN") && (
         <div className="space-y-2">
-          <Label htmlFor="phone">Mobile number{role === "ADMIN" ? " (optional)" : ""}</Label>
+          <Label htmlFor="phone">Mobile number (optional)</Label>
           <Input
             id="phone"
             name="phone"
             type="tel"
             inputMode="numeric"
-            required={role === "COMPANY_SIGNATORY"}
             defaultValue={user.phone ?? ""}
             placeholder="10-digit mobile number"
           />
-          <p className="text-xs text-muted-foreground">
-            {role === "COMPANY_SIGNATORY"
-              ? "plan.md section 19 — the company signatory signs the LOI by entering an OTP sent to this number."
-              : "Set this if this Admin should also be able to countersign LOIs by OTP, standing in for the company signatory."}
-          </p>
+          <p className="text-xs text-muted-foreground">Contact number on file for this user.</p>
         </div>
       )}
 

@@ -7,8 +7,6 @@ import { formatOnboardingCode } from "@/lib/onboarding/ids";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currentProviderName } from "@/lib/esign";
-import { currentSmsProviderName } from "@/lib/sms";
-import { currentSigningMethod } from "@/lib/onboarding/signing-method";
 import { ReconcileButton } from "./reconcile-button";
 
 /** plan.md section 17, P1-10: webhook log, visible to Admin, retryable via Reconcile. */
@@ -29,9 +27,7 @@ export default async function EsignEventsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">E-sign Events</h1>
         <p className="text-sm text-muted-foreground">
-          Signing method: <Badge variant="outline">{currentSigningMethod()}</Badge>{" "}
-          · E-sign provider (Aadhaar path): <Badge variant="outline">{currentProviderName()}</Badge>{" "}
-          · SMS provider (OTP path): <Badge variant="outline">{currentSmsProviderName()}</Badge>
+          E-sign provider: <Badge variant="outline">{currentProviderName()}</Badge>
         </p>
       </div>
 
@@ -48,7 +44,7 @@ export default async function EsignEventsPage() {
             <TableRow>
               <TableHead>Received</TableHead>
               <TableHead>Store</TableHead>
-              <TableHead>Signing method</TableHead>
+              <TableHead>Provider</TableHead>
               <TableHead>Envelope</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Error</TableHead>
@@ -65,13 +61,7 @@ export default async function EsignEventsPage() {
                     : "—"}
                 </TableCell>
                 <TableCell className="text-xs">
-                  {/* plan.md section 19 step 7: OTP-driven events are otherwise
-                      indistinguishable from Aadhaar ones in this log. */}
-                  {e.provider === "sms_otp" ? (
-                    <Badge variant="outline">SMS OTP</Badge>
-                  ) : (
-                    <Badge variant="outline">{e.provider}</Badge>
-                  )}
+                  <Badge variant="outline">{e.provider}</Badge>
                 </TableCell>
                 <TableCell className="max-w-40 truncate text-xs" title={e.envelopeId}>
                   {e.envelopeId}
@@ -85,11 +75,7 @@ export default async function EsignEventsPage() {
                   {e.error}
                 </TableCell>
                 <TableCell>
-                  {/* Reconcile asks the configured e-sign vendor for the envelope's
-                      status — meaningless for OTP (no vendor; the signer just
-                      resends from their own sign page), so hidden for sms_otp. */}
                   {e.attempt &&
-                    e.provider !== "sms_otp" &&
                     (e.processingStatus === "FAILED" || e.processingStatus === "IGNORED_LATE") && (
                       <ReconcileButton attemptId={e.attempt.id} />
                     )}
