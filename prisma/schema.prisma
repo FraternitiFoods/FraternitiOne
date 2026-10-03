@@ -178,6 +178,9 @@ enum AuditAction {
   DELETE
   LOGIN
   LOGOUT
+  /// plan.md section 20D: one AuditEvent per CSV export (who, which export,
+  /// filters, row count) — not a CRUD action on the exported rows themselves.
+  EXPORT
 }
 
 /// INVITE: admin created the account with no password yet — link sets the
