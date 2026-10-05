@@ -2,9 +2,9 @@ import "server-only";
 
 import type { LoiVersionStatus, OnboardingStatus, Prisma, ReviewStatus } from "@prisma/client";
 import type { CurrentUser } from "@/lib/session";
+import { LOI_NOT_GENERATED } from "./search-constants";
 
-/** Sentinel for "LOI not yet generated" — there's no currentLoiVersion row to filter on. */
-export const LOI_NOT_GENERATED = "NOT_GENERATED" as const;
+export { LOI_NOT_GENERATED };
 
 export type OnboardingListFilters = {
   q?: string;

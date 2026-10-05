@@ -21,7 +21,7 @@ import {
   LOI_VERSION_STATUS_LABELS,
   formatMoney,
 } from "@/lib/onboarding/format";
-import { LOI_NOT_GENERATED } from "@/lib/onboarding/search";
+import { LOI_NOT_GENERATED } from "@/lib/onboarding/search-constants";
 import { DeleteOnboardingButton } from "./delete-onboarding-button";
 
 type OnboardingRow = {
