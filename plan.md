@@ -3303,6 +3303,10 @@ Committed as its own step (not pushed, per standing instruction).
 answered:** need Apoorv's actual LOI template file to compare against
 `loi-template.ts`'s `TULSI_LOI_BODY` before L3 can be called done.
 
+**Apoorv's answer (2026-10-05): "haa go"** — confirmed, no separate
+template file to reconcile; `loi-template.ts`'s current text stands as-is.
+**L3 done.**
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)
