@@ -3443,6 +3443,42 @@ documented request/response shapes (`createEnvelope`'s exact field names,
 `getStatus`'s `document.status` values, etc.) and reports any difference
 before L6 — then L5 can actually wire the start actions and webhook.
 
+**L4 closed out (2026-10-05).** Apoorv set up the "Fraterniti LOI" workflow
+in the Leegality dashboard by hand (Invitees screen → Franchisee + Company
+Signatory, both Aadhaar-only, fixed signing order on; Custom URLs on both
+invitees pointing at `https://fraterniti.one/api/webhooks/esign`; Advanced
+Options → Expiry → 7 days; signature fields placed on the sample PDF's last
+page, franchisee's on the blank "For Franchisee" line, company signatory's
+near the "For Franchisor" block). Confirmed along the way: `/document/invite`
+and `/workflow/invite` are different Leegality flows (the former is a
+one-off real send, the latter — the one we need — a reusable template);
+Leegality's own Aadhaar-options panel defaults (OTP/BIO/IRIS/FACE all on,
+"Verify details with Certificate Details" off) need no changes; "Don't add
+user name in Signature Appearance" exists but there's no documented way to
+remove Leegality's own branding text from the visible signature stamp
+(checked `knowledge.leegality.com` and `leegality.com/customisation` — not
+listed among the things that can be white-labeled; flagged to Apoorv as a
+"ask Leegality support directly if it matters" item, not resolved).
+
+**Workflow ID = `sFExiJi`.** The downloaded API payload
+(`Fraterniti LOI.json`) matches this section's documented request shape
+**exactly** — `profileId` (top-level string), `file: {name, file}`,
+`invitees: [{name, email}, {name, email}]`, `irn` (top-level string) — no
+difference to reconcile, no adapter changes needed.
+`.env.local` confirmed holding all four (`LEEGALITY_BASE_URL` — printed to
+confirm it reads exactly `https://app1.leegality.com/api`, the documented
+production URL, not a secret so safe to check directly; `LEEGALITY_AUTH_
+TOKEN`/`LEEGALITY_PRIVATE_SALT`/`LEEGALITY_PROFILE_ID` — confirmed "set"
+only, values never read or printed). Production domain confirmed:
+`fraterniti.one`.
+
+**L4 is now fully done** — every item in its own stop point is answered.
+Next is L5 (wire the start actions + webhook for the shared-document
+model), which touches currently-working code (`startFranchiseeEsign`/
+`startCompanyEsign`, `webhook-processor.ts`'s attempt lookup) and is
+substantial enough that it's worth Apoorv's explicit go-ahead before
+starting, same as L2→L3 and L3→L4's own handoffs this session.
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)
