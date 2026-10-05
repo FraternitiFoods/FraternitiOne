@@ -10,24 +10,11 @@ import {
   canCompanySign,
   canManageOnboardingAdmin,
 } from "@/lib/permissions";
+import { onboardingListWhere } from "@/lib/onboarding/search";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
-import {
-  ONBOARDING_STATUS_LABELS,
-  REVIEW_STATUS_LABELS,
-  formatMoney,
-} from "@/lib/onboarding/format";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DeleteOnboardingButton } from "./delete-onboarding-button";
+import { StoreOnboardingList } from "./store-onboarding-list";
 
 export default async function StoreOnboardingListPage() {
   const user = await requireUser();
@@ -44,23 +31,23 @@ export default async function StoreOnboardingListPage() {
     redirect("/dashboard");
   }
 
+  // plan.md section 20D — SALES only sees their own onboardings; every other
+  // onboarding-touching role keeps the existing full-queue visibility.
   const onboardings = await db.storeOnboarding.findMany({
+    where: onboardingListWhere(user),
     orderBy: { createdAt: "desc" },
-    include: { franchisee: { select: { name: true, email: true } } },
+    include: {
+      franchisee: { select: { name: true, email: true } },
+      salesOwner: { select: { name: true } },
+      currentLoiVersion: { select: { status: true } },
+    },
   });
 
   const canDelete = canManageOnboardingAdmin(user);
 
-  // plan.md section 20B — lightweight summary strip, additive only (no
-  // search/filter/export UI here — that's 20D, the next task, and it will
-  // build on top of this same list/table). Deliberately computed from the
-  // `onboardings` array already fetched above rather than a second query, so
-  // it's always in sync with the table below — on purpose, this strip
-  // carries over today's known pre-20D scope gap (Step 0's build-log note:
-  // the list has no `where` at all, every onboarding-touching role sees
-  // every onboarding) rather than introducing a new one. Once 20D adds
-  // SALES scoping to this page's query, this strip scopes correctly too,
-  // automatically, since it reads from that same array.
+  // plan.md section 20B — lightweight summary strip, computed from the same
+  // role-scoped `onboardings` array the table below reads, so it's always in
+  // sync and (since 20D) scoped by SALES ownership automatically.
   const summary = {
     total: onboardings.length,
     kycPending: onboardings.filter((o) => o.kycStatus !== "ACCEPTED").length,
@@ -91,65 +78,24 @@ export default async function StoreOnboardingListPage() {
         <StatCard label="Converted (LOI Complete)" value={summary.converted} />
       </div>
 
-      {onboardings.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No store onboardings yet.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Store</TableHead>
-                <TableHead>Franchisee</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>KYC</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead>Fee</TableHead>
-                <TableHead>Project</TableHead>
-                {canDelete && <TableHead />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {onboardings.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell>
-                    <Link href={`/store-onboarding/${o.id}`} className="font-medium hover:underline">
-                      {formatOnboardingCode(o.seq)} — {o.brand} {o.proposedLocation}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div>{o.franchisee.name}</div>
-                    <div className="text-xs text-muted-foreground">{o.franchisee.email}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{ONBOARDING_STATUS_LABELS[o.onboardingStatus]}</Badge>
-                  </TableCell>
-                  <TableCell>{REVIEW_STATUS_LABELS[o.kycStatus]}</TableCell>
-                  <TableCell>{REVIEW_STATUS_LABELS[o.paymentStatus]}</TableCell>
-                  <TableCell>{formatMoney(o.expectedAmount)}</TableCell>
-                  <TableCell>
-                    {o.projectId ? (
-                      <Link href={`/projects/${o.projectId}`} className="underline underline-offset-4">
-                        View →
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  {canDelete && (
-                    <TableCell>
-                      <DeleteOnboardingButton
-                        onboardingId={o.id}
-                        storeLabel={`${formatOnboardingCode(o.seq)} — ${o.brand} ${o.proposedLocation}`}
-                        franchiseeEmail={o.franchisee.email}
-                      />
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <StoreOnboardingList
+        onboardings={onboardings.map((o) => ({
+          id: o.id,
+          seq: o.seq,
+          code: formatOnboardingCode(o.seq),
+          brand: o.brand,
+          proposedLocation: o.proposedLocation,
+          onboardingStatus: o.onboardingStatus,
+          kycStatus: o.kycStatus,
+          paymentStatus: o.paymentStatus,
+          loiStatus: o.currentLoiVersion?.status ?? null,
+          expectedAmount: o.expectedAmount,
+          projectId: o.projectId,
+          franchisee: o.franchisee,
+          salesOwner: o.salesOwner,
+        }))}
+        canDelete={canDelete}
+      />
     </div>
   );
 }

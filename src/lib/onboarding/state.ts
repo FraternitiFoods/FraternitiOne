@@ -210,6 +210,19 @@ export type CompanySignGateInput = {
   /** The current LOI version being signed. */
   loiVersion: { id: string; pdfSha256: string };
   latestCompanyAttemptStatus: EsignAttemptStatus | null;
+  /** The user id attempting to sign right now. */
+  actorUserId?: string;
+  /**
+   * plan.md section 19 L5, edge case 6: under decision 4, Leegality's
+   * createEnvelope call already names one specific company signatory as
+   * invitee 2 before they've done anything — stored as the pre-created
+   * COMPANY attempt's `signerUserId`. Once set, only that exact user may
+   * actually sign (ADMIN included — "ADMIN can see status but, by default,
+   * cannot open that link"). `null`/undefined (the mock provider, which
+   * never pre-creates this row) means "whoever has the role may claim it",
+   * unchanged from before L5.
+   */
+  invitedSignerUserId?: string | null;
 };
 
 /**
@@ -220,11 +233,19 @@ export type CompanySignGateInput = {
  */
 export function canCompanySignNow(input: CompanySignGateInput): boolean {
   if (input.actorRole !== "COMPANY_SIGNATORY" && input.actorRole !== "ADMIN") return false;
+  if (input.invitedSignerUserId && input.actorUserId !== input.invitedSignerUserId) return false;
   if (!input.franchiseAttempt) return false;
   if (input.franchiseAttempt.status !== "COMPLETED") return false;
   if (input.franchiseAttempt.loiVersionId !== input.loiVersion.id) return false;
   if (input.franchiseAttempt.pdfSha256 !== input.loiVersion.pdfSha256) return false;
-  const openStatuses: EsignAttemptStatus[] = ["SENT", "IN_PROGRESS", "COMPLETED"];
+  // When a signatory is pinned (decision 4: Leegality already invited them),
+  // SENT is the expected, reusable state — it's the one-and-only legitimate
+  // use of that invite (startCompanyEsign hands back its stored signUrl,
+  // see loi/signing actions.ts), not a "second start" to block. IN_PROGRESS/
+  // COMPLETED still block even the correct invited signer from re-using it.
+  const openStatuses: EsignAttemptStatus[] = input.invitedSignerUserId
+    ? ["IN_PROGRESS", "COMPLETED"]
+    : ["SENT", "IN_PROGRESS", "COMPLETED"];
   if (input.latestCompanyAttemptStatus && openStatuses.includes(input.latestCompanyAttemptStatus)) {
     return false;
   }

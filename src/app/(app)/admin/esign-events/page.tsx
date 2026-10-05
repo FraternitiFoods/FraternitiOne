@@ -7,14 +7,20 @@ import { formatOnboardingCode } from "@/lib/onboarding/ids";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currentProviderName } from "@/lib/esign";
-import { currentSmsProviderName } from "@/lib/sms";
-import { currentSigningMethod } from "@/lib/onboarding/signing-method";
+import { getLeegalityWalletBalance } from "@/lib/esign/leegality-provider";
 import { ReconcileButton } from "./reconcile-button";
 
 /** plan.md section 17, P1-10: webhook log, visible to Admin, retryable via Reconcile. */
 export default async function EsignEventsPage() {
   const user = await requireUser();
   if (!canManageOnboardingAdmin(user)) redirect("/dashboard");
+
+  const providerName = currentProviderName();
+  // plan.md section 19 API contract "wallet line" — cached 5 min inside
+  // getLeegalityWalletBalance, failure returns null and is ignored (never
+  // blocks this page or any signing flow).
+  const walletBalance = providerName === "leegality" ? await getLeegalityWalletBalance() : null;
+  const lowCreditsThreshold = Number(process.env.LEEGALITY_LOW_CREDITS || "10");
 
   const events = await db.esignEvent.findMany({
     orderBy: { receivedAt: "desc" },
@@ -29,11 +35,16 @@ export default async function EsignEventsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">E-sign Events</h1>
         <p className="text-sm text-muted-foreground">
-          Signing method: <Badge variant="outline">{currentSigningMethod()}</Badge>{" "}
-          · E-sign provider (Aadhaar path): <Badge variant="outline">{currentProviderName()}</Badge>{" "}
-          · SMS provider (OTP path): <Badge variant="outline">{currentSmsProviderName()}</Badge>
+          E-sign provider: <Badge variant="outline">{providerName}</Badge>
         </p>
       </div>
+
+      {providerName === "leegality" && walletBalance !== null && walletBalance < lowCreditsThreshold && (
+        <p className="rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          Leegality wallet balance is low: <strong>{walletBalance}</strong> eSign credits left (each LOI uses 2).
+          Top up soon to avoid signing failures.
+        </p>
+      )}
 
       {process.env.MALWARE_SCANNER !== "clamav" && process.env.MALWARE_SCANNER !== "api" && (
         <p className="rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
@@ -48,7 +59,7 @@ export default async function EsignEventsPage() {
             <TableRow>
               <TableHead>Received</TableHead>
               <TableHead>Store</TableHead>
-              <TableHead>Signing method</TableHead>
+              <TableHead>Provider</TableHead>
               <TableHead>Envelope</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Error</TableHead>
@@ -65,13 +76,7 @@ export default async function EsignEventsPage() {
                     : "—"}
                 </TableCell>
                 <TableCell className="text-xs">
-                  {/* plan.md section 19 step 7: OTP-driven events are otherwise
-                      indistinguishable from Aadhaar ones in this log. */}
-                  {e.provider === "sms_otp" ? (
-                    <Badge variant="outline">SMS OTP</Badge>
-                  ) : (
-                    <Badge variant="outline">{e.provider}</Badge>
-                  )}
+                  <Badge variant="outline">{e.provider}</Badge>
                 </TableCell>
                 <TableCell className="max-w-40 truncate text-xs" title={e.envelopeId}>
                   {e.envelopeId}
@@ -85,11 +90,7 @@ export default async function EsignEventsPage() {
                   {e.error}
                 </TableCell>
                 <TableCell>
-                  {/* Reconcile asks the configured e-sign vendor for the envelope's
-                      status — meaningless for OTP (no vendor; the signer just
-                      resends from their own sign page), so hidden for sms_otp. */}
                   {e.attempt &&
-                    e.provider !== "sms_otp" &&
                     (e.processingStatus === "FAILED" || e.processingStatus === "IGNORED_LATE") && (
                       <ReconcileButton attemptId={e.attempt.id} />
                     )}

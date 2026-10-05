@@ -387,4 +387,59 @@ describe("canCompanySignNow", () => {
       })
     ).toBe(true);
   });
+
+  // plan.md section 19 L5, edge case 6: under decision 4, Leegality's
+  // createEnvelope call already names one specific invitee 2 before anyone
+  // has clicked anything — only that exact user may actually sign.
+  it("allows the exact invited signatory when one is pinned", () => {
+    expect(
+      canCompanySignNow({
+        actorRole: "COMPANY_SIGNATORY",
+        actorUserId: "signatory-1",
+        invitedSignerUserId: "signatory-1",
+        franchiseAttempt: completedFranchiseAttempt,
+        loiVersion,
+        latestCompanyAttemptStatus: "SENT",
+      })
+    ).toBe(true);
+  });
+
+  it("blocks a different COMPANY_SIGNATORY than the one Leegality invited", () => {
+    expect(
+      canCompanySignNow({
+        actorRole: "COMPANY_SIGNATORY",
+        actorUserId: "someone-else",
+        invitedSignerUserId: "signatory-1",
+        franchiseAttempt: completedFranchiseAttempt,
+        loiVersion,
+        latestCompanyAttemptStatus: "SENT",
+      })
+    ).toBe(false);
+  });
+
+  it("blocks ADMIN from opening the invited signatory's link (edge case 6: can see status, not open the link)", () => {
+    expect(
+      canCompanySignNow({
+        actorRole: "ADMIN",
+        actorUserId: "admin-1",
+        invitedSignerUserId: "signatory-1",
+        franchiseAttempt: completedFranchiseAttempt,
+        loiVersion,
+        latestCompanyAttemptStatus: "SENT",
+      })
+    ).toBe(false);
+  });
+
+  it("doesn't restrict by identity when no signer is pinned yet (mock provider, pre-L5 behaviour)", () => {
+    expect(
+      canCompanySignNow({
+        actorRole: "COMPANY_SIGNATORY",
+        actorUserId: "anyone",
+        invitedSignerUserId: null,
+        franchiseAttempt: completedFranchiseAttempt,
+        loiVersion,
+        latestCompanyAttemptStatus: null,
+      })
+    ).toBe(true);
+  });
 });

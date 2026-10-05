@@ -1,7 +1,7 @@
 /**
  * plan.md section 20A — pure, DB-free CSV parsing for the sales importer.
- * No `server-only` import on purpose, same reasoning as src/lib/otp/core.ts
- * and src/lib/onboarding/state.ts: this module takes a plain string in and
+ * No `server-only` import on purpose, same reasoning as
+ * src/lib/onboarding/state.ts: this module takes a plain string in and
  * returns plain data out, so it's unit-testable without a database and the
  * DB-touching caller (dry-run preview / confirm-import server actions) stays
  * a thin wrapper around it.

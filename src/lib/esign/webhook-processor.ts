@@ -5,12 +5,8 @@ import { transitionEsignAttempt, transitionLoiVersion, type EsignAttemptEvent } 
 import { recomputeOnboardingStatus } from "@/lib/onboarding/recompute";
 import { sendOnboardingEmail, type EmailKey } from "@/lib/onboarding/notify";
 import { getEsignProvider, currentProviderName } from "./index";
-import { uploadDocument, getObjectBuffer } from "@/lib/storage";
+import { uploadDocument } from "@/lib/storage";
 import { convertOnboardingToProject } from "@/lib/onboarding/conversion";
-import { formatOnboardingCode } from "@/lib/onboarding/ids";
-import { generateAcceptanceCertificatePdf } from "@/lib/onboarding/acceptance-certificate";
-import { CONSENT_TEXT_VERSION } from "@/lib/otp/consent";
-import { isMockSmsActive } from "@/lib/sms";
 import type { ParsedWebhookEvent } from "./provider";
 import type { Prisma } from "@prisma/client";
 
@@ -63,12 +59,77 @@ const ATTEMPT_EVENT_MAP: Record<string, EsignAttemptEvent | null> = {
   CANCELLED: "CANCEL",
 };
 
+/** plan.md section 19 "Idempotency key" — the event-kind half of `leegality:<documentId>:<ROLE>:<kind>`. */
+const LEEGALITY_EVENT_KIND: Record<string, string> = {
+  COMPLETED: "signed",
+  CANCELLED: "rejected",
+  EXPIRED: "expired",
+  FAILED: "failed",
+  SENT: "sent",
+  IN_PROGRESS: "in_progress",
+};
+
+/**
+ * plan.md section 19 webhook "Store less" rule — `invitationUrl` is a bearer
+ * secret (a sign link) and must never be persisted or logged, even inside
+ * the raw EsignEvent payload. `verification` (Aadhaar-derived PII) never
+ * reaches this far at all — LeegalityProvider.parseAndVerifyWebhook never
+ * includes it on `ParsedWebhookEvent` in the first place.
+ */
+function redactForStorage(parsed: ParsedWebhookEvent): Prisma.InputJsonValue {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { invitationUrl: _invitationUrl, ...rest } = parsed;
+  return rest as unknown as Prisma.InputJsonValue;
+}
+
 type PendingNotification = { key: EmailKey; to: string; onboardingId: string; vars: Record<string, string> };
 
 export type ProcessOutcome = {
   outcome: "PROCESSED" | "IGNORED_LATE" | "DUPLICATE" | "FAILED";
   message?: string;
 };
+
+/**
+ * plan.md section 19 decision 6 ("the webhook is a doorbell, not proof") +
+ * "Which signer" + "Idempotency key". Leegality-only, runs before the
+ * dedup check and before opening any DB transaction (a network call must
+ * never happen inside an interactive Postgres transaction — same discipline
+ * as `handleAttemptCompleted`'s own comment below about Resend). Resolves
+ * which EsignAttempt this event is about (two attempts can share one
+ * `providerEnvelopeId` under decision 4), confirms the status directly with
+ * Leegality rather than trusting the webhook body, and builds the final
+ * `leegality:<documentId>:<ROLE>:<kind>` idempotency key.
+ */
+async function resolveLeegalityEvent(
+  parsed: ParsedWebhookEvent
+): Promise<{ attemptId: string; confirmedParsed: ParsedWebhookEvent; idempotencyKey: string }> {
+  const candidates = await db.esignAttempt.findMany({
+    where: { providerEnvelopeId: parsed.envelopeId },
+    include: { signerUser: true },
+  });
+  if (candidates.length === 0) {
+    throw new Error("Unknown Leegality document — no matching EsignAttempt.");
+  }
+
+  let attempt =
+    candidates.find((c) => c.providerSignUrl && parsed.invitationUrl && c.providerSignUrl === parsed.invitationUrl) ??
+    (parsed.inviteeEmail ? candidates.find((c) => c.signerUser?.email === parsed.inviteeEmail) : undefined);
+  if (!attempt) {
+    if (candidates.length === 1) {
+      attempt = candidates[0];
+    } else {
+      throw new Error("Could not determine which signer this Leegality webhook is about.");
+    }
+  }
+
+  const provider = getEsignProvider();
+  const { status: confirmedStatus } = await provider.getStatus(parsed.envelopeId);
+
+  const kind = LEEGALITY_EVENT_KIND[confirmedStatus] ?? "sent";
+  const idempotencyKey = `leegality:${parsed.envelopeId}:${attempt.signerRole}:${kind}`;
+
+  return { attemptId: attempt.id, confirmedParsed: { ...parsed, status: confirmedStatus }, idempotencyKey };
+}
 
 /**
  * plan.md section 17 "Webhook route rules" — shared by the real webhook
@@ -85,21 +146,46 @@ export async function processEsignEvent(
   parsed: ParsedWebhookEvent,
   signatureValid: boolean,
   /**
-   * plan.md section 19 step-0 finding: without this, every event — Aadhaar
-   * or OTP — would log under whatever ESIGN_PROVIDER happens to be set to
-   * (currentProviderName()'s only source), mislabeling OTP-driven
-   * completions in /admin/esign-events. The OTP verify path
-   * (src/lib/otp/challenge.ts) passes "sms_otp" explicitly; every existing
-   * caller (the real webhook route, Admin reconcile, the mock-autocomplete
-   * convenience in startFranchiseeEsign/startCompanyEsign) omits this and
-   * gets byte-for-byte the same behavior as before.
+   * Lets a caller label an event under a specific provider name instead of
+   * whatever ESIGN_PROVIDER happens to be set to (currentProviderName()'s
+   * only source) — every current caller (the real webhook route, Admin
+   * reconcile, the mock-autocomplete convenience in
+   * startFranchiseeEsign/startCompanyEsign) omits this and gets the default.
    */
   providerNameOverride?: string
 ): Promise<ProcessOutcome> {
   const providerName = providerNameOverride ?? currentProviderName();
 
+  let idempotencyKey = parsed.eventId;
+  let effectiveParsed = parsed;
+  let attemptIdHint: string | undefined;
+
+  if (providerName === "leegality") {
+    try {
+      const resolved = await resolveLeegalityEvent(parsed);
+      idempotencyKey = resolved.idempotencyKey;
+      effectiveParsed = resolved.confirmedParsed;
+      attemptIdHint = resolved.attemptId;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Leegality webhook resolution failed:", err);
+      await db.esignEvent.create({
+        data: {
+          provider: providerName,
+          providerEventId: parsed.eventId,
+          envelopeId: parsed.envelopeId,
+          payload: redactForStorage(parsed),
+          signatureValid,
+          processingStatus: "FAILED",
+          error: message,
+        },
+      });
+      return { outcome: "FAILED", message };
+    }
+  }
+
   const existing = await db.esignEvent.findUnique({
-    where: { provider_providerEventId: { provider: providerName, providerEventId: parsed.eventId } },
+    where: { provider_providerEventId: { provider: providerName, providerEventId: idempotencyKey } },
   });
   if (existing) {
     return { outcome: "DUPLICATE" };
@@ -108,7 +194,7 @@ export async function processEsignEvent(
   let outcome: { result: ProcessOutcome; notifications: PendingNotification[] };
   try {
     outcome = await db.$transaction(async (tx) => {
-      return processWithinTransaction(tx, parsed, signatureValid, providerName);
+      return processWithinTransaction(tx, effectiveParsed, signatureValid, providerName, idempotencyKey, attemptIdHint);
     });
   } catch (err) {
     // A real failure partway through (e.g. B2/provider error fetching the
@@ -121,9 +207,9 @@ export async function processEsignEvent(
     await db.esignEvent.create({
       data: {
         provider: providerName,
-        providerEventId: parsed.eventId,
-        envelopeId: parsed.envelopeId,
-        payload: parsed as unknown as Prisma.InputJsonValue,
+        providerEventId: idempotencyKey,
+        envelopeId: effectiveParsed.envelopeId,
+        payload: redactForStorage(effectiveParsed),
         signatureValid,
         processingStatus: "FAILED",
         error: message,
@@ -145,25 +231,35 @@ async function processWithinTransaction(
   tx: Prisma.TransactionClient,
   parsed: ParsedWebhookEvent,
   signatureValid: boolean,
-  providerName: string
+  providerName: string,
+  providerEventId: string,
+  /** Set only by `resolveLeegalityEvent` — pins the exact signer attempt instead of the ambiguous 1:1 `providerEnvelopeId` lookup below. */
+  attemptIdHint?: string
 ): Promise<{ result: ProcessOutcome; notifications: PendingNotification[] }> {
   {
     const pending: PendingNotification[] = [];
 
-    const attempt = await tx.esignAttempt.findFirst({
-      where: { providerEnvelopeId: parsed.envelopeId },
-      include: {
-        loiVersion: { include: { onboarding: { include: { franchisee: true, salesOwner: true } } } },
-      },
-    });
+    const attempt = attemptIdHint
+      ? await tx.esignAttempt.findUnique({
+          where: { id: attemptIdHint },
+          include: {
+            loiVersion: { include: { onboarding: { include: { franchisee: true, salesOwner: true } } } },
+          },
+        })
+      : await tx.esignAttempt.findFirst({
+          where: { providerEnvelopeId: parsed.envelopeId },
+          include: {
+            loiVersion: { include: { onboarding: { include: { franchisee: true, salesOwner: true } } } },
+          },
+        });
 
     if (!attempt) {
       await tx.esignEvent.create({
         data: {
           provider: providerName,
-          providerEventId: parsed.eventId,
+          providerEventId,
           envelopeId: parsed.envelopeId,
-          payload: parsed as unknown as Prisma.InputJsonValue,
+          payload: redactForStorage(parsed),
           signatureValid,
           processingStatus: "FAILED",
           error: "Unknown envelope — no matching EsignAttempt.",
@@ -188,9 +284,9 @@ async function processWithinTransaction(
         data: {
           attemptId: attempt.id,
           provider: providerName,
-          providerEventId: parsed.eventId,
+          providerEventId,
           envelopeId: parsed.envelopeId,
-          payload: parsed as unknown as Prisma.InputJsonValue,
+          payload: redactForStorage(parsed),
           signatureValid,
           processingStatus: "IGNORED_LATE",
         },
@@ -205,9 +301,9 @@ async function processWithinTransaction(
         data: {
           attemptId: attempt.id,
           provider: providerName,
-          providerEventId: parsed.eventId,
+          providerEventId,
           envelopeId: parsed.envelopeId,
-          payload: parsed as unknown as Prisma.InputJsonValue,
+          payload: redactForStorage(parsed),
           signatureValid,
           processingStatus: "FAILED",
           error: "Document hash mismatch.",
@@ -253,7 +349,12 @@ async function processWithinTransaction(
         });
 
         if (nextAttemptStatus === "COMPLETED") {
-          const more = await handleAttemptCompleted(tx, attempt.loiVersion.onboardingId, attempt);
+          const more = await handleAttemptCompleted(tx, attempt.loiVersion.onboardingId, attempt, providerName);
+          pending.push(...more);
+        } else if (nextAttemptStatus === "CANCELLED" && providerName === "leegality" && parsed.rejectionMessage) {
+          // plan.md section 19 webhook rules: "action = Rejected → attempt
+          // CANCELLED, the rejectionMessage becomes LOI feedback".
+          const more = await handleAttemptRejected(tx, attempt.loiVersion.onboardingId, attempt, parsed.rejectionMessage);
           pending.push(...more);
         }
       }
@@ -263,9 +364,9 @@ async function processWithinTransaction(
       data: {
         attemptId: attempt.id,
         provider: providerName,
-        providerEventId: parsed.eventId,
+        providerEventId,
         envelopeId: parsed.envelopeId,
-        payload: parsed as unknown as Prisma.InputJsonValue,
+        payload: redactForStorage(parsed),
         signatureValid,
         processingStatus: "PROCESSED",
       },
@@ -284,7 +385,8 @@ type AttemptWithLoi = Prisma.EsignAttemptGetPayload<{
 async function handleAttemptCompleted(
   tx: Prisma.TransactionClient,
   onboardingId: string,
-  attempt: AttemptWithLoi
+  attempt: AttemptWithLoi,
+  providerName: string
 ): Promise<PendingNotification[]> {
   const loiVersion = attempt.loiVersion;
   const onboarding = loiVersion.onboarding;
@@ -304,6 +406,26 @@ async function handleAttemptCompleted(
       reference: "Franchisee e-sign completed",
     });
     await recomputeOnboardingStatus(tx, onboardingId);
+
+    // plan.md section 19 L5, edge case 2: back up what Leegality holds right
+    // now, while it still exists — the shared document can later be voided
+    // (a new version, or a restart after the company's link expires), and
+    // the franchisee's half-signed copy would otherwise be unrecoverable.
+    // Same discipline as the COMPANY branch below: a real failure here
+    // (B2/provider error) rolls the transaction back and surfaces as a
+    // genuine FAILED event (P1-10), rather than being swallowed.
+    if (providerName === "leegality" && !loiVersion.franchiseeSignedPdfB2Key) {
+      const provider = getEsignProvider();
+      const key = `onboarding/${onboardingId}/loi/${loiVersion.versionNo}/franchisee-signed.pdf`;
+      const bytes = await provider.fetchSignedPdf(attempt.providerEnvelopeId!);
+      const { createHash } = await import("node:crypto");
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      await uploadDocument({ key, body: bytes, contentType: "application/pdf" });
+      await tx.loiVersion.update({
+        where: { id: loiVersion.id },
+        data: { franchiseeSignedPdfB2Key: key, franchiseeSignedPdfSha256: sha256 },
+      });
+    }
 
     const signatories = await tx.user.findMany({ where: { role: "COMPANY_SIGNATORY", isActive: true } });
     for (const s of signatories) {
@@ -325,51 +447,13 @@ async function handleAttemptCompleted(
     signedPdfB2Key = `onboarding/${onboardingId}/loi/${loiVersion.versionNo}/signed.pdf`;
     certificateB2Key = `onboarding/${onboardingId}/loi/${loiVersion.versionNo}/certificate.pdf`;
 
-    if (attempt.provider === "sms_otp") {
-      // plan.md section 19 step-0 finding + decision 4: no vendor to ask for
-      // a "signed copy" — the original LOI PDF is filed unchanged (its hash
-      // never moves), and the certificate is OUR OWN Acceptance Certificate,
-      // built from both signers' LoiAcceptance rows (the franchisee's was
-      // committed in an earlier transaction; the company's was committed by
-      // verifyOtp just before it called processEsignEvent — both are visible
-      // here under read-committed isolation).
-      const original = await getObjectBuffer(loiVersion.pdfB2Key);
-      signedPdfSha256 = loiVersion.pdfSha256;
-      await uploadDocument({ key: signedPdfB2Key, body: original, contentType: "application/pdf" });
-
-      const acceptances = await tx.loiAcceptance.findMany({ where: { loiVersionId: loiVersion.id } });
-      const franchiseeAcceptance = acceptances.find((a) => a.signerRole === "FRANCHISEE");
-      const companyAcceptance = acceptances.find((a) => a.signerRole === "COMPANY");
-      const orderedAcceptances = [franchiseeAcceptance, companyAcceptance].filter(
-        (a): a is NonNullable<typeof a> => a != null
-      );
-
-      const certificate = await generateAcceptanceCertificatePdf({
-        onboardingCode: formatOnboardingCode(onboarding.seq),
-        storeLabel,
-        loiVersionNo: loiVersion.versionNo,
-        pdfSha256: loiVersion.pdfSha256,
-        consentTextVersion: orderedAcceptances[0]?.consentTextVersion ?? CONSENT_TEXT_VERSION,
-        signers: orderedAcceptances.map((a) => ({
-          role: a.signerRole,
-          name: a.signerName,
-          phoneMasked: a.phoneMasked,
-          acceptedAt: a.acceptedAt,
-          ip: a.ip,
-          otpChallengeId: a.otpChallengeId,
-        })),
-        watermark: isMockSmsActive(),
-      });
-      await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
-    } else {
-      const provider = getEsignProvider();
-      const signedPdf = await provider.fetchSignedPdf(attempt.providerEnvelopeId!);
-      const certificate = await provider.fetchCertificate(attempt.providerEnvelopeId!);
-      const { createHash } = await import("node:crypto");
-      signedPdfSha256 = createHash("sha256").update(signedPdf).digest("hex");
-      await uploadDocument({ key: signedPdfB2Key, body: signedPdf, contentType: "application/pdf" });
-      await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
-    }
+    const provider = getEsignProvider();
+    const signedPdf = await provider.fetchSignedPdf(attempt.providerEnvelopeId!);
+    const certificate = await provider.fetchCertificate(attempt.providerEnvelopeId!);
+    const { createHash } = await import("node:crypto");
+    signedPdfSha256 = createHash("sha256").update(signedPdf).digest("hex");
+    await uploadDocument({ key: signedPdfB2Key, body: signedPdf, contentType: "application/pdf" });
+    await uploadDocument({ key: certificateB2Key, body: certificate, contentType: "application/pdf" });
   }
 
   await tx.loiVersion.update({
@@ -424,4 +508,47 @@ async function handleAttemptCompleted(
   }
 
   return notifications;
+}
+
+/**
+ * plan.md section 19 webhook rules: a rejection on Leegality becomes LOI
+ * feedback, the same channel `submitLoiFeedback` (loi/actions.ts) uses for a
+ * franchisee typing a note before signing — preparer + sales owner + Admin
+ * backstop, logged as a system-actor audit event since there's no
+ * signed-in user behind a webhook.
+ */
+async function handleAttemptRejected(
+  tx: Prisma.TransactionClient,
+  onboardingId: string,
+  attempt: AttemptWithLoi,
+  rejectionMessage: string
+): Promise<PendingNotification[]> {
+  const onboarding = attempt.loiVersion.onboarding;
+  const storeLabel = `${onboarding.brand} ${onboarding.proposedLocation}`;
+  const whoRejected = attempt.signerRole === "FRANCHISEE" ? "the franchisee" : "the company signatory";
+  const message = `[Rejected during Leegality e-sign by ${whoRejected}] ${rejectionMessage}`;
+
+  await writeSystemAuditEvent(tx, {
+    onboardingId,
+    entityType: "LoiFeedback",
+    entityId: onboardingId,
+    action: "CREATE",
+    newValue: { message, signerRole: attempt.signerRole },
+    reference: "Signer rejected on Leegality — recorded as LOI feedback",
+  });
+
+  const loiPreparers = await tx.user.findMany({ where: { role: "LOI_PREPARER", isActive: true } });
+  const admins = await tx.user.findMany({ where: { role: "ADMIN", isActive: true } });
+  const recipients = new Map<string, { name: string; email: string }>();
+  for (const u of [onboarding.salesOwner, ...loiPreparers, ...admins]) {
+    if (u.email) recipients.set(u.email, { name: u.name, email: u.email });
+  }
+
+  const link = `${process.env.APP_URL || "http://localhost:3000"}/store-onboarding/${onboardingId}`;
+  return Array.from(recipients.values()).map((r) => ({
+    key: "loi_feedback" as const,
+    to: r.email,
+    onboardingId,
+    vars: { name: r.name, franchiseeName: onboarding.franchisee.name, store: storeLabel, message, link },
+  }));
 }

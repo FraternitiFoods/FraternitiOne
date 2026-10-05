@@ -68,4 +68,5 @@ export const AUDIT_ACTION_BADGE_CLASS: Record<AuditAction, string> = {
   DELETE: "border-transparent bg-red-100 text-red-700",
   LOGIN: "border-transparent bg-slate-100 text-slate-600",
   LOGOUT: "border-transparent bg-slate-100 text-slate-600",
+  EXPORT: "border-transparent bg-violet-100 text-violet-700",
 };

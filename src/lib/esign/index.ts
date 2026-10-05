@@ -1,9 +1,17 @@
 import "server-only";
 
 import { MockProvider } from "./mock-provider";
+import { LeegalityProvider } from "./leegality-provider";
 import type { EsignProvider } from "./provider";
 
 export type { EsignProvider } from "./provider";
+
+const LEEGALITY_REQUIRED_ENV_VARS = [
+  "LEEGALITY_AUTH_TOKEN",
+  "LEEGALITY_PRIVATE_SALT",
+  "LEEGALITY_PROFILE_ID",
+  "LEEGALITY_BASE_URL",
+] as const;
 
 /**
  * plan.md section 17 safety rule: "if NODE_ENV=production and provider is
@@ -30,6 +38,18 @@ export function getEsignProvider(): EsignProvider {
       );
     }
     return new MockProvider();
+  }
+
+  if (providerName === "leegality") {
+    // plan.md section 19 L4: "the gate refuses it with a clear Admin error
+    // if LEEGALITY_AUTH_TOKEN, LEEGALITY_PRIVATE_SALT, LEEGALITY_PROFILE_ID
+    // or LEEGALITY_BASE_URL is missing." Checked here, once, rather than
+    // scattered across every LeegalityProvider method.
+    const missing = LEEGALITY_REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
+    if (missing.length > 0) {
+      throw new Error(`Leegality e-sign is misconfigured — missing ${missing.join(", ")}. Set these in .env.local / Vercel before releasing an LOI for signing.`);
+    }
+    return new LeegalityProvider();
   }
 
   // Real vendor adapters register here as they're built — one new file

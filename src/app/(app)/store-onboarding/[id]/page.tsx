@@ -4,7 +4,9 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canViewOnboarding, canPrepareLoi } from "@/lib/permissions";
 import { LoiPrepPanel } from "./loi-prep-panel";
+import { LoiEditPanel } from "./loi-edit-panel";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
+import { getTemplateSectionDefaults, LOI_SECTION_LABELS, type LoiValues } from "@/lib/onboarding/loi-pdf";
 import {
   ONBOARDING_STATUS_LABELS,
   ONBOARDING_ACCOUNT_STATUS_LABELS,
@@ -32,7 +34,7 @@ export default async function StoreOnboardingDetailPage({
       kyc: true,
       payments: { orderBy: { createdAt: "desc" } },
       loiVersions: { orderBy: { createdAt: "desc" } },
-      currentLoiVersion: true,
+      currentLoiVersion: { include: { template: true } },
     },
   });
 
@@ -193,6 +195,34 @@ export default async function StoreOnboardingDetailPage({
           />
         </CardContent>
       </Card>
+
+      {onboarding.currentLoiVersion && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Edit LOI</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LoiEditPanel
+              onboardingId={onboarding.id}
+              entityType={onboarding.entityType}
+              canEdit={canPrepareLoi(user)}
+              currentVersion={{
+                id: onboarding.currentLoiVersion.id,
+                status: onboarding.currentLoiVersion.status,
+                versionNo: onboarding.currentLoiVersion.versionNo,
+                values: onboarding.currentLoiVersion.values as unknown as LoiValues,
+                bodyOverrides:
+                  (onboarding.currentLoiVersion.bodyOverrides as Record<string, string> | null) ?? {},
+              }}
+              sectionDefaults={getTemplateSectionDefaults(
+                onboarding.currentLoiVersion.template.body,
+                onboarding.currentLoiVersion.values as unknown as LoiValues
+              )}
+              sectionLabels={LOI_SECTION_LABELS}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

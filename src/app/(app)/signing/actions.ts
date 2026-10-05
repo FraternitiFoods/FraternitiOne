@@ -9,10 +9,6 @@ import { canCompanySignNow, transitionEsignAttempt } from "@/lib/onboarding/stat
 import { getEsignProvider, currentProviderName } from "@/lib/esign";
 import { processEsignEvent } from "@/lib/esign/webhook-processor";
 import { getObjectBuffer } from "@/lib/storage";
-import { requestOtp, verifyOtp } from "@/lib/otp/challenge";
-import { getRequestMeta } from "@/lib/otp/request-meta";
-import { renderConsentText, CONSENT_TEXT_VERSION } from "@/lib/otp/consent";
-import { normalizePhoneToE164, maskPhoneE164 } from "@/lib/otp/phone";
 
 export type StartSignResult = { error: string } | { signingUrl: string; autoCompleted?: boolean };
 
@@ -37,6 +33,8 @@ export async function startCompanyEsign(onboardingId: string): Promise<StartSign
 
   const allowed = canCompanySignNow({
     actorRole: user.role,
+    actorUserId: user.id,
+    invitedSignerUserId: latestCompanyAttempt?.signerUserId ?? null,
     franchiseAttempt: franchiseAttempt
       ? { status: franchiseAttempt.status, loiVersionId: franchiseAttempt.loiVersionId, pdfSha256: franchiseAttempt.pdfSha256 }
       : null,
@@ -44,6 +42,18 @@ export async function startCompanyEsign(onboardingId: string): Promise<StartSign
     latestCompanyAttemptStatus: latestCompanyAttempt?.status ?? null,
   });
   if (!allowed) return { error: "Company sign isn't available right now." };
+
+  // plan.md section 19 decision 4: under Leegality, startFranchiseeEsign
+  // already invited this exact signatory onto the shared document and saved
+  // their signUrl — reuse it rather than creating a second document (which
+  // would spend more credits and break the one-document/two-invitee model).
+  if (currentProviderName() === "leegality") {
+    if (!latestCompanyAttempt?.providerSignUrl || latestCompanyAttempt.status !== "SENT") {
+      return { error: "The company signing link isn't ready yet — ask Admin to check the e-sign status on this LOI." };
+    }
+    revalidatePath(`/signing/${onboardingId}`);
+    return { signingUrl: latestCompanyAttempt.providerSignUrl };
+  }
 
   let provider;
   try {
@@ -117,125 +127,3 @@ export async function startCompanyEsign(onboardingId: string): Promise<StartSign
   return { signingUrl, autoCompleted };
 }
 
-export type RequestOtpActionResult = { error: string } | { ok: true; phoneMasked: string; expiresAt: string };
-export type VerifyOtpActionResult = { error: string; locked?: boolean } | { ok: true };
-
-async function loadCompanySigningContext(onboardingId: string) {
-  return db.storeOnboarding.findUnique({
-    where: { id: onboardingId },
-    include: { currentLoiVersion: { include: { attempts: { orderBy: { attemptNo: "desc" } } } } },
-  });
-}
-
-/** plan.md section 19 — the OTP equivalent of startCompanyEsign above, used when SIGNING_METHOD=SMS_OTP. Same resend/re-check exception as the franchisee action — see its own comment. */
-export async function requestCompanyLoiOtp(
-  onboardingId: string,
-  consentAccepted: boolean
-): Promise<RequestOtpActionResult> {
-  const user = await requireUser();
-  if (!canCompanySign(user)) return { error: "Not authorized." };
-
-  const onboarding = await loadCompanySigningContext(onboardingId);
-  const version = onboarding?.currentLoiVersion;
-  if (!onboarding || !version) return { error: "No LOI version to sign." };
-
-  const franchiseAttempt = version.attempts.find((a) => a.signerRole === "FRANCHISEE") ?? null;
-  const latestCompanyAttempt = version.attempts.find((a) => a.signerRole === "COMPANY") ?? null;
-  const isContinuingOtpFlow = latestCompanyAttempt?.provider === "sms_otp" && latestCompanyAttempt.status === "SENT";
-
-  const allowed = canCompanySignNow({
-    actorRole: user.role,
-    franchiseAttempt: franchiseAttempt
-      ? { status: franchiseAttempt.status, loiVersionId: franchiseAttempt.loiVersionId, pdfSha256: franchiseAttempt.pdfSha256 }
-      : null,
-    loiVersion: { id: version.id, pdfSha256: version.pdfSha256 },
-    latestCompanyAttemptStatus: isContinuingOtpFlow ? null : latestCompanyAttempt?.status ?? null,
-  });
-  if (!allowed) return { error: "Company sign isn't available right now." };
-
-  // CurrentUser (the session object) doesn't carry `phone` — fetched
-  // separately here, same as any other field the session type deliberately
-  // keeps minimal.
-  const signatory = await db.user.findUniqueOrThrow({ where: { id: user.id }, select: { phone: true } });
-
-  const { ip, userAgent } = await getRequestMeta();
-  const result = await requestOtp({
-    onboardingId,
-    loiVersionId: version.id,
-    loiVersionStatus: version.status,
-    loiVersionPdfSha256: version.pdfSha256,
-    signerRole: "COMPANY",
-    signerUserId: user.id,
-    storeLabel: `${onboarding.brand} ${onboarding.proposedLocation}`,
-    phoneRaw: signatory.phone,
-    previewOpenedAt: version.companyPreviewOpenedAt,
-    consentAccepted,
-    ip,
-    userAgent,
-    actor: user,
-  });
-  if (!result.ok) return { error: result.error };
-
-  revalidatePath(`/signing/${onboardingId}`);
-  return { ok: true, phoneMasked: result.phoneMasked, expiresAt: result.expiresAt.toISOString() };
-}
-
-export async function verifyCompanyLoiOtp(
-  onboardingId: string,
-  code: string,
-  consentAccepted: boolean
-): Promise<VerifyOtpActionResult> {
-  const user = await requireUser();
-  if (!canCompanySign(user)) return { error: "Not authorized." };
-
-  const onboarding = await loadCompanySigningContext(onboardingId);
-  const version = onboarding?.currentLoiVersion;
-  if (!onboarding || !version) return { error: "No LOI version to sign." };
-
-  const franchiseAttempt = version.attempts.find((a) => a.signerRole === "FRANCHISEE") ?? null;
-  const latestCompanyAttempt = version.attempts.find((a) => a.signerRole === "COMPANY") ?? null;
-  const isCompletingOwnOtpAttempt = latestCompanyAttempt?.provider === "sms_otp" && latestCompanyAttempt.status === "SENT";
-
-  const allowed = canCompanySignNow({
-    actorRole: user.role,
-    franchiseAttempt: franchiseAttempt
-      ? { status: franchiseAttempt.status, loiVersionId: franchiseAttempt.loiVersionId, pdfSha256: franchiseAttempt.pdfSha256 }
-      : null,
-    loiVersion: { id: version.id, pdfSha256: version.pdfSha256 },
-    latestCompanyAttemptStatus: isCompletingOwnOtpAttempt ? null : latestCompanyAttempt?.status ?? null,
-  });
-  if (!allowed) return { error: "Company sign isn't available right now." };
-
-  const signatory = await db.user.findUniqueOrThrow({ where: { id: user.id }, select: { phone: true } });
-
-  const { ip, userAgent } = await getRequestMeta();
-  const normalizedPhone = signatory.phone ? normalizePhoneToE164(signatory.phone) : null;
-  const consentText = renderConsentText({
-    name: user.name,
-    versionNo: version.versionNo,
-    pdfSha256: version.pdfSha256,
-    phoneMasked: normalizedPhone ? maskPhoneE164(normalizedPhone) : "(no number on file)",
-  });
-
-  const result = await verifyOtp({
-    onboardingId,
-    loiVersionId: version.id,
-    currentLoiVersionId: version.id,
-    currentPdfSha256: version.pdfSha256,
-    signerRole: "COMPANY",
-    signerUserId: user.id,
-    signerName: user.name,
-    code,
-    previewOpenedAt: version.companyPreviewOpenedAt,
-    consentAccepted,
-    consentText,
-    consentTextVersion: CONSENT_TEXT_VERSION,
-    ip,
-    userAgent,
-    actor: user,
-  });
-  if (!result.ok) return result;
-
-  revalidatePath(`/signing/${onboardingId}`);
-  return { ok: true };
-}

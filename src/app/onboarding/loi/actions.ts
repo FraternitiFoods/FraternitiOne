@@ -8,10 +8,6 @@ import { canFranchiseeSignNow, transitionLoiVersion, transitionEsignAttempt } fr
 import { getEsignProvider, currentProviderName } from "@/lib/esign";
 import { processEsignEvent } from "@/lib/esign/webhook-processor";
 import { getObjectBuffer } from "@/lib/storage";
-import { requestOtp, verifyOtp } from "@/lib/otp/challenge";
-import { getRequestMeta } from "@/lib/otp/request-meta";
-import { renderConsentText, CONSENT_TEXT_VERSION } from "@/lib/otp/consent";
-import { normalizePhoneToE164, maskPhoneE164 } from "@/lib/otp/phone";
 import { writeAuditEvent } from "@/lib/audit";
 import { sendOnboardingEmail } from "@/lib/onboarding/notify";
 
@@ -39,14 +35,15 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
     include: {
       payments: { orderBy: { createdAt: "desc" }, take: 1 },
       currentLoiVersion: {
-        include: { attempts: { where: { signerRole: "FRANCHISEE" }, orderBy: { attemptNo: "desc" }, take: 1 } },
+        include: { attempts: { orderBy: { attemptNo: "desc" } } },
       },
     },
   });
   if (!onboarding || !onboarding.currentLoiVersion) return { error: "Not ready to sign." };
 
   const version = onboarding.currentLoiVersion;
-  const latestAttempt = version.attempts[0] ?? null;
+  const latestAttempt = version.attempts.find((a) => a.signerRole === "FRANCHISEE") ?? null;
+  const latestCompanyAttempt = version.attempts.find((a) => a.signerRole === "COMPANY") ?? null;
 
   const allowed = canFranchiseeSignNow({
     kycStatus: onboarding.kycStatus,
@@ -65,6 +62,28 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
     return { error: err instanceof Error ? err.message : "E-sign is not configured." };
   }
 
+  const providerName = currentProviderName();
+  const appUrl = process.env.APP_URL || "http://localhost:3000";
+
+  // plan.md section 19 decision 4: Leegality needs the company signatory's
+  // identity up front, to invite them as invitee 2 in the same call. The app
+  // has no per-onboarding assignment for this role (blocker 6) — only one
+  // active COMPANY_SIGNATORY is a supported configuration for now; more than
+  // one is ambiguous and is surfaced to Admin rather than guessed at.
+  let coSignerUser: { id: string; name: string; email: string } | null = null;
+  if (providerName === "leegality") {
+    const signatories = await db.user.findMany({ where: { role: "COMPANY_SIGNATORY", isActive: true } });
+    if (signatories.length === 0) {
+      return { error: "No company signatory is set up yet — ask Admin to add a user with the Company Signatory role." };
+    }
+    if (signatories.length > 1) {
+      return { error: "More than one company signatory is configured — ask Admin to resolve this before starting e-sign." };
+    }
+    const [s] = signatories;
+    if (!s.email) return { error: "The company signatory has no email on file — ask Admin to add one." };
+    coSignerUser = { id: s.id, name: s.name, email: s.email };
+  }
+
   const attempt = await db.esignAttempt.create({
     data: {
       loiVersionId: version.id,
@@ -79,26 +98,44 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
 
   let envelopeId: string;
   let signingUrl: string;
+  let coSigningUrl: string | undefined;
   try {
     const pdfBytes = await getObjectBuffer(version.pdfB2Key);
     const created = await provider.createEnvelope({
       attemptId: attempt.id,
       signer: { name: user.name, email: user.email ?? "", role: "FRANCHISEE" },
+      coSigner: coSignerUser ? { name: coSignerUser.name, email: coSignerUser.email, role: "COMPANY" } : undefined,
       pdf: Buffer.from(pdfBytes),
       pdfSha256: version.pdfSha256,
       authMode: process.env.COMPANY_SIGN_MODE || "AADHAAR_ESIGN",
     });
     envelopeId = created.envelopeId;
     signingUrl = created.signingUrl;
+    coSigningUrl = created.coSigningUrl;
   } catch (err) {
     await db.esignAttempt.update({ where: { id: attempt.id }, data: { status: "FAILED" } });
     return { error: err instanceof Error ? err.message : "Failed to start e-sign." };
   }
 
+  // plan.md section 19 "Leegality API contract": after signing, send the
+  // signer back to our app via `?redirectUrl=`. Mock's signingUrl is already
+  // our own /dev/mock-esign page, so this is a no-op there.
+  if (providerName === "leegality") {
+    signingUrl = `${signingUrl}?redirectUrl=${encodeURIComponent(`${appUrl}/onboarding/loi`)}`;
+    if (coSigningUrl) {
+      coSigningUrl = `${coSigningUrl}?redirectUrl=${encodeURIComponent(`${appUrl}/signing/${onboardingId}`)}`;
+    }
+  }
+
   await db.$transaction(async (tx) => {
     await tx.esignAttempt.update({
       where: { id: attempt.id },
-      data: { providerEnvelopeId: envelopeId, status: transitionEsignAttempt("NOT_STARTED", "SEND"), sentAt: new Date() },
+      data: {
+        providerEnvelopeId: envelopeId,
+        providerSignUrl: providerName === "leegality" ? signingUrl : null,
+        status: transitionEsignAttempt("NOT_STARTED", "SEND"),
+        sentAt: new Date(),
+      },
     });
     await tx.auditEvent.create({
       data: {
@@ -138,6 +175,27 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
         },
       });
     }
+
+    // plan.md section 19 decision 4: pre-create the COMPANY attempt now,
+    // sharing this same Leegality document, so startCompanyEsign (below)
+    // can hand the already-invited signatory their link without a second
+    // provider call (and without spending more credits).
+    if (providerName === "leegality" && coSignerUser && coSigningUrl) {
+      await tx.esignAttempt.create({
+        data: {
+          loiVersionId: version.id,
+          signerRole: "COMPANY",
+          attemptNo: (latestCompanyAttempt?.attemptNo ?? 0) + 1,
+          provider: providerName,
+          providerEnvelopeId: envelopeId,
+          providerSignUrl: coSigningUrl,
+          pdfSha256: version.pdfSha256,
+          status: transitionEsignAttempt("NOT_STARTED", "SEND"),
+          signerUserId: coSignerUser.id,
+          sentAt: new Date(),
+        },
+      });
+    }
   });
 
   // Testing convenience while no real vendor is wired up yet: skip the
@@ -157,138 +215,6 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
 
   revalidatePath("/onboarding/loi");
   return { signingUrl, autoCompleted };
-}
-
-export type RequestOtpActionResult = { error: string } | { ok: true; phoneMasked: string; expiresAt: string };
-export type VerifyOtpActionResult = { error: string; locked?: boolean } | { ok: true };
-
-async function loadFranchiseeSigningContext(onboardingId: string, userId: string) {
-  return db.storeOnboarding.findUnique({
-    where: { id: onboardingId, franchiseeUserId: userId },
-    include: {
-      payments: { orderBy: { createdAt: "desc" }, take: 1 },
-      currentLoiVersion: {
-        include: { attempts: { where: { signerRole: "FRANCHISEE" }, orderBy: { attemptNo: "desc" }, take: 1 } },
-      },
-    },
-  });
-}
-
-/**
- * plan.md section 19 "What gets built" #4/#8 — the OTP equivalent of
- * startFranchiseeEsign above, used when SIGNING_METHOD=SMS_OTP. Re-derives
- * canFranchiseeSignNow exactly like the Aadhaar path (P1-07: no client
- * claim is trusted), with one documented exception: when the franchisee's
- * own latest attempt is already SENT via this exact OTP flow, this is a
- * *resend* of the code already in flight, not an attempt to start a second,
- * competing signing attempt — the gate's "no open attempt" clause exists to
- * block the latter, not the former, so it's deliberately bypassed only in
- * that one case (requestOtp, in turn, reuses the same EsignAttempt row for a
- * resend rather than minting a new attemptNo — see its own comment).
- */
-export async function requestFranchiseeLoiOtp(
-  onboardingId: string,
-  consentAccepted: boolean
-): Promise<RequestOtpActionResult> {
-  const user = await requireUser();
-  if (user.role !== "FRANCHISEE") return { error: "Not authorized." };
-
-  const onboarding = await loadFranchiseeSigningContext(onboardingId, user.id);
-  if (!onboarding || !onboarding.currentLoiVersion) return { error: "Not ready to sign." };
-
-  const version = onboarding.currentLoiVersion;
-  const latestAttempt = version.attempts[0] ?? null;
-  const isContinuingOtpFlow = latestAttempt?.provider === "sms_otp" && latestAttempt.status === "SENT";
-
-  const allowed = canFranchiseeSignNow({
-    kycStatus: onboarding.kycStatus,
-    paymentStatus: onboarding.paymentStatus,
-    verifiedAmount: onboarding.payments[0]?.verifiedAmount ?? null,
-    expectedAmount: onboarding.expectedAmount,
-    loiVersionStatus: version.status,
-    latestFranchiseAttemptStatus: isContinuingOtpFlow ? null : latestAttempt?.status ?? null,
-  });
-  if (!allowed) return { error: "Signing isn't available right now — check your KYC, payment and LOI status." };
-
-  const { ip, userAgent } = await getRequestMeta();
-  const result = await requestOtp({
-    onboardingId,
-    loiVersionId: version.id,
-    loiVersionStatus: version.status,
-    loiVersionPdfSha256: version.pdfSha256,
-    signerRole: "FRANCHISEE",
-    signerUserId: user.id,
-    storeLabel: `${onboarding.brand} ${onboarding.proposedLocation}`,
-    phoneRaw: onboarding.contactPhone,
-    previewOpenedAt: version.franchiseePreviewOpenedAt,
-    consentAccepted,
-    ip,
-    userAgent,
-    actor: user,
-  });
-  if (!result.ok) return { error: result.error };
-
-  revalidatePath("/onboarding/loi");
-  return { ok: true, phoneMasked: result.phoneMasked, expiresAt: result.expiresAt.toISOString() };
-}
-
-export async function verifyFranchiseeLoiOtp(
-  onboardingId: string,
-  code: string,
-  consentAccepted: boolean
-): Promise<VerifyOtpActionResult> {
-  const user = await requireUser();
-  if (user.role !== "FRANCHISEE") return { error: "Not authorized." };
-
-  const onboarding = await loadFranchiseeSigningContext(onboardingId, user.id);
-  if (!onboarding || !onboarding.currentLoiVersion) return { error: "Not ready to sign." };
-
-  const version = onboarding.currentLoiVersion;
-  const latestAttempt = version.attempts[0] ?? null;
-  // Re-checked at the moment of verify too (decision 5), with the same
-  // documented exception as requestFranchiseeLoiOtp above: we're completing
-  // the signer's own in-flight attempt, not starting a new one.
-  const isCompletingOwnOtpAttempt = latestAttempt?.provider === "sms_otp" && latestAttempt.status === "SENT";
-  const allowed = canFranchiseeSignNow({
-    kycStatus: onboarding.kycStatus,
-    paymentStatus: onboarding.paymentStatus,
-    verifiedAmount: onboarding.payments[0]?.verifiedAmount ?? null,
-    expectedAmount: onboarding.expectedAmount,
-    loiVersionStatus: version.status,
-    latestFranchiseAttemptStatus: isCompletingOwnOtpAttempt ? null : latestAttempt?.status ?? null,
-  });
-  if (!allowed) return { error: "Signing isn't available right now — check your KYC, payment and LOI status." };
-
-  const { ip, userAgent } = await getRequestMeta();
-  const normalizedPhone = normalizePhoneToE164(onboarding.contactPhone);
-  const consentText = renderConsentText({
-    name: user.name,
-    versionNo: version.versionNo,
-    pdfSha256: version.pdfSha256,
-    phoneMasked: normalizedPhone ? maskPhoneE164(normalizedPhone) : "(no number on file)",
-  });
-
-  const result = await verifyOtp({
-    onboardingId,
-    loiVersionId: version.id,
-    currentLoiVersionId: version.id,
-    currentPdfSha256: version.pdfSha256,
-    signerRole: "FRANCHISEE",
-    signerUserId: user.id,
-    signerName: user.name,
-    code,
-    previewOpenedAt: version.franchiseePreviewOpenedAt,
-    consentAccepted,
-    consentText,
-    consentTextVersion: CONSENT_TEXT_VERSION,
-    ip,
-    userAgent,
-    actor: user,
-  });
-  if (!result.ok) return result;
-
-  revalidatePath("/onboarding/loi");
-  return { ok: true };
 }
 
 export type LoiFeedbackResult = { error: string } | { ok: true };
