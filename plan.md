@@ -4374,3 +4374,14 @@ mismatch" situation 20A's build log already flagged once.
 
 Next up per the section's own build order: 20B (dashboard widgets).
 
+**Bug fix, found and fixed 2026-10-05 (unrelated to section 19's L5, found
+while checking dev-server health after it).** `next build` failed outright:
+`store-onboarding-list.tsx` (a Client Component) imported `LOI_NOT_GENERATED`
+from `search.ts` (20D, commit `77e7e31`), which starts with `import
+"server-only"` — a plain string sentinel pulling the whole server-only guard
+into the client bundle. Fixed by moving just that constant into a new
+`search-constants.ts` with no `server-only` import; `search.ts` re-exports it
+so the export route's import is unchanged. `next build` now compiles and
+type-checks cleanly; `tsc`, `eslint`, and the full `vitest run` (192 tests)
+all still green. Committed separately from the L5 commit.
+
