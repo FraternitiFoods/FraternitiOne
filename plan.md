@@ -3307,6 +3307,142 @@ answered:** need Apoorv's actual LOI template file to compare against
 template file to reconcile; `loi-template.ts`'s current text stands as-is.
 **L3 done.**
 
+**L4 — Leegality provider adapter, no real call made (2026-10-05).** Read
+`src/lib/esign/{provider,index,mock-provider,webhook-processor}.ts`, both
+start actions (`onboarding/loi/actions.ts`'s `startFranchiseeEsign`,
+`signing/actions.ts`'s `startCompanyEsign`), `/admin/esign-events`, the
+public webhook route, and section 19's own API-contract/webhook/edge-case
+text in full before writing anything, per this step's own instruction.
+
+**Interface change, scoped deliberately narrow.** Decision 4 (one shared
+Leegality document, two invitees, fixed order) cannot be expressed by
+today's `createEnvelope(signer) -> {envelopeId, signingUrl}`, called
+independently by each start action. The *full* fix — both start actions
+sharing one document, and `webhook-processor.ts`'s attempt lookup changing
+from "`providerEnvelopeId` is 1:1 with one attempt" to "shared, disambiguate
+by signer" — is explicitly step L5's own heading ("wire the start actions
+... webhook rules above"), not this one. Rewiring that now, without L5's
+matching-logic fix landing in the same change, would have put two
+`EsignAttempt` rows behind the same `providerEnvelopeId` while
+`webhook-processor.ts`'s `findFirst` lookup stayed non-deterministic between
+them — a real regression risk to the mock flow, which must keep passing.
+So the interface change here is **additive only**: `CreateEnvelopeInput`
+gained optional `coSigner`/`reference`; the return type gained optional
+`coSigningUrl`; `ParsedWebhookEvent` gained optional `invitationUrl`/
+`inviteeEmail`. Every existing caller (both start actions, the mock
+provider) is unaffected — they don't pass or read the new fields, so
+`tsc`/the full `vitest run` are byte-for-byte unchanged from L3's baseline
+except for the new test file below. `LeegalityProvider.createEnvelope`
+*requires* `coSigner` and throws a clear error without it (a single-invitee
+document would violate decision 4) — L5 is what actually makes a start
+action pass it.
+
+**`src/lib/esign/leegality-provider.ts` (new)** implements the full
+"Leegality API contract" table: `createEnvelope` (`POST /v3.0/sign/request`,
+both invitees, `irn`), `getStatus` (`GET /v3.3/document/details`, maps
+`document.status` to our `EnvelopeStatus` — conservatively, since the docs
+only pin down `Draft`/`Sent`/`Completed`; unrecognized values fall back to
+`SENT` rather than guessing a terminal state), `voidEnvelope` (`DELETE
+/v3.0/sign/request` — just the delete; downloading whatever exists *first*
+is the caller's job per edge cases 1-2, not this method's), `fetchSignedPdf`/
+`fetchCertificate` (`GET /v3.3/document/fetchDocument`, the two
+`documentDownloadType`s, downloading the 15-second CDN URL immediately),
+`parseAndVerifyWebhook` (mac = `HMAC-SHA1(privateSalt, documentId)`,
+constant-time compare — decision 6: this only proves the doorbell rang, so
+it returns `invitationUrl`/`inviteeEmail` for L5 to actually match against
+a stored attempt, not a final per-signer idempotency key yet), and
+`getLeegalityWalletBalance()` (5-minute cache, `null` on any failure,
+exported standalone since it isn't part of `EsignProvider`). Every request
+goes through one shared `leegalityRequest()` helper: `X-Auth-Token` header,
+15s timeout via `AbortController` with **no retry** (edge case 3 — a retried
+create could spend credits twice), success = HTTP 2xx **and** `status ===
+1`, and every thrown error message is built only from Leegality's own
+`messages`/HTTP status — the auth token and private salt are never
+interpolated into a log line or error, checked by a dedicated test.
+
+**`src/lib/esign/index.ts`**: `getEsignProvider()` now has a `leegality`
+branch, gated on `LEEGALITY_AUTH_TOKEN`/`LEEGALITY_PRIVATE_SALT`/
+`LEEGALITY_PROFILE_ID`/`LEEGALITY_BASE_URL` all being set (this step's own
+instruction) — missing any of them throws one clear Admin-facing error
+naming exactly which are missing, checked once here rather than scattered
+across every `LeegalityProvider` method.
+
+**Schema**: `EsignAttempt.providerSignUrl String?` (server-only; this
+step's own instruction — "if no suitable column exists," and none did) —
+holds the co-signer's signUrl once L5 actually wires `createEnvelope`'s
+`coSigner` path, so `startCompanyEsign` can reuse it instead of a second
+provider call. New migration `20261005140000_add_esign_attempt_provider_
+sign_url` (hand-written again, same `prisma db execute` + `migrate resolve`
+workaround as L1/L3 — the shadow DB still isn't reachable in this
+environment). Nothing writes to this column yet.
+
+**`/admin/esign-events`**: added the wallet-balance banner this step's own
+text calls for ("Add the wallet line") — shown only when the configured
+provider is `leegality` and the (cached, failure-tolerant)
+`getLeegalityWalletBalance()` call returns a number below
+`LEEGALITY_LOW_CREDITS` (default 10).
+
+**Generated a sample LOI PDF** for the Leegality workflow setup ("Document:
+upload one generated sample LOI PDF (Claude Code provides it in step L4)")
+via a throwaway script — read-only against the dev DB's active template
+(confirmed untouched afterward), deleted the script after running it.
+Written to the repo root as `leegality-workflow-sample.pdf` (`*.pdf` is
+gitignored).
+
+**Tests** (`leegality-provider.test.ts`, 22 new): exact URL/method/headers/
+body for `createEnvelope`/`getStatus`/`voidEnvelope`; `status: 0` failure
+surfaces Leegality's own message; non-2xx fails even if the body claims
+`status: 1`; 15s timeout with no retry (`vi.useFakeTimers` +
+`AbortSignal`-driven fetch mock, advanced synthetically rather than waiting
+15 real seconds); the auth token/private salt never appear in a thrown
+error's message; `fetchSignedPdf`/`fetchCertificate` make exactly two fetch
+calls (the API call, then the CDN URL) and return the CDN body's actual
+bytes; `parseAndVerifyWebhook` accepts a correctly-signed fixture and
+rejects a wrong or missing `mac`, and maps `Rejected`/`expired` correctly;
+wallet balance caches across a second call and returns `null` (never
+throws) on failure. One real bug caught by this suite and fixed before it
+was reported done, worth recording since it's a classic trap: the
+`fetchSignedPdf` test's own mock originally built its fake CDN response
+via `Buffer.from("signed-bytes").buffer` — Node pools small `Buffer`
+allocations, so `.buffer` can expose the whole shared pool (unrelated
+memory from elsewhere in the process) rather than a tightly-sized
+`ArrayBuffer`; the test was intermittently reading back garbage. Fixed by
+building the fixture with `new TextEncoder().encode(...)` instead, which
+isn't pooled — a test-fixture bug only, `downloadDocumentFile`'s own
+production code was never wrong (a real `Response.arrayBuffer()` is always
+correctly sized).
+
+**Checks**: `tsc --noEmit` clean. `eslint` on every touched/new file: 0
+errors, 0 warnings. `vitest run`: 175/175 (153 carried over + 22 new).
+
+**Not done in this step, by design — carried to L5/L6 per the plan's own
+split:** `startFranchiseeEsign`/`startCompanyEsign` still call
+`createEnvelope` without `coSigner` (so selecting `ESIGN_PROVIDER=leegality`
+today would hit `LeegalityProvider`'s own "needs both signers" error on the
+very first real call); `webhook-processor.ts`'s attempt lookup is still
+`providerEnvelopeId` 1:1; the webhook route doesn't yet re-derive the final
+`leegality:<documentId>:<ROLE>:<event>` idempotency key; no redirect-URL
+construction; edge cases 1-2's "download then void" orchestration doesn't
+exist yet. All explicitly L5's own listed work, not deferred by omission.
+
+Committed as its own step (not pushed, per standing instruction).
+
+**Stop point hit — this step's own instructions:** need from Apoorv (batched
+in chat, per the stop-points table):
+1. **Legacy Auth Token** and **Private Salt** (production; sandbox too if a
+   sandbox account exists) — into `.env.local` only, never this chat.
+2. **Workflow ID** (`profileId`) and the workflow's **downloaded API payload
+   JSON**, after setting up the "Fraterniti LOI" workflow per this section's
+   "Workflow settings" list — `leegality-workflow-sample.pdf` (repo root) is
+   the sample document for placing signature boxes.
+3. **Production domain** for the webhook URL (`fraterniti.one` or
+   `fraterniti-one.vercel.app`).
+
+Once given, L4 compares the real downloaded payload against this section's
+documented request/response shapes (`createEnvelope`'s exact field names,
+`getStatus`'s `document.status` values, etc.) and reports any difference
+before L6 — then L5 can actually wire the start actions and webhook.
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)

@@ -7,12 +7,20 @@ import { formatOnboardingCode } from "@/lib/onboarding/ids";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currentProviderName } from "@/lib/esign";
+import { getLeegalityWalletBalance } from "@/lib/esign/leegality-provider";
 import { ReconcileButton } from "./reconcile-button";
 
 /** plan.md section 17, P1-10: webhook log, visible to Admin, retryable via Reconcile. */
 export default async function EsignEventsPage() {
   const user = await requireUser();
   if (!canManageOnboardingAdmin(user)) redirect("/dashboard");
+
+  const providerName = currentProviderName();
+  // plan.md section 19 API contract "wallet line" — cached 5 min inside
+  // getLeegalityWalletBalance, failure returns null and is ignored (never
+  // blocks this page or any signing flow).
+  const walletBalance = providerName === "leegality" ? await getLeegalityWalletBalance() : null;
+  const lowCreditsThreshold = Number(process.env.LEEGALITY_LOW_CREDITS || "10");
 
   const events = await db.esignEvent.findMany({
     orderBy: { receivedAt: "desc" },
@@ -27,9 +35,16 @@ export default async function EsignEventsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">E-sign Events</h1>
         <p className="text-sm text-muted-foreground">
-          E-sign provider: <Badge variant="outline">{currentProviderName()}</Badge>
+          E-sign provider: <Badge variant="outline">{providerName}</Badge>
         </p>
       </div>
+
+      {providerName === "leegality" && walletBalance !== null && walletBalance < lowCreditsThreshold && (
+        <p className="rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          Leegality wallet balance is low: <strong>{walletBalance}</strong> eSign credits left (each LOI uses 2).
+          Top up soon to avoid signing failures.
+        </p>
+      )}
 
       {process.env.MALWARE_SCANNER !== "clamav" && process.env.MALWARE_SCANNER !== "api" && (
         <p className="rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">

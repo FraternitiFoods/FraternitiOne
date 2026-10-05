@@ -987,6 +987,13 @@ model EsignAttempt {
   attemptNo          Int
   provider           String
   providerEnvelopeId String?
+  /// plan.md section 19 L4: under decision 4 (one shared Leegality document,
+  /// two invitees) the franchisee's create call also returns the company
+  /// signatory's signUrl — stored here so startCompanyEsign (step L5) can
+  /// reuse it without a second provider call. Server-only: never sent to the
+  /// wrong user, never logged (a signUrl is a bearer secret). Unused by the
+  /// mock provider, which still gets its own envelope per attempt.
+  providerSignUrl    String?
   /// The hash of the PDF actually sent for this attempt — checked against
   /// the webhook's reported hash before ever marking COMPLETED.
   pdfSha256          String
