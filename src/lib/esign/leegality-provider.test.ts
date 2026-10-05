@@ -322,12 +322,21 @@ describe("LeegalityProvider.parseAndVerifyWebhook", () => {
     await expect(provider.parseAndVerifyWebhook(JSON.stringify(body))).rejects.toThrow(/missing documentId or mac/);
   });
 
-  it("maps a rejected signature to CANCELLED", async () => {
+  it("maps a rejected signature to CANCELLED and carries the rejectionMessage for L5's feedback flow", async () => {
     const provider = new LeegalityProvider();
     const result = await provider.parseAndVerifyWebhook(
-      fixture("doc_1", { request: { action: "Rejected", email: "f@example.com" } })
+      fixture("doc_1", {
+        request: { action: "Rejected", email: "f@example.com", rejectionMessage: "Fee looks wrong." },
+      })
     );
     expect(result.status).toBe("CANCELLED");
+    expect(result.rejectionMessage).toBe("Fee looks wrong.");
+  });
+
+  it("omits rejectionMessage when the signer did not reject", async () => {
+    const provider = new LeegalityProvider();
+    const result = await provider.parseAndVerifyWebhook(fixture("doc_1"));
+    expect(result.rejectionMessage).toBeUndefined();
   });
 
   it("maps an expired link to EXPIRED", async () => {
@@ -336,6 +345,22 @@ describe("LeegalityProvider.parseAndVerifyWebhook", () => {
       fixture("doc_1", { request: { expired: true, email: "f@example.com" } })
     );
     expect(result.status).toBe("EXPIRED");
+  });
+
+  it("never carries the Aadhaar-derived verification object through to ParsedWebhookEvent", async () => {
+    const provider = new LeegalityProvider();
+    const documentId = "doc_1";
+    const mac = createHmac("sha1", ENV.LEEGALITY_PRIVATE_SALT).update(documentId).digest("hex");
+    const body = JSON.stringify({
+      documentId,
+      documentStatus: "Completed",
+      mac,
+      request: { email: "f@example.com", invitationUrl: "https://sign/1" },
+      verification: { name: "Real Name", yob: "1990", gender: "M", state: "MH", pincode: "400001" },
+    });
+    const result = await provider.parseAndVerifyWebhook(body);
+    expect(result).not.toHaveProperty("verification");
+    expect(JSON.stringify(result)).not.toContain("Real Name");
   });
 });
 

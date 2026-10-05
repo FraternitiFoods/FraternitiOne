@@ -35,14 +35,15 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
     include: {
       payments: { orderBy: { createdAt: "desc" }, take: 1 },
       currentLoiVersion: {
-        include: { attempts: { where: { signerRole: "FRANCHISEE" }, orderBy: { attemptNo: "desc" }, take: 1 } },
+        include: { attempts: { orderBy: { attemptNo: "desc" } } },
       },
     },
   });
   if (!onboarding || !onboarding.currentLoiVersion) return { error: "Not ready to sign." };
 
   const version = onboarding.currentLoiVersion;
-  const latestAttempt = version.attempts[0] ?? null;
+  const latestAttempt = version.attempts.find((a) => a.signerRole === "FRANCHISEE") ?? null;
+  const latestCompanyAttempt = version.attempts.find((a) => a.signerRole === "COMPANY") ?? null;
 
   const allowed = canFranchiseeSignNow({
     kycStatus: onboarding.kycStatus,
@@ -61,6 +62,28 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
     return { error: err instanceof Error ? err.message : "E-sign is not configured." };
   }
 
+  const providerName = currentProviderName();
+  const appUrl = process.env.APP_URL || "http://localhost:3000";
+
+  // plan.md section 19 decision 4: Leegality needs the company signatory's
+  // identity up front, to invite them as invitee 2 in the same call. The app
+  // has no per-onboarding assignment for this role (blocker 6) — only one
+  // active COMPANY_SIGNATORY is a supported configuration for now; more than
+  // one is ambiguous and is surfaced to Admin rather than guessed at.
+  let coSignerUser: { id: string; name: string; email: string } | null = null;
+  if (providerName === "leegality") {
+    const signatories = await db.user.findMany({ where: { role: "COMPANY_SIGNATORY", isActive: true } });
+    if (signatories.length === 0) {
+      return { error: "No company signatory is set up yet — ask Admin to add a user with the Company Signatory role." };
+    }
+    if (signatories.length > 1) {
+      return { error: "More than one company signatory is configured — ask Admin to resolve this before starting e-sign." };
+    }
+    const [s] = signatories;
+    if (!s.email) return { error: "The company signatory has no email on file — ask Admin to add one." };
+    coSignerUser = { id: s.id, name: s.name, email: s.email };
+  }
+
   const attempt = await db.esignAttempt.create({
     data: {
       loiVersionId: version.id,
@@ -75,26 +98,44 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
 
   let envelopeId: string;
   let signingUrl: string;
+  let coSigningUrl: string | undefined;
   try {
     const pdfBytes = await getObjectBuffer(version.pdfB2Key);
     const created = await provider.createEnvelope({
       attemptId: attempt.id,
       signer: { name: user.name, email: user.email ?? "", role: "FRANCHISEE" },
+      coSigner: coSignerUser ? { name: coSignerUser.name, email: coSignerUser.email, role: "COMPANY" } : undefined,
       pdf: Buffer.from(pdfBytes),
       pdfSha256: version.pdfSha256,
       authMode: process.env.COMPANY_SIGN_MODE || "AADHAAR_ESIGN",
     });
     envelopeId = created.envelopeId;
     signingUrl = created.signingUrl;
+    coSigningUrl = created.coSigningUrl;
   } catch (err) {
     await db.esignAttempt.update({ where: { id: attempt.id }, data: { status: "FAILED" } });
     return { error: err instanceof Error ? err.message : "Failed to start e-sign." };
   }
 
+  // plan.md section 19 "Leegality API contract": after signing, send the
+  // signer back to our app via `?redirectUrl=`. Mock's signingUrl is already
+  // our own /dev/mock-esign page, so this is a no-op there.
+  if (providerName === "leegality") {
+    signingUrl = `${signingUrl}?redirectUrl=${encodeURIComponent(`${appUrl}/onboarding/loi`)}`;
+    if (coSigningUrl) {
+      coSigningUrl = `${coSigningUrl}?redirectUrl=${encodeURIComponent(`${appUrl}/signing/${onboardingId}`)}`;
+    }
+  }
+
   await db.$transaction(async (tx) => {
     await tx.esignAttempt.update({
       where: { id: attempt.id },
-      data: { providerEnvelopeId: envelopeId, status: transitionEsignAttempt("NOT_STARTED", "SEND"), sentAt: new Date() },
+      data: {
+        providerEnvelopeId: envelopeId,
+        providerSignUrl: providerName === "leegality" ? signingUrl : null,
+        status: transitionEsignAttempt("NOT_STARTED", "SEND"),
+        sentAt: new Date(),
+      },
     });
     await tx.auditEvent.create({
       data: {
@@ -131,6 +172,27 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
           newValue: { status: "SENT_FOR_SIGNING" },
           reference: "Sent for signing",
           source: "web",
+        },
+      });
+    }
+
+    // plan.md section 19 decision 4: pre-create the COMPANY attempt now,
+    // sharing this same Leegality document, so startCompanyEsign (below)
+    // can hand the already-invited signatory their link without a second
+    // provider call (and without spending more credits).
+    if (providerName === "leegality" && coSignerUser && coSigningUrl) {
+      await tx.esignAttempt.create({
+        data: {
+          loiVersionId: version.id,
+          signerRole: "COMPANY",
+          attemptNo: (latestCompanyAttempt?.attemptNo ?? 0) + 1,
+          provider: providerName,
+          providerEnvelopeId: envelopeId,
+          providerSignUrl: coSigningUrl,
+          pdfSha256: version.pdfSha256,
+          status: transitionEsignAttempt("NOT_STARTED", "SEND"),
+          signerUserId: coSignerUser.id,
+          sentAt: new Date(),
         },
       });
     }

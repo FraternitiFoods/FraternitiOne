@@ -966,6 +966,14 @@ model LoiVersion {
   signedPdfSha256  String?
   certificateB2Key String?
 
+  /// plan.md section 19 L5, edge case 2: a backup of what Leegality holds
+  /// right after the franchisee signs, taken because the shared document can
+  /// later be voided (a new version, or a restart after the company's link
+  /// expires) and would otherwise be unrecoverable. Leegality-only; never set
+  /// by the mock provider. Not the final signed PDF — only one signature.
+  franchiseeSignedPdfB2Key  String?
+  franchiseeSignedPdfSha256 String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -987,12 +995,15 @@ model EsignAttempt {
   attemptNo          Int
   provider           String
   providerEnvelopeId String?
-  /// plan.md section 19 L4: under decision 4 (one shared Leegality document,
-  /// two invitees) the franchisee's create call also returns the company
-  /// signatory's signUrl — stored here so startCompanyEsign (step L5) can
-  /// reuse it without a second provider call. Server-only: never sent to the
-  /// wrong user, never logged (a signUrl is a bearer secret). Unused by the
-  /// mock provider, which still gets its own envelope per attempt.
+  /// plan.md section 19 L4/L5: under decision 4 (one shared Leegality
+  /// document, two invitees) this attempt's own signUrl — set on BOTH the
+  /// FRANCHISEE and COMPANY rows from the one shared createEnvelope call.
+  /// Lets startCompanyEsign (step L5) reuse the company's link without a
+  /// second provider call, and lets the webhook processor tell the two
+  /// signers' events apart (they share the same providerEnvelopeId). Server-
+  /// only: never sent to the wrong user, never logged (a signUrl is a bearer
+  /// secret). Unused by the mock provider, which still gets its own envelope
+  /// per attempt.
   providerSignUrl    String?
   /// The hash of the PDF actually sent for this attempt — checked against
   /// the webhook's reported hash before ever marking COMPLETED.

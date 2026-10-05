@@ -29,6 +29,8 @@ export default async function SigningDetailPage({ params }: PageProps<"/signing/
 
   const canSign = canCompanySignNow({
     actorRole: user.role,
+    actorUserId: user.id,
+    invitedSignerUserId: latestCompanyAttempt?.signerUserId ?? null,
     franchiseAttempt: franchiseAttempt
       ? { status: franchiseAttempt.status, loiVersionId: franchiseAttempt.loiVersionId, pdfSha256: franchiseAttempt.pdfSha256 }
       : null,

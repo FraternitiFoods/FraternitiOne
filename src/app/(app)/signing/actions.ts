@@ -33,6 +33,8 @@ export async function startCompanyEsign(onboardingId: string): Promise<StartSign
 
   const allowed = canCompanySignNow({
     actorRole: user.role,
+    actorUserId: user.id,
+    invitedSignerUserId: latestCompanyAttempt?.signerUserId ?? null,
     franchiseAttempt: franchiseAttempt
       ? { status: franchiseAttempt.status, loiVersionId: franchiseAttempt.loiVersionId, pdfSha256: franchiseAttempt.pdfSha256 }
       : null,
@@ -40,6 +42,18 @@ export async function startCompanyEsign(onboardingId: string): Promise<StartSign
     latestCompanyAttemptStatus: latestCompanyAttempt?.status ?? null,
   });
   if (!allowed) return { error: "Company sign isn't available right now." };
+
+  // plan.md section 19 decision 4: under Leegality, startFranchiseeEsign
+  // already invited this exact signatory onto the shared document and saved
+  // their signUrl — reuse it rather than creating a second document (which
+  // would spend more credits and break the one-document/two-invitee model).
+  if (currentProviderName() === "leegality") {
+    if (!latestCompanyAttempt?.providerSignUrl || latestCompanyAttempt.status !== "SENT") {
+      return { error: "The company signing link isn't ready yet — ask Admin to check the e-sign status on this LOI." };
+    }
+    revalidatePath(`/signing/${onboardingId}`);
+    return { signingUrl: latestCompanyAttempt.providerSignUrl };
+  }
 
   let provider;
   try {

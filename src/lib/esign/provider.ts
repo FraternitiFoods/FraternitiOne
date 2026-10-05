@@ -53,6 +53,8 @@ export type ParsedWebhookEvent = {
    */
   invitationUrl?: string;
   inviteeEmail?: string;
+  /** Leegality's `request.rejectionMessage` when `action === "Rejected"` — step L5 turns this into LOI feedback. */
+  rejectionMessage?: string;
 };
 
 export interface EsignProvider {

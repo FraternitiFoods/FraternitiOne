@@ -170,7 +170,13 @@ export class LeegalityProvider implements EsignProvider {
       documentId?: string;
       documentStatus?: "Draft" | "Sent" | "Completed";
       mac?: string;
-      request?: { invitationUrl?: string; email?: string; action?: "Signed" | "Rejected" | null; expired?: boolean };
+      request?: {
+        invitationUrl?: string;
+        email?: string;
+        action?: "Signed" | "Rejected" | null;
+        expired?: boolean;
+        rejectionMessage?: string;
+      };
     };
     try {
       payload = JSON.parse(rawBody);
@@ -206,6 +212,7 @@ export class LeegalityProvider implements EsignProvider {
       status,
       invitationUrl: payload.request?.invitationUrl,
       inviteeEmail: payload.request?.email,
+      rejectionMessage: payload.request?.action === "Rejected" ? payload.request?.rejectionMessage : undefined,
     };
   }
 

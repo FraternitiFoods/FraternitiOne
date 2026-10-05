@@ -3479,6 +3479,136 @@ model), which touches currently-working code (`startFranchiseeEsign`/
 substantial enough that it's worth Apoorv's explicit go-ahead before
 starting, same as L2→L3 and L3→L4's own handoffs this session.
 
+**L5 (2026-10-05) — wire the start actions + webhook for Leegality.**
+Apoorv's go-ahead given in chat. Still entirely proof-of-code-path only —
+no real Leegality call has been made (that's L6) — every path below is
+verified against a mocked `fetch`/mocked `db`, not the real vendor.
+
+- **`startFranchiseeEsign` (`src/app/onboarding/loi/actions.ts`)** now looks
+  up the single active `COMPANY_SIGNATORY` user (errors clearly if zero or
+  more than one exist — the app has no per-onboarding assignment for this
+  role, section 17 never built one, so "exactly one active user with the
+  role" is the one supported configuration for now; more than one is
+  surfaced to Admin rather than guessed at) and passes them as `coSigner` to
+  `createEnvelope`, so Leegality creates ONE shared document with both
+  invitees in the one call (decision 4). The returned `signingUrl` goes to
+  the franchisee now; the returned `coSigningUrl` is stored on a COMPANY
+  `EsignAttempt` row created in the same transaction — pre-created, status
+  `SENT`, `signerUserId` = the resolved signatory — so `startCompanyEsign`
+  never needs a second Leegality call later. Both URLs get Leegality's
+  `?redirectUrl=` appended (`/onboarding/loi`, `/signing/[id]`) per the API
+  contract. `providerSignUrl` is now stored on the FRANCHISEE attempt's own
+  row too (not just the company's), since the webhook processor needs each
+  invitee's own signUrl to tell the two apart later. All of this is gated on
+  `currentProviderName() === "leegality"` — the mock path (no `coSigner`,
+  no pre-created COMPANY row) is byte-for-byte unchanged.
+- **`startCompanyEsign` (`src/app/(app)/signing/actions.ts`)**: for
+  Leegality, reuses the pre-created attempt's stored `providerSignUrl`
+  directly — no provider call, no new `EsignAttempt` row, no extra credits.
+  If that row or its signUrl is somehow missing (data anomaly, or the
+  default edge-case-2 path after an expired link — see below), it returns a
+  clear error telling Admin to check e-sign status, rather than inventing a
+  parallel creation path that would restart franchisee signing from inside
+  the company action. The mock path (`provider.createEnvelope` without
+  `coSigner`, synchronous auto-complete) is unchanged.
+- **`canCompanySignNow` (`state.ts`)** gained `actorUserId` /
+  `invitedSignerUserId`. When Leegality has pinned a specific invitee 2
+  (`EsignAttempt.signerUserId`), only that exact user may sign — ADMIN
+  included (edge case 6: "can see status but, by default, cannot open that
+  link"). `SENT` is deliberately *not* treated as "an attempt already in
+  progress" for the pinned signatory — it's the one legitimate state in
+  which they're meant to retrieve their stored link, not a second start to
+  block. Both callers (`startCompanyEsign`, `/signing/[id]/page.tsx`) pass
+  the new fields; when `invitedSignerUserId` is null (mock, or no row yet)
+  behaviour is byte-for-byte what it was before L5.
+- **`webhook-processor.ts`** — the core rewrite:
+  - `resolveLeegalityEvent()` (Leegality only, runs before any DB
+    transaction — a network call must never sit inside an interactive
+    Postgres transaction): finds every `EsignAttempt` sharing the event's
+    `providerEnvelopeId` (now up to two, FRANCHISEE + COMPANY, since they
+    share one document), picks the one whose own `providerSignUrl` matches
+    the webhook's `invitationUrl` (falls back to invitee email; if only one
+    candidate exists, uses it), then — decision 6, "the webhook is a
+    doorbell, not proof" — calls `getStatus(documentId)` and uses **only**
+    that confirmed status downstream, never the webhook body's own claim.
+    Builds the real idempotency key `leegality:<documentId>:<ROLE>:<kind>`
+    from the matched signer's role and the confirmed status. A
+    resolution failure (unknown document, ambiguous match, Leegality
+    unreachable) is recorded as a `FAILED` `EsignEvent` using the
+    provisional id, same visible-to-Admin/retryable discipline as every
+    other failure path here (P1-10).
+  - `processWithinTransaction` now takes the resolved idempotency key and an
+    optional `attemptIdHint` — when present (Leegality), the attempt lookup
+    is a precise `findUnique(id)` instead of the old `findFirst` by
+    envelope, which would otherwise return an arbitrary one of the two
+    rows that now share an envelope id. Mock (no hint) is unchanged.
+  - **Store less**: a new `redactForStorage()` strips `invitationUrl` (a
+    bearer secret) from every payload written to `EsignEvent`, at all four
+    write sites. `verification` never needs stripping — it never reaches
+    `ParsedWebhookEvent` in the first place (confirmed by a new explicit
+    test).
+  - **Rejection → LOI feedback**: a `Rejected` webhook (`rejectionMessage`
+    added to `ParsedWebhookEvent`, populated by
+    `LeegalityProvider.parseAndVerifyWebhook`) now writes a `LoiFeedback`
+    system-actor audit event and emails the LOI preparer(s) + sales owner +
+    Admin — the same `loi_feedback` channel `submitLoiFeedback` uses for a
+    franchisee's own pre-signing note, labelled with which signer rejected.
+  - **Franchisee-completion backup (edge case 2)**: the first time a
+    FRANCHISEE attempt reaches `COMPLETED` under Leegality, the half-signed
+    document is fetched and stored on two new `LoiVersion` columns
+    (`franchiseeSignedPdfB2Key`/`franchiseeSignedPdfSha256` — migration
+    `20261005150000_add_loi_version_franchisee_signed_backup`, applied) —
+    insurance against the shared document later being voided. Guarded so it
+    only runs once per version; mock path untouched.
+  - Expiry needed no new code — once the right attempt is identified and
+    the status is confirmed `EXPIRED`, the existing generic transition table
+    handles it exactly as it always has.
+- **Edge case 1 (terms change mid-signing)**: `newLoiVersionFromCurrent`
+  (`store-onboarding/[id]/loi-actions.ts`) now calls
+  `backupAndVoidLeegalityEnvelopes()` *before* generating the new version's
+  PDF or opening any transaction — for every distinct Leegality
+  `providerEnvelopeId` still `SENT`/`IN_PROGRESS` on the superseded version,
+  best-effort downloads whatever document/audit-trail bytes exist (not
+  fatal if there's nothing signed yet) into B2 under a `superseded-*` key,
+  then calls `voidEnvelope`. If Leegality can't be reached at all, the
+  action returns an error and the new version is **not** created — so a
+  stale, still-open signing link for superseded terms can never linger
+  (P1-11). The void results are logged into the VOID audit event's
+  `newValue` for traceability. Mock path (no Leegality envelopes) is a
+  no-op, confirmed by `currentProviderName() === "leegality"` gating.
+- **Deferred, flagged rather than guessed at**: edge case 2's "Reactivate
+  Document" API research (does it revive an expired company link without
+  re-signing?) was not done this session — it needs reading a Leegality
+  docs page not yet reviewed. Until then, an expired company-signing link
+  falls to the plan's own stated default: Admin restarts signing manually
+  (a fresh FRANCHISEE attempt, which re-invites both signers on a new
+  shared document — 2 more credits). Also not built: a UI to pick a company
+  signatory when more than one active one exists (errors out instead,
+  per the "ask Admin to resolve" behaviour above) — not asked for, and the
+  company currently has at most one such user per blocker 6.
+- **Tests**: `leegality-provider.test.ts` gained `rejectionMessage`
+  passthrough + an explicit "`verification` never reaches
+  `ParsedWebhookEvent`" check. `state.test.ts` gained the
+  `invitedSignerUserId`/`actorUserId` gate cases (allows the exact invitee,
+  blocks a different signatory, blocks ADMIN from opening the link, no
+  restriction when nothing is pinned yet). New `webhook-processor.test.ts`
+  (11 tests, first-ever unit test for this file — needed a `vitest.config.ts`
+  path-alias entry mirroring tsconfig's own `@/*`, since this is the first
+  test to import a module with `@/` imports; purely additive, no existing
+  test was affected) covers: disambiguation by `invitationUrl` across two
+  attempts sharing an envelope, the `leegality:<documentId>:<ROLE>:<kind>`
+  key format, duplicate-webhook no-op, decision 6 (webhook says COMPLETED
+  but `getStatus` still says unsigned → nothing changes), unknown-envelope
+  FAILED, `invitationUrl` never persisted, expiry handled, rejection →
+  feedback (audit + both emails), franchisee-completion backup (and that it
+  doesn't re-run once already backed up), and that the mock path never
+  calls `getStatus`/`resolveLeegalityEvent` at all and keys off the
+  webhook's own `eventId` exactly as before. `tsc --noEmit`, `eslint .`
+  (same 7 pre-existing unrelated warnings, zero new ones), and the full
+  `vitest run` (192 tests) all green.
+- **Not done in this step** (by design, same reasoning as L4): the one real
+  Leegality call (L6), going live (L7), and the full Playwright pass (L8).
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)

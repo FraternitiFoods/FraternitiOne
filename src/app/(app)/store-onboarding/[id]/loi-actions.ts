@@ -18,6 +18,7 @@ import {
 } from "@/lib/onboarding/loi-pdf";
 import { uploadDocument } from "@/lib/storage";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
+import { getEsignProvider, currentProviderName } from "@/lib/esign";
 
 export type LoiActionState = { error?: string } | undefined;
 
@@ -316,6 +317,63 @@ export async function resetLoiSection(
  * version the same way generateLoiVersion does when it supersedes a
  * non-DRAFT version.
  */
+/**
+ * plan.md section 19 L5, edge case 1: "terms change after signing started →
+ * new LOI version → old Leegality document: download what it holds into B2,
+ * then delete it." Runs BEFORE any DB transaction — a provider network call
+ * must never happen inside an interactive Postgres transaction (same
+ * discipline as webhook-processor.ts). Two attempts (FRANCHISEE, COMPANY)
+ * can share one documentId under decision 4, so envelopes are deduped before
+ * voiding each once. Best-effort backup (a Draft/Sent document may have
+ * nothing signed yet to fetch) but the void call itself is not swallowed —
+ * if Leegality can't be reached, the new version isn't created, so a stale,
+ * still-open signing link for superseded terms never lingers (P1-11).
+ */
+async function backupAndVoidLeegalityEnvelopes(
+  onboardingId: string,
+  versionNo: string,
+  attempts: { provider: string; status: string; providerEnvelopeId: string | null }[]
+): Promise<{ envelopeId: string; backedUp: boolean }[]> {
+  const envelopeIds = new Set(
+    attempts
+      .filter((a) => a.provider === "leegality" && (a.status === "SENT" || a.status === "IN_PROGRESS") && a.providerEnvelopeId)
+      .map((a) => a.providerEnvelopeId as string)
+  );
+  if (envelopeIds.size === 0) return [];
+
+  const provider = getEsignProvider();
+  const results: { envelopeId: string; backedUp: boolean }[] = [];
+
+  for (const envelopeId of envelopeIds) {
+    let backedUp = false;
+    try {
+      const [document, certificate] = await Promise.all([
+        provider.fetchSignedPdf(envelopeId),
+        provider.fetchCertificate(envelopeId),
+      ]);
+      await uploadDocument({
+        key: `onboarding/${onboardingId}/loi/${versionNo}/superseded-${envelopeId}-document.pdf`,
+        body: document,
+        contentType: "application/pdf",
+      });
+      await uploadDocument({
+        key: `onboarding/${onboardingId}/loi/${versionNo}/superseded-${envelopeId}-certificate.pdf`,
+        body: certificate,
+        contentType: "application/pdf",
+      });
+      backedUp = true;
+    } catch (err) {
+      // Nothing to back up yet (e.g. still Draft/Sent, no signature at all) —
+      // not fatal. The void call below is what must still succeed.
+      console.error(`No backup available for superseded Leegality document ${envelopeId}:`, err);
+    }
+    await provider.voidEnvelope(envelopeId);
+    results.push({ envelopeId, backedUp });
+  }
+
+  return results;
+}
+
 export async function newLoiVersionFromCurrent(
   onboardingId: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -341,6 +399,25 @@ export async function newLoiVersionFromCurrent(
   const versionNo = nextVersionNo(current.versionNo);
   const newValues: LoiValues = { ...values, versionNo };
 
+  // Edge case 1, before anything else: if terms are changing while a real
+  // Leegality document is still open on the OLD version, back it up and
+  // void it first. If Leegality can't be reached, stop here rather than
+  // create a new version while a stale signing link for superseded terms
+  // stays open.
+  let voidResults: { envelopeId: string; backedUp: boolean }[] = [];
+  if (currentProviderName() === "leegality") {
+    try {
+      voidResults = await backupAndVoidLeegalityEnvelopes(onboardingId, current.versionNo, current.attempts);
+    } catch (err) {
+      return {
+        error:
+          err instanceof Error
+            ? `Could not close out the old e-sign document before creating a new version: ${err.message}`
+            : "Could not close out the old e-sign document before creating a new version.",
+      };
+    }
+  }
+
   const { pdfBytes, sha256 } = await generateLoiPdf({
     templateBody: current.template.body,
     values: newValues,
@@ -362,7 +439,7 @@ export async function newLoiVersionFromCurrent(
       entityId: current.id,
       action: "UPDATE",
       oldValue: { status: current.status },
-      newValue: { status: "VOID" },
+      newValue: { status: "VOID", voidedLeegalityEnvelopes: voidResults },
       reference: `Superseded by v${versionNo} (new version from this)`,
     });
     for (const attempt of current.attempts) {
