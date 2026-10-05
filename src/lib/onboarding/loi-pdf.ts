@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, PDFImage, StandardFonts, rgb, degrees } from "pdf-lib";
 import { createHash } from "node:crypto";
 import { FRATERNITI_LOGO_PNG_BASE64, TULSI_LOGO_PNG_BASE64, PAYMENT_QR_JPG_BASE64 } from "./loi-assets";
 
@@ -118,6 +118,45 @@ const PAGE_WIDTH = 595.28; // A4
 const PAGE_HEIGHT = 841.89;
 const MARGIN = 50;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+
+/**
+ * plan.md section 19 decision 7 — the watermark is the same gold crest
+ * already used for the app's favicon and the LOI header's wordmark
+ * (`FRATERNITI_LOGO_PNG_BASE64`), not text (changed 2026-10-03, Apoorv: use
+ * the favicon's logo). Drawn on every page, diagonal, low opacity, so it
+ * sits behind/through the real text without hiding it.
+ */
+const WATERMARK_ANGLE_DEGREES = 45;
+const WATERMARK_OPACITY = 0.1;
+
+export function drawWatermark(page: PDFPage, logo: PDFImage) {
+  const { width, height } = page.getSize();
+  // Sized to ~55% of the page's shorter side — reads clearly without
+  // overwhelming the page, same intent as the earlier text watermark's
+  // "sized to the page" rule.
+  const w = Math.min(width, height) * 0.55;
+  const h = (w * logo.height) / logo.width;
+  const angleRad = (WATERMARK_ANGLE_DEGREES * Math.PI) / 180;
+  // drawImage's x/y is the image's bottom-left corner *before* rotation is
+  // applied around that same point — not the image's visual center. To land
+  // the rotated image's center on the page's center, walk back from the
+  // page center by the rotated offset of the image's own local center
+  // ((w/2, h/2) relative to its bottom-left corner).
+  const localCenterX = w / 2;
+  const localCenterY = h / 2;
+  const rotatedCenterX = localCenterX * Math.cos(angleRad) - localCenterY * Math.sin(angleRad);
+  const rotatedCenterY = localCenterX * Math.sin(angleRad) + localCenterY * Math.cos(angleRad);
+  const x = width / 2 - rotatedCenterX;
+  const y = height / 2 - rotatedCenterY;
+  page.drawImage(logo, {
+    x,
+    y,
+    width: w,
+    height: h,
+    opacity: WATERMARK_OPACITY,
+    rotate: degrees(WATERMARK_ANGLE_DEGREES),
+  });
+}
 
 export async function generateLoiPdf(params: {
   templateBody: string;
@@ -329,6 +368,13 @@ export async function generateLoiPdf(params: {
     width: qrWidth,
     height: qrHeight,
   });
+
+  // Drawn last, after all content/pages exist, and before the hash is
+  // taken — the hash must cover the watermark too (plan.md section 19
+  // decision 7).
+  for (const p of doc.getPages()) {
+    drawWatermark(p, fraternitiLogo);
+  }
 
   const pdfBytes = await doc.save();
   const sha256 = createHash("sha256").update(pdfBytes).digest("hex");

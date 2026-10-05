@@ -2290,8 +2290,13 @@ otp ko maar goli, we're doing aadhaar esign"). The company already has
    the OTP tables, the Fast2SMS plan, and the `SIGNING_METHOD` switch. Nothing
    about SMS stays in the app. SMS for anything else (for example OTP login,
    section 20E) is parked; Apoorv will decide on it later.
-3. **New: a "Fraterniti Foods Pvt. Ltd." watermark** on every page of the LOI
-   PDF, so the document looks official.
+3. **New: a watermark on every page of the LOI PDF**, so the document looks
+   official — resolved 2026-10-03 as the app's own crest logo (the same
+   artwork as the favicon and the LOI header's wordmark), not text. (An
+   earlier draft of this section said text reading "Fraterniti Foods Pvt.
+   Ltd."; that was changed twice — first to "Fraterniti Luxury Pvt Ltd" text,
+   matching the name the approved LOI actually uses throughout, then to the
+   logo image per Apoorv's own follow-up call. See decision 7 and step L2.)
 4. **New: the LOI can be edited before it is sent.** The LOI preparer can change
    the values and the wording of one store's LOI while it is a draft. Apoorv has
    an LOI template file and will hand it over when Claude Code asks for it.
@@ -2390,9 +2395,12 @@ that section 17 built for exactly this moment.
    pass the check. Therefore every verified webhook is followed by a call to
    Leegality's document-details API, and **only that answer** can mark an
    attempt `COMPLETED`. This is section 17 P1-07 applied to Leegality.
-7. **Watermark** "Fraterniti Foods Pvt. Ltd." on every page of every newly
-   generated LOI PDF, drawn before hashing. Exact text and look are confirmed by
-   Apoorv on a sample PDF (step L2).
+7. **Watermark: the app's crest logo** (resolved 2026-10-03 — Apoorv's final
+   call; two earlier drafts of this decision said text first "Fraterniti
+   Foods Pvt. Ltd.", then corrected to "Fraterniti Luxury Pvt Ltd" to match
+   the approved LOI's actual franchisor name, before the logo replaced text
+   entirely) on every page of every newly generated LOI PDF, drawn before
+   hashing. Look confirmed by Apoorv on a sample PDF (step L2).
 8. **LOI editable while it is a draft**; frozen once released (section 17 rule
    stays); a change after release = a new version.
 9. **Franchisee "request changes" stays** (existing `loi-feedback-form.tsx`).
@@ -2627,13 +2635,15 @@ OK. Expected list (from section 20's recon of `bccb75b`; confirm in L0):
   `grep -ri "otp\|sms\|fast2sms" src/` shows nothing left except unrelated
   words (for example the mobile PIN login, which is not OTP — leave it).
 
-**L2. Watermark.** In `loi-pdf.ts`, on every page: "Fraterniti Foods Pvt. Ltd."
-diagonal (about 45°), centred, light grey, low opacity (about 0.08-0.12),
-standard bold font, sized to the page; drawn **before** the sha256 is taken so
-the hash covers it. It must not hide text or signature boxes. The LOI ends with
-a signature page of fixed layout (franchisee block, then "For and on behalf of
-Fraterniti Foods Pvt. Ltd." company block, if the approved template already has
-this wording; do not change legal wording without Apoorv). Already-released
+**L2. Watermark.** In `loi-pdf.ts`, on every page: the app's gold crest logo
+(resolved 2026-10-03, see decision 7 — the same artwork as the favicon and
+the LOI header's wordmark, not text) diagonal (about 45°), centred, low
+opacity (about 0.08-0.12), sized to the page; drawn **before** the sha256 is
+taken so the hash covers it. It must not hide text or signature boxes. The
+LOI ends with a signature page of fixed layout (franchisee block, then the
+director/"For Franchisor" company block, which the approved template
+already has; no legal wording changed for this step).
+Already-released
 versions are not regenerated. The mock provider's "TEST SIGNATURE — NOT LEGALLY
 BINDING" stamp stays on mock output. Generate a sample PDF, send it to Apoorv,
 adjust once if he asks. Unit test: page count unchanged, watermark text present
@@ -2765,10 +2775,14 @@ final report.
    `aadhaarConfig` field names to be read from the create-request docs or the
    downloaded payload].
 5. **Company seal / organisation name on the company signature** [off; the
-   signature page text already says "For and on behalf of Fraterniti Foods
-   Pvt. Ltd." if the approved template has it].
-6. **Exact watermark text and look** ["Fraterniti Foods Pvt. Ltd.", diagonal,
-   light grey; Apoorv confirms on the L2 sample].
+   signature page already names the franchisor via the director/"For
+   Franchisor" block].
+6. **Exact watermark content and look — resolved 2026-10-03.** The app's
+   gold crest logo (same artwork as the favicon and the LOI header's
+   wordmark) — not text. Two earlier drafts said text ("Fraterniti Foods
+   Pvt. Ltd.", then corrected to "Fraterniti Luxury Pvt Ltd" to match the
+   approved LOI's actual franchisor name) before Apoorv asked for the logo
+   instead. Diagonal, ~45°, opacity ~0.1. See step L2's build log.
 7. **What exactly is editable in a draft LOI** [all template variables + the
    wording of each section for that one LOI; the template file itself only
    changes when Apoorv provides a new approved one].
@@ -3097,6 +3111,86 @@ Committed as its own step (not yet pushed, per standing instruction).
 **Open for Apoorv, carried forward to L2:** the "Fraterniti Luxury Pvt Ltd"
 vs. "Fraterniti Foods Pvt. Ltd." naming question from L0 — not yet
 answered, still blocking the watermark text choice.
+
+**L2 — Watermark (2026-10-03).** Apoorv's first answer: use "Fraterniti
+Luxury Pvt Ltd" as the watermark text (resolved — see decision 7 and NOT
+DECIDED #6 above, updated in place rather than left as a dangling "Foods"
+reference). Worth noting for the record: the approved template's own UPI
+handle (`loi-template.ts` line 81,
+`fraternitifoodspvtlt.63002677@hdfcbank`) reads as "fraterniti foods pvt
+lt" once run together — almost certainly where "Fraterniti Foods Pvt. Ltd."
+crept into this section's original draft, even though the legal name used
+everywhere else in the same template (the §INTRO clause, the bank account
+name, both directors' blocks in `loi-pdf.ts`) is consistently "Fraterniti
+Luxury Pvt Ltd." No legal wording was changed anywhere.
+
+A first version built exactly that — a diagonal text watermark reading
+"Fraterniti Luxury Pvt Ltd" — but before it was committed Apoorv asked for
+a different look: use the same gold crest logo already used for the app's
+favicon (`src/app/favicon.ico`) instead of text. Confirmed the favicon's
+largest embedded icon frame and `loi-assets.ts`'s existing
+`FRATERNITI_LOGO_PNG_BASE64` (already used, unrotated and opaque, in the
+LOI's own page header) are the same crest artwork, so no new asset was
+needed — just reused the image already embedded once per page for the
+header, drawn a second time as the watermark.
+
+`loi-pdf.ts`: `drawWatermark(page, logo: PDFImage)` (replacing the earlier
+text version) draws that logo diagonal at 45°, opacity 0.1, sized to ~55%
+of the page's shorter side. Centering a *rotated image* needed its own
+geometry, different from text: `drawImage`'s `x`/`y` is the image's
+bottom-left corner *before* rotation, not its visual center, so landing the
+rotated image's center on the page's center means walking back from the
+page center by the *rotated* offset of the image's own local center
+(`(w/2, h/2)` relative to its corner) — documented inline with the
+rotation-matrix math, since it's not obvious from the pdf-lib API alone.
+Still called once per page via `doc.getPages()`, **after** all
+content/pages are drawn and **before** `doc.save()`/the sha256 is computed,
+so the hash covers it (decision 7's own requirement) — that part of the
+design didn't change when text became an image.
+
+`loi-pdf.test.ts` (3 tests, the exact three the plan asked for) had to be
+rewritten once the watermark stopped being searchable text. What's tested
+now: page count is unchanged and deterministic across two identical calls;
+the returned `sha256` matches an independent hash of the exact returned
+bytes *and* every page of those same bytes carries the watermark's
+rotation signature (proving the hash covers it, not just that a hash
+exists); `drawWatermark` leaves that same signature on an isolated blank
+document exactly once per page (ruling out the header's own, unrotated
+copy of the same logo as a false positive). The signature used is the
+`cos(45°) = sin(45°) ≈ 0.70710678` constant in the image's `cm` rotation
+matrix — nothing else in `loi-pdf.ts` rotates anything, so it's a reliable,
+content-independent fingerprint; one watermark draw call produces exactly
+4 occurrences of that digit string (the matrix has it twice as `cos`, twice
+as `±sin` — the sign doesn't change the substring), which is what the
+isolated-page test asserts. Getting this working surfaced two mechanics
+worth recording: (1) `loi-pdf.ts` carries `import "server-only"`
+(deliberate — guards against accidental client-bundling — left untouched);
+outside Next's own bundler that package unconditionally throws, so the
+test file stubs it via `vi.mock("server-only", () => ({}))`, scoped to
+that one file. (2) pdf-lib flate-compresses page content streams by
+default, so nothing is a plain substring of the saved bytes either way —
+the test decodes each page's own `/Contents` stream through pdf-lib's own
+filter decoder (`decodePDFRawStream`, the exact inverse of what it just
+compressed) rather than hand-rolling PDF parsing.
+
+Generated a real sample twice via a throwaway script (loaded the actual
+approved "Tulsi Standard LOI" template from the dev DB — read-only,
+confirmed both times the DB's `LoiTemplate` table was untouched, both its
+rows predate this session, 2026-09-26 and 2026-09-28), wrote `sample-loi-
+watermarked.pdf` to the repo root (`*.pdf` is gitignored) each time,
+deleted the throwaway script after. Visually confirmed on all 4 pages of
+the final (logo) version: the crest reads clearly, diagonal, doesn't hide
+any clause text, the signature blocks, the bank details, or the payment
+QR; the near-empty page 3 (just a trailing sentence) is watermarked too,
+confirming it isn't somehow skipped on sparse pages.
+
+Checks: `tsc --noEmit` clean, `eslint .` 0 errors (same 7 pre-existing
+warnings), `vitest run` 153/153 passing (150 carried over from L1 + 3 new).
+Already-released versions are not regenerated by this change (L2's own
+rule) — `generateLoiPdf` is only ever called to produce a *new* version;
+nothing re-saves an existing `LoiVersion.pdfB2Key`.
+
+Committed as its own step.
 
 ---
 
