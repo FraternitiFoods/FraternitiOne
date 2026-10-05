@@ -3192,6 +3192,117 @@ nothing re-saves an existing `LoiVersion.pdfB2Key`.
 
 Committed as its own step.
 
+**L3 — Edit screen built; template-file comparison still outstanding
+(2026-10-05).** Built the generic "edit a DRAFT's wording/values" machinery
+this step describes. Did **not** yet do the step's own first instruction —
+"ask Apoorv for his LOI template file, compare it with `loi-template.ts`,
+show the differences" — that's a separate, orthogonal deliverable (it's
+about whether the *approved template's own text* should change) from the
+override machinery below (which lets a DRAFT's *per-version* wording be
+customized without ever touching the template). Built the machinery first
+since it needs no input from Apoorv; now stopping at the plan's own L3 stop
+point to ask for the template file before calling L3 done.
+
+**Schema**: `LoiVersion.bodyOverrides Json?` — section marker (e.g. `FEES`,
+`SERVICES`) to replacement text; an absent key means "use the template's
+own text." New migration `20261005120000_add_loi_version_body_overrides`
+(hand-written again — Docker Desktop/the shadow DB container still isn't
+reachable in this environment, same workaround as L1: `prisma db execute`
+then `prisma migrate resolve --applied`). Grepped every other `Json`/`Json?`
+column in the schema first to confirm the column type (`JSONB`, not `JSON`)
+matches the existing convention (`AuditEvent.oldValue`/`newValue`,
+`LoiTemplate.requiredFields`, `LoiVersion.values`,
+`SalesImportBatch.errors` all use `JSONB`) — it does. `prisma generate`
+initially failed with `EPERM` on the query engine `.dll` because a `next
+dev` server left running from earlier in this session (started to
+regenerate `.next/dev/types` after L1) still held a lock on it; killed that
+process, then `generate` succeeded cleanly.
+
+**`loi-pdf.ts`**: exported `LOI_SECTION_LABELS` (the ordered §SECTION keys
+with human labels an editor should show — `TITLE`, `INTRO`, `DEFS`, `FEES`,
+`SERVICES`, `ROYALTY`, `CONFIDENTIAL`, `GOVERNING`, `BANK`) and
+`getTemplateSectionDefaults(templateBody, values)` (the template's own
+rendered text per section — the "reset to template" target).
+**Deliberately excluded `FIELDS`** from `LOI_SECTION_LABELS` — it's the one
+section whose rendered text is `{{aadhaarMasked}}` interpolated directly,
+and letting it be freely overridden would be a back door around
+`maskAadhaar()`'s P1-04 hard rule, not just a wording tweak. `generateLoiPdf`
+now accepts an optional `sectionOverrides?: Record<string, string>`;
+applied after the template's own sections are rendered, with a second,
+belt-and-suspenders guard inside `generateLoiPdf` itself that drops a
+`FIELDS` key even if one somehow arrived in `sectionOverrides` — the hard
+rule is enforced where the PDF is actually drawn, not only in the one
+caller that currently respects it.
+
+**`loi-actions.ts`**: three new actions.
+- `updateLoiDraft` — edits a DRAFT's variables (territory, fee amount →
+  `feeAmount`/`feeInWords`, issue date, company name for `entityType ===
+  "COMPANY"`; never `aadhaarMasked` [KYC-derived] or `versionNo`
+  [system-assigned]) and section text, regenerates the PDF **in place**
+  over the same `pdfB2Key` (a DRAFT's bytes were never sent anywhere, so
+  overwriting is a plain replace, same as any other B2 `PutObjectCommand`),
+  re-hashes, and only stores a section as an override when its submitted
+  text actually differs from `getTemplateSectionDefaults`'s text for that
+  key — keeps `bodyOverrides` matching its own documented "absence = use
+  template" semantics instead of silently copying every section on every
+  save. Audits which *fields*/*sections* changed, never the full text (the
+  step's own instruction).
+- `resetLoiSection` — deletes one section's override key, regenerates,
+  re-hashes, audits.
+- `newLoiVersionFromCurrent` — "New version from this": for a RELEASED+
+  version (immutable per P1-11, so `updateLoiDraft` refuses it), copies
+  `values` and `bodyOverrides` verbatim into a fresh DRAFT at `versionNo
+  +0.1`, reusing `generateLoiVersion`'s existing void-current-version-and-
+  cancel-its-non-terminal-attempts logic rather than duplicating it.
+
+**New UI**: `loi-edit-panel.tsx` (client component) + wired into
+`store-onboarding/[id]/page.tsx` next to the existing `LoiPrepPanel`, shown
+only when `canPrepareLoi(user)` and a `currentLoiVersion` exists. DRAFT:
+the variable fields plus one `Textarea` per non-`FIELDS` section with a
+"Reset to template" button next to any section currently overridden.
+RELEASED+: just the "New version from this" button. `page.tsx` computes
+`sectionDefaults` server-side via `getTemplateSectionDefaults` against the
+**version's own linked template** (`currentLoiVersion.template.body`), not
+whatever template is newly "active" — matters if a different template gets
+approved later, since `updateLoiDraft`/`resetLoiSection` also regenerate
+against the version's own template, and the edit screen's "reset" target
+has to match what regeneration will actually produce. One real bug caught
+and fixed before this was reported done: each `Textarea` is uncontrolled
+(`defaultValue`), so clicking "Reset to template" — which changes state on
+the *server*, not inside that input's own DOM node — would otherwise leave
+the stale text on screen after the page revalidates; fixed by keying each
+`Textarea` on override-presence (`` `${key}-${key in bodyOverrides ?
+"override" : "default"}` ``) so React remounts it with the right text
+exactly when that presence flips, and leaves it alone (no flicker) on a
+plain save where the DOM already matches what was just submitted.
+
+**Confirmed unaffected**: `loi-feedback-form.tsx` and its
+`submitLoiFeedback` wiring — read both in full, neither references
+anything this step or L1 touched.
+
+**Checks**: `tsc --noEmit` clean. `eslint` on every touched/new file: 0
+errors, 0 warnings (matched the existing `// eslint-disable-next-line
+@typescript-eslint/no-unused-vars` convention on `newLoiVersionFromCurrent`'s
+unused `_prevState`/`_formData`, same as the pre-existing
+`releaseLoiVersion`). `vitest run`: still 153/153 (no new test file this
+step — the new logic is server actions wired to `requireUser()`/B2/Prisma,
+which the existing `loi-pdf.test.ts` pattern can't exercise without a
+request context; covered instead by a manual trace confirming every
+`formData.get(...)` key in `loi-actions.ts` matches the `name`/`name={...}`
+attributes `loi-edit-panel.tsx` actually submits). **Not run: a live
+browser/Playwright check of the new edit screen** — no browser-automation
+tool is available in this session (checked; `@playwright/test` is a
+devDependency but no Playwright config or test files exist in the repo), so
+this UI has only been verified by typecheck, lint, and manual code reading,
+not by actually clicking through it. Flagging this explicitly rather than
+claiming it's been seen working.
+
+Committed as its own step (not pushed, per standing instruction).
+
+**Stop point hit — the plan's own first L3 instruction, not yet
+answered:** need Apoorv's actual LOI template file to compare against
+`loi-template.ts`'s `TULSI_LOI_BODY` before L3 can be called done.
+
 ---
 
 ## 20. Remaining investor-SRD items — sales tracking, dashboard widgets, KYC document types, search/export, OTP login (added 2026-10-01)

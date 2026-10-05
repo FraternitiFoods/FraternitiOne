@@ -942,6 +942,13 @@ model LoiVersion {
   template        LoiTemplate     @relation(fields: [templateId], references: [id])
   templateVersion Int
   values          Json
+  /// plan.md section 19 L3: per-version wording overrides, section marker
+  /// (e.g. "FEES", "SERVICES") -> replacement text. The template's own
+  /// `body` is never changed by an edit; a key's absence here means "use
+  /// the template's own text for that section" (the "reset to template"
+  /// behaviour is simply deleting the key). Only ever set/changed while
+  /// `status = DRAFT` — frozen the same moment `values`/the PDF bytes are.
+  bodyOverrides Json?
 
   pdfB2Key  String
   /// Immutable once written — the hash of the exact bytes sent for signing

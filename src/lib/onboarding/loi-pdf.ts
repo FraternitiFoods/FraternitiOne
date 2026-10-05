@@ -113,6 +113,31 @@ function parseSections(body: string): Record<string, string> {
   return sections;
 }
 
+/**
+ * plan.md section 19 L3: the ordered list of §SECTION markers an LOI_PREPARER
+ * (or ADMIN) may override per-version wording for, with human labels for the
+ * edit screen. "FIELDS" is deliberately excluded — it is the one section
+ * whose rendered text is `{{aadhaarMasked}}` (the P1-04 masked Aadhaar value)
+ * interpolated directly; letting it be freely overridden would bypass
+ * maskAadhaar()'s hard rule instead of just rewording legal prose.
+ */
+export const LOI_SECTION_LABELS: { key: string; label: string }[] = [
+  { key: "TITLE", label: "Title" },
+  { key: "INTRO", label: "Introduction" },
+  { key: "DEFS", label: "Definitions & LOI Term" },
+  { key: "FEES", label: "Territory Blocking Fees" },
+  { key: "SERVICES", label: "Services" },
+  { key: "ROYALTY", label: "Royalty & Operating Expenses" },
+  { key: "CONFIDENTIAL", label: "Confidentiality" },
+  { key: "GOVERNING", label: "Governing Law & Jurisdiction" },
+  { key: "BANK", label: "Bank Details" },
+];
+
+/** The template's own text for every section, variables already substituted — the "reset to template" target. */
+export function getTemplateSectionDefaults(templateBody: string, values: LoiValues): Record<string, string> {
+  return parseSections(renderTemplate(templateBody, values));
+}
+
 const HEADER_HEIGHT = 62;
 const PAGE_WIDTH = 595.28; // A4
 const PAGE_HEIGHT = 841.89;
@@ -161,6 +186,7 @@ export function drawWatermark(page: PDFPage, logo: PDFImage) {
 export async function generateLoiPdf(params: {
   templateBody: string;
   values: LoiValues;
+  sectionOverrides?: Record<string, string>;
 }): Promise<{ pdfBytes: Uint8Array; sha256: string }> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -264,6 +290,14 @@ export async function generateLoiPdf(params: {
   }
 
   const sections = parseSections(renderTemplate(params.templateBody, params.values));
+  // L3 per-version overrides replace a section's rendered text outright;
+  // FIELDS can never be overridden here regardless of what's passed in
+  // (see LOI_SECTION_LABELS above) — the hard rule is enforced at the point
+  // the PDF is actually drawn, not just in the edit screen that calls this.
+  for (const [key, text] of Object.entries(params.sectionOverrides ?? {})) {
+    if (key === "FIELDS") continue;
+    sections[key] = text;
+  }
 
   // --- Page 1: title block + fields + intro + core terms ---
   const tulsiLogoWidth = 170;
