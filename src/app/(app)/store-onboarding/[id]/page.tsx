@@ -162,6 +162,14 @@ export default async function StoreOnboardingDetailPage({
                 {formatMoney(onboarding.payments[0].declaredAmount)}
               </div>
             )}
+            {onboarding.payments[0] && (
+              <div>
+                <span className="text-muted-foreground">Verified amount:</span>{" "}
+                {onboarding.payments[0].verifiedAmount !== null
+                  ? formatMoney(onboarding.payments[0].verifiedAmount)
+                  : "— not set"}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
