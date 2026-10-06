@@ -33,7 +33,7 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
   const onboarding = await db.storeOnboarding.findUnique({
     where: { id: onboardingId, franchiseeUserId: user.id },
     include: {
-      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+      payments: { select: { verifiedAmount: true } },
       currentLoiVersion: {
         include: { attempts: { orderBy: { attemptNo: "desc" } } },
       },
@@ -45,10 +45,12 @@ export async function startFranchiseeEsign(onboardingId: string): Promise<StartS
   const latestAttempt = version.attempts.find((a) => a.signerRole === "FRANCHISEE") ?? null;
   const latestCompanyAttempt = version.attempts.find((a) => a.signerRole === "COMPANY") ?? null;
 
+  const totalVerifiedAmount = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
+
   const allowed = canFranchiseeSignNow({
     kycStatus: onboarding.kycStatus,
     paymentStatus: onboarding.paymentStatus,
-    verifiedAmount: onboarding.payments[0]?.verifiedAmount ?? null,
+    verifiedAmount: totalVerifiedAmount,
     expectedAmount: onboarding.expectedAmount,
     loiVersionStatus: version.status,
     latestFranchiseAttemptStatus: latestAttempt?.status ?? null,
