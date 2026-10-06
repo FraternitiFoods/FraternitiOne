@@ -17,6 +17,7 @@ export function FranchiseeSignButton({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const router = useRouter();
 
   if (attemptStatus === "SENT" || attemptStatus === "IN_PROGRESS") {
@@ -50,10 +51,21 @@ export function FranchiseeSignButton({
           {error}
         </p>
       )}
+      {canSign && (
+        <label className="flex items-start gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+          />
+          I agree to the terms and conditions of the LOI
+        </label>
+      )}
       <Button
         onClick={handleClick}
-        disabled={!canSign || pending}
-        title={canSign ? undefined : "Complete KYC, payment and LOI release first"}
+        disabled={!canSign || !agreed || pending}
+        title={canSign ? (agreed ? undefined : "Agree to the LOI terms and conditions first") : "Complete KYC, payment and LOI release first"}
       >
         {pending ? "Starting…" : "Proceed to Aadhaar e-sign"}
       </Button>
