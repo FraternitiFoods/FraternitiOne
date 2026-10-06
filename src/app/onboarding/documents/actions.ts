@@ -272,9 +272,16 @@ export async function submitPaymentReceipt(input: {
 }): Promise<SubmitResult> {
   const { user, onboardingId } = await requireOwnOnboarding();
 
-  const onboarding = await db.storeOnboarding.findUniqueOrThrow({ where: { id: onboardingId } });
-  if (onboarding.paymentStatus !== "MISSING" && onboarding.paymentStatus !== "CHANGES_REQUESTED") {
-    return { error: "A payment submission is already under review or accepted." };
+  const onboarding = await db.storeOnboarding.findUniqueOrThrow({
+    where: { id: onboardingId },
+    include: { payments: { select: { status: true, verifiedAmount: true } } },
+  });
+  if (onboarding.payments.some((p) => p.status === "SUBMITTED")) {
+    return { error: "A payment submission is already under review." };
+  }
+  const totalVerifiedAmount = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
+  if (totalVerifiedAmount >= onboarding.expectedAmount) {
+    return { error: "The full LOI fee has already been verified." };
   }
 
   const utr = input.utr.trim();

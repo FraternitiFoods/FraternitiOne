@@ -15,15 +15,16 @@ export default async function OnboardingDocumentsPage() {
     include: {
       kyc: true,
       files: { where: { supersededBy: null }, orderBy: { createdAt: "desc" } },
-      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+      payments: { orderBy: { createdAt: "desc" } },
     },
   });
 
   const requiredKinds = requiredKycFileKinds(onboarding.entityType);
   const kycFiles = onboarding.files.filter((f) => f.kind !== "PAYMENT_RECEIPT");
   const editable = onboarding.kycStatus === "MISSING" || onboarding.kycStatus === "CHANGES_REQUESTED";
-  const paymentEditable =
-    onboarding.paymentStatus === "MISSING" || onboarding.paymentStatus === "CHANGES_REQUESTED";
+  const totalVerifiedAmount = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
+  const hasPendingPayment = onboarding.payments.some((p) => p.status === "SUBMITTED");
+  const paymentEditable = !hasPendingPayment && totalVerifiedAmount < onboarding.expectedAmount;
 
   return (
     <div className="space-y-6">
@@ -86,6 +87,7 @@ export default async function OnboardingDocumentsPage() {
           )}
           <PaymentSection
             expectedAmount={onboarding.expectedAmount}
+            totalVerifiedAmount={totalVerifiedAmount}
             latestPayment={
               onboarding.payments[0]
                 ? {
