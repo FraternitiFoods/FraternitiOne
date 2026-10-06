@@ -98,7 +98,8 @@ function FileUploader({
       }
       setStatus("idle");
       router.refresh();
-    } catch {
+    } catch (err) {
+      console.error(`[KYC upload] ${kind} failed:`, err);
       setError("Something went wrong. Try again.");
       setStatus("error");
     }

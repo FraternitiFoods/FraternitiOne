@@ -123,7 +123,8 @@ export function UploadFlow({ projectId, categories }: { projectId: string; categ
 
       reset();
       router.refresh();
-    } catch {
+    } catch (err) {
+      console.error("[Site upload] failed:", err);
       setStep({ name: "error", message: "Something went wrong. Try again." });
     }
   }

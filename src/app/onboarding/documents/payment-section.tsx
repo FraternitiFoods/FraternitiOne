@@ -80,7 +80,8 @@ export function PaymentSection({
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       router.refresh();
-    } catch {
+    } catch (err) {
+      console.error("[Payment receipt upload] failed:", err);
       setError("Something went wrong. Try again.");
     } finally {
       setSubmitting(false);

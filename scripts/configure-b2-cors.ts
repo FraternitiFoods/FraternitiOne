@@ -48,11 +48,18 @@ async function main() {
     return;
   }
 
-  // AllowedOrigins deliberately includes both localhost (dev) and the real
-  // app URL from .env — B2 needs an explicit origin list, no wildcard-with-
-  // credentials equivalent concern here since presigned URLs carry their own
-  // auth in the query string, not cookies.
-  const origins = Array.from(new Set([appUrl, "http://localhost:3000"]));
+  // AllowedOrigins deliberately includes localhost (dev), the app URL from
+  // .env, and every custom domain the app is served on in production —
+  // Vercel lets multiple domains point at the same deployment, but B2 needs
+  // an explicit origin list (no wildcard-with-credentials equivalent concern
+  // here since presigned URLs carry their own auth in the query string, not
+  // cookies).
+  const PRODUCTION_ORIGINS = [
+    "https://fraterniti.one",
+    "https://one.fraterniti.co.in",
+    "https://fraterniti-one.vercel.app",
+  ];
+  const origins = Array.from(new Set([appUrl, ...PRODUCTION_ORIGINS, "http://localhost:3000"]));
 
   await client.send(
     new PutBucketCorsCommand({
