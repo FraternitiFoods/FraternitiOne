@@ -15,7 +15,7 @@ export default async function OnboardingLoiPage() {
   const onboarding = await db.storeOnboarding.findUniqueOrThrow({
     where: { franchiseeUserId: user.id },
     include: {
-      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+      payments: { select: { verifiedAmount: true } },
       currentLoiVersion: {
         include: { attempts: { where: { signerRole: "FRANCHISEE" }, orderBy: { attemptNo: "desc" }, take: 1 } },
       },
@@ -25,11 +25,13 @@ export default async function OnboardingLoiPage() {
   const version = onboarding.currentLoiVersion;
   const latestAttempt = version?.attempts[0] ?? null;
 
+  const totalVerifiedAmount = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
+
   const canSign = version
     ? canFranchiseeSignNow({
         kycStatus: onboarding.kycStatus,
         paymentStatus: onboarding.paymentStatus,
-        verifiedAmount: onboarding.payments[0]?.verifiedAmount ?? null,
+        verifiedAmount: totalVerifiedAmount,
         expectedAmount: onboarding.expectedAmount,
         loiVersionStatus: version.status,
         latestFranchiseAttemptStatus: latestAttempt?.status ?? null,
