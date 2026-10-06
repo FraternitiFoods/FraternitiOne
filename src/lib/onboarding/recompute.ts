@@ -20,7 +20,7 @@ export async function recomputeOnboardingStatus(tx: Tx, onboardingId: string): P
     where: { id: onboardingId },
     include: {
       kyc: true,
-      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+      payments: { orderBy: { createdAt: "desc" } },
       currentLoiVersion: {
         include: {
           attempts: { orderBy: { attemptNo: "desc" } },
@@ -32,6 +32,7 @@ export async function recomputeOnboardingStatus(tx: Tx, onboardingId: string): P
   const kycStatus = onboarding.kyc?.status ?? "MISSING";
   const latestPayment = onboarding.payments[0] ?? null;
   const paymentStatus = latestPayment?.status ?? "MISSING";
+  const totalVerifiedAmount = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
 
   const attempts = onboarding.currentLoiVersion?.attempts ?? [];
   const latestFranchiseAttempt = attempts.find((a) => a.signerRole === "FRANCHISEE");
@@ -40,7 +41,7 @@ export async function recomputeOnboardingStatus(tx: Tx, onboardingId: string): P
   const nextStatus = deriveOnboardingStatus({
     kycStatus,
     paymentStatus,
-    verifiedAmount: latestPayment?.verifiedAmount ?? null,
+    verifiedAmount: totalVerifiedAmount,
     expectedAmount: onboarding.expectedAmount,
     loiVersionStatus: onboarding.currentLoiVersion?.status ?? null,
     franchiseSignCompleted: latestFranchiseAttempt?.status === "COMPLETED",

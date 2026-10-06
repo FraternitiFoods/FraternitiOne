@@ -15,17 +15,22 @@ type LatestPayment = { declaredAmount: number; mode: string; utr: string; paymen
 
 export function PaymentSection({
   expectedAmount,
+  totalVerifiedAmount,
   latestPayment,
   editable,
 }: {
   expectedAmount: number;
+  totalVerifiedAmount: number;
   latestPayment: LatestPayment | null;
   editable: boolean;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [declaredAmountRupees, setDeclaredAmountRupees] = useState(String(expectedAmount / 100));
+  const remainingAmount = expectedAmount - totalVerifiedAmount;
+  const [declaredAmountRupees, setDeclaredAmountRupees] = useState(
+    String((remainingAmount > 0 ? remainingAmount : expectedAmount) / 100)
+  );
   const [paymentDate, setPaymentDate] = useState("");
   const [mode, setMode] = useState("");
   const [utr, setUtr] = useState("");
@@ -91,6 +96,12 @@ export function PaymentSection({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">LOI fee amount: {formatMoney(expectedAmount)}</p>
+      {totalVerifiedAmount > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Verified so far: {formatMoney(totalVerifiedAmount)}
+          {remainingAmount > 0 && <> — {formatMoney(remainingAmount)} remaining</>}
+        </p>
+      )}
 
       {latestPayment && (
         <div className="rounded-md border p-3 text-sm">
