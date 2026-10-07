@@ -4,7 +4,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import type { Role, Department } from "@prisma/client";
+import type { Role, Department, OnboardingStatus } from "@prisma/client";
 
 const COOKIE_NAME = "fo_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -61,6 +61,13 @@ export type CurrentUser = {
   email: string | null;
   role: Role;
   department: Department | null;
+  /// Only meaningful for FRANCHISEE accounts — folded in here so the (app)
+  /// layout's stale-bookmark onboarding-gate check doesn't need its own DB
+  /// round trip on every navigation. `null`/absent for every other role and
+  /// for a FRANCHISEE with no onboarding record yet. Optional because other
+  /// call sites (e.g. audit log actors) build a `CurrentUser`-shaped object
+  /// from a plain `db.user` row that has no such relation loaded.
+  onboardingStatus?: OnboardingStatus | null;
 };
 
 /**
@@ -80,7 +87,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { user: true },
+    include: {
+      user: {
+        include: {
+          onboardingAsFranchisee: { select: { onboardingStatus: true } },
+        },
+      },
+    },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -99,5 +112,6 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     email: session.user.email,
     role: session.user.role,
     department: session.user.department,
+    onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
   };
 });

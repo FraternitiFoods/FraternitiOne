@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { logout } from "@/app/(auth)/login/actions";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -26,14 +25,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // directly must not render the normal desktop app for them either — their
   // onboarding record isn't a FranchiseProject yet, so canViewProject/every
   // other page has nothing valid to show them.
-  if (user.role === "FRANCHISEE") {
-    const onboarding = await db.storeOnboarding.findUnique({
-      where: { franchiseeUserId: user.id },
-      select: { onboardingStatus: true },
-    });
-    if (onboarding && onboarding.onboardingStatus !== "LOI_COMPLETE") {
-      redirect("/onboarding");
-    }
+  //
+  // `onboardingStatus` is folded into requireUser()'s own query (see
+  // session.ts) so this check doesn't cost a second DB round trip on every
+  // navigation under this layout.
+  if (user.role === "FRANCHISEE" && user.onboardingStatus && user.onboardingStatus !== "LOI_COMPLETE") {
+    redirect("/onboarding");
   }
 
   return (

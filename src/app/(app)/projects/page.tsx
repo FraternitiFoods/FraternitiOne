@@ -23,23 +23,41 @@ import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 export default async function ProjectsPage() {
   const user = await requireUser();
 
-  const projects = await db.franchiseProject.findMany({
-    where: user.role === "FRANCHISEE" ? { franchiseeId: user.id } : undefined,
-    include: {
-      owner: { select: { name: true } },
-      franchisee: { select: { name: true } },
-      tasks: { select: { status: true, lifecycleStage: true } },
-      stageOverrides: { select: { stage: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const where = user.role === "FRANCHISEE" ? { franchiseeId: user.id } : undefined;
+
+  // The stat tiles above the table summarize the *whole* scoped portfolio,
+  // not just the rows currently on screen, so they're computed from their
+  // own aggregate queries rather than from `projects` below — otherwise
+  // capping the table with `take` would silently make these numbers wrong
+  // once there are more than 50 projects. Run everything in parallel so the
+  // cap doesn't cost any extra wall-clock time.
+  const [projects, totalCount, onTrack, atRisk, critical, cityRows] = await Promise.all([
+    db.franchiseProject.findMany({
+      where,
+      include: {
+        owner: { select: { name: true } },
+        franchisee: { select: { name: true } },
+        tasks: { select: { status: true, lifecycleStage: true } },
+        stageOverrides: { select: { stage: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      // Portfolio dashboard, not an export — cap the row count so this stays
+      // cheap to query/render/serialize as the number of projects grows.
+      take: 50,
+    }),
+    db.franchiseProject.count({ where }),
+    db.franchiseProject.count({ where: { ...where, health: "GREEN" } }),
+    db.franchiseProject.count({ where: { ...where, health: "AMBER" } }),
+    db.franchiseProject.count({ where: { ...where, health: { in: ["RED", "CRITICAL"] } } }),
+    db.franchiseProject.findMany({ where, select: { location: true }, distinct: ["location"] }),
+  ]);
 
   const counts = {
-    total: projects.length,
-    onTrack: projects.filter((p) => p.health === "GREEN").length,
-    atRisk: projects.filter((p) => p.health === "AMBER").length,
-    critical: projects.filter((p) => p.health === "RED" || p.health === "CRITICAL").length,
-    cities: new Set(projects.map((p) => p.location)).size,
+    total: totalCount,
+    onTrack,
+    atRisk,
+    critical,
+    cities: cityRows.length,
   };
 
   return (
