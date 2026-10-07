@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { OnboardingSidebar } from "@/components/onboarding-sidebar";
 
 /**
@@ -16,18 +15,15 @@ export default async function OnboardingLayout({ children }: LayoutProps<"/">) {
     redirect("/dashboard");
   }
 
-  const onboarding = await db.storeOnboarding.findUnique({
-    where: { franchiseeUserId: user.id },
-    select: { onboardingStatus: true },
-  });
-
-  // No onboarding record at all (existing seeded/real franchisees) — keep
-  // today's behaviour exactly, per section 17's non-negotiable.
-  if (!onboarding) {
-    redirect("/dashboard");
-  }
-  // Already converted — the normal project pages take over from here.
-  if (onboarding.onboardingStatus === "LOI_COMPLETE") {
+  // `onboardingStatus` is folded into requireUser()'s own query (see
+  // session.ts) so this check doesn't cost a second DB round trip on every
+  // navigation under this layout — same reasoning as the (app) layout.
+  //
+  // `null` covers both "no onboarding record at all" (existing
+  // seeded/real franchisees — keep today's behaviour exactly, per section
+  // 17's non-negotiable) and "already converted" is covered by the
+  // LOI_COMPLETE check below; both send the franchisee to /dashboard.
+  if (!user.onboardingStatus || user.onboardingStatus === "LOI_COMPLETE") {
     redirect("/dashboard");
   }
 
