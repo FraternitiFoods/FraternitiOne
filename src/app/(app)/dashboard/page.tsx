@@ -448,9 +448,9 @@ async function InternalDashboard({ role }: { role: Role }) {
 /**
  * plan.md section 20B — ADMIN/MANAGEMENT widget row. Every count is its own
  * direct Prisma query (no stored counters); "KYC/payment queue size" uses the
- * same `status === "SUBMITTED"` definition /reviews's own queues use
- * (src/app/(app)/reviews/page.tsx), so this number always matches what
- * clicking through to Reviews would show.
+ * same `status === "SUBMITTED"` definition the KYC/Payment status filters on
+ * /store-onboarding use, so this number always matches what filtering the
+ * store list by that status would show.
  */
 async function getAdminWidgets() {
   const [

@@ -1,22 +1,22 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canViewOnboarding, canPrepareLoi } from "@/lib/permissions";
-import { LoiPrepPanel } from "./loi-prep-panel";
-import { LoiEditPanel } from "./loi-edit-panel";
+import { canViewOnboarding } from "@/lib/permissions";
 import { formatOnboardingCode } from "@/lib/onboarding/ids";
-import { getTemplateSectionDefaults, LOI_SECTION_LABELS, type LoiValues } from "@/lib/onboarding/loi-pdf";
 import {
   ONBOARDING_STATUS_LABELS,
   ONBOARDING_ACCOUNT_STATUS_LABELS,
   REVIEW_STATUS_LABELS,
+  LOI_VERSION_STATUS_LABELS,
   ENTITY_TYPE_LABELS,
   formatMoney,
 } from "@/lib/onboarding/format";
 import { formatDateTime, splitPascalCase } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "cn";
 
 export default async function StoreOnboardingDetailPage({
   params,
@@ -33,8 +33,7 @@ export default async function StoreOnboardingDetailPage({
       salesOwner: { select: { id: true, name: true, email: true } },
       kyc: true,
       payments: { orderBy: { createdAt: "desc" } },
-      loiVersions: { orderBy: { createdAt: "desc" } },
-      currentLoiVersion: { include: { template: true } },
+      currentLoiVersion: true,
     },
   });
 
@@ -47,6 +46,11 @@ export default async function StoreOnboardingDetailPage({
     orderBy: { createdAt: "desc" },
     take: 100,
   });
+
+  // Same aggregation lib/onboarding/recompute.ts uses for the e-sign gate —
+  // a franchisee can pay across multiple accepted submissions, so the total
+  // (not just the latest payment's verifiedAmount) is the number that matters.
+  const totalVerified = onboarding.payments.reduce((sum, p) => sum + (p.verifiedAmount ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -128,109 +132,46 @@ export default async function StoreOnboardingDetailPage({
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">KYC</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <div>
-              <span className="text-muted-foreground">Status:</span>{" "}
-              {REVIEW_STATUS_LABELS[onboarding.kycStatus]}
-            </div>
-            {onboarding.kyc?.decisionReason && (
-              <div>
-                <span className="text-muted-foreground">Last reviewer note:</span>{" "}
-                {onboarding.kyc.decisionReason}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Payment</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <div>
-              <span className="text-muted-foreground">Status:</span>{" "}
-              {REVIEW_STATUS_LABELS[onboarding.paymentStatus]}
-            </div>
-            {onboarding.payments[0] && (
-              <div>
-                <span className="text-muted-foreground">Latest declared:</span>{" "}
-                {formatMoney(onboarding.payments[0].declaredAmount)}
-              </div>
-            )}
-            {onboarding.payments[0] && (
-              <div>
-                <span className="text-muted-foreground">Verified amount:</span>{" "}
-                {onboarding.payments[0].verifiedAmount !== null
-                  ? formatMoney(onboarding.payments[0].verifiedAmount)
-                  : "— not set"}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">LOI</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <LoiPrepPanel
-            onboardingId={onboarding.id}
-            entityType={onboarding.entityType}
-            expectedAmount={onboarding.expectedAmount}
-            currentVersion={
-              onboarding.currentLoiVersion
-                ? {
-                    id: onboarding.currentLoiVersion.id,
-                    versionNo: onboarding.currentLoiVersion.versionNo,
-                    status: onboarding.currentLoiVersion.status,
-                    createdAt: onboarding.currentLoiVersion.createdAt.toISOString(),
-                  }
-                : null
-            }
-            allVersions={onboarding.loiVersions.map((v) => ({
-              id: v.id,
-              versionNo: v.versionNo,
-              status: v.status,
-              createdAt: v.createdAt.toISOString(),
-            }))}
-            canEdit={canPrepareLoi(user)}
-          />
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <ClickableCard href={`/store-onboarding/${onboarding.id}/kyc`} title="KYC">
+          <div>
+            <span className="text-muted-foreground">Status:</span>{" "}
+            {REVIEW_STATUS_LABELS[onboarding.kycStatus]}
+          </div>
+          {onboarding.kyc?.decisionReason && (
+            <div>
+              <span className="text-muted-foreground">Last reviewer note:</span>{" "}
+              {onboarding.kyc.decisionReason}
+            </div>
+          )}
+        </ClickableCard>
 
-      {onboarding.currentLoiVersion && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Edit LOI</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <LoiEditPanel
-              onboardingId={onboarding.id}
-              entityType={onboarding.entityType}
-              canEdit={canPrepareLoi(user)}
-              currentVersion={{
-                id: onboarding.currentLoiVersion.id,
-                status: onboarding.currentLoiVersion.status,
-                versionNo: onboarding.currentLoiVersion.versionNo,
-                values: onboarding.currentLoiVersion.values as unknown as LoiValues,
-                bodyOverrides:
-                  (onboarding.currentLoiVersion.bodyOverrides as Record<string, string> | null) ?? {},
-              }}
-              sectionDefaults={getTemplateSectionDefaults(
-                onboarding.currentLoiVersion.template.body,
-                onboarding.currentLoiVersion.values as unknown as LoiValues
-              )}
-              sectionLabels={LOI_SECTION_LABELS}
-            />
-          </CardContent>
-        </Card>
-      )}
+        <ClickableCard href={`/store-onboarding/${onboarding.id}/payment`} title="Payment">
+          <div>
+            <span className="text-muted-foreground">Status:</span>{" "}
+            {REVIEW_STATUS_LABELS[onboarding.paymentStatus]}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Verified so far:</span> {formatMoney(totalVerified)} of{" "}
+            {formatMoney(onboarding.expectedAmount)}
+          </div>
+        </ClickableCard>
+      </div>
+
+      <ClickableCard
+        href={`/store-onboarding/${onboarding.id}/loi`}
+        title="LOI"
+        className="md:max-w-sm"
+      >
+        <div>
+          <span className="text-muted-foreground">Status:</span>{" "}
+          {onboarding.currentLoiVersion
+            ? `v${onboarding.currentLoiVersion.versionNo} — ${LOI_VERSION_STATUS_LABELS[onboarding.currentLoiVersion.status]}`
+            : "Not generated"}
+        </div>
+      </ClickableCard>
 
       <Card>
         <CardHeader>
@@ -263,5 +204,32 @@ export default async function StoreOnboardingDetailPage({
         ← Back to Store Onboarding
       </Link>
     </div>
+  );
+}
+
+/** A Card that's an obvious link — drills into a dedicated sub-page instead of showing everything inline. */
+function ClickableCard({
+  href,
+  title,
+  className,
+  children,
+}: {
+  href: string;
+  title: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link href={href} className={cn("block transition-colors hover:bg-muted/50", className)}>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-base">
+            {title}
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">{children}</CardContent>
+      </Card>
+    </Link>
   );
 }

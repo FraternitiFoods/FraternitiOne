@@ -50,7 +50,6 @@ const BASE_NAV_ITEMS: NavItem[] = [
   // server-only, so this sidebar — a Client Component — can't import it
   // directly, same reasoning as the People/Admin-only link below).
   { label: "Store Onboarding", href: "/store-onboarding" },
-  { label: "Reviews", href: "/reviews" },
   { label: "Signing", href: "/signing" },
   { label: "People", href: null },
   { label: "Culinary", href: null },
@@ -77,7 +76,7 @@ export function AppSidebar({ name, role }: { name: string; role: Role }) {
   // rest of the not-yet-built Phase 2/3/4 modules. "Store Onboarding" is
   // hidden entirely (not "Soon") for roles with no stake in it — Franchisee
   // uses their own /onboarding portal instead (different sidebar).
-  const ONBOARDING_NAV_LABELS = ["Store Onboarding", "Reviews", "Signing"];
+  const ONBOARDING_NAV_LABELS = ["Store Onboarding", "Signing"];
 
   // plan.md section 20A — mirrors canViewSales(permissions.ts) exactly
   // (FRANCHISEE/SALES always have *a* store to check; ADMIN/MANAGEMENT/
