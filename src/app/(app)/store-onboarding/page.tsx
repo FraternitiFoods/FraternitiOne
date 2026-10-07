@@ -33,27 +33,42 @@ export default async function StoreOnboardingListPage() {
 
   // plan.md section 20D — SALES only sees their own onboardings; every other
   // onboarding-touching role keeps the existing full-queue visibility.
-  const onboardings = await db.storeOnboarding.findMany({
-    where: onboardingListWhere(user),
-    orderBy: { createdAt: "desc" },
-    include: {
-      franchisee: { select: { name: true, email: true } },
-      salesOwner: { select: { name: true } },
-      currentLoiVersion: { select: { status: true } },
-    },
-  });
+  const where = onboardingListWhere(user);
+
+  // plan.md section 20B — summary strip over the *whole* role-scoped queue,
+  // not just the rows currently on screen, so it's computed from its own
+  // aggregate counts rather than the `onboardings` array below — otherwise
+  // capping the table with `take` would silently make these numbers wrong
+  // once there are more than 50 onboardings. Run everything in parallel so
+  // the cap doesn't cost any extra wall-clock time.
+  const [onboardings, total, kycPending, paymentPending, loiPending, converted] = await Promise.all([
+    db.storeOnboarding.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        franchisee: { select: { name: true, email: true } },
+        salesOwner: { select: { name: true } },
+        currentLoiVersion: { select: { status: true } },
+      },
+      // List view, not an export — cap the row count so this stays cheap to
+      // query/render/serialize as the number of onboardings grows.
+      take: 50,
+    }),
+    db.storeOnboarding.count({ where }),
+    db.storeOnboarding.count({ where: { ...where, kycStatus: { not: "ACCEPTED" } } }),
+    db.storeOnboarding.count({ where: { ...where, paymentStatus: { not: "ACCEPTED" } } }),
+    db.storeOnboarding.count({ where: { ...where, onboardingStatus: { not: "LOI_COMPLETE" } } }),
+    db.storeOnboarding.count({ where: { ...where, onboardingStatus: "LOI_COMPLETE" } }),
+  ]);
 
   const canDelete = canManageOnboardingAdmin(user);
 
-  // plan.md section 20B — lightweight summary strip, computed from the same
-  // role-scoped `onboardings` array the table below reads, so it's always in
-  // sync and (since 20D) scoped by SALES ownership automatically.
   const summary = {
-    total: onboardings.length,
-    kycPending: onboardings.filter((o) => o.kycStatus !== "ACCEPTED").length,
-    paymentPending: onboardings.filter((o) => o.paymentStatus !== "ACCEPTED").length,
-    loiPending: onboardings.filter((o) => o.onboardingStatus !== "LOI_COMPLETE").length,
-    converted: onboardings.filter((o) => o.onboardingStatus === "LOI_COMPLETE").length,
+    total,
+    kycPending,
+    paymentPending,
+    loiPending,
+    converted,
   };
 
   return (
