@@ -315,29 +315,30 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
 }
 
 async function InternalDashboard({ role }: { role: Role }) {
-  const projects = await db.franchiseProject.findMany({
-    select: { health: true },
-  });
-
-  const counts = {
-    total: projects.length,
-    onTrack: projects.filter((p) => p.health === "GREEN").length,
-    atRisk: projects.filter((p) => p.health === "AMBER").length,
-    critical: projects.filter((p) => p.health === "RED" || p.health === "CRITICAL").length,
-  };
-
-  const recentEvents = await db.auditEvent.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 8,
-    include: { project: { select: { seq: true, brand: true, location: true } } },
-  });
-
   // plan.md section 20B — ADMIN/MANAGEMENT widget row, added alongside the
   // existing portfolio-health stat row above (not replacing it). Every
   // other internal role (LEGAL, HR, ACCOUNTS, KYC_REVIEWER, ...) keeps
   // today's InternalDashboard exactly as it was.
   const showAdminRow = role === "ADMIN" || role === "MANAGEMENT";
-  const adminWidgets = showAdminRow ? await getAdminWidgets() : null;
+
+  // Portfolio-health counts via count() rather than fetching every project
+  // row and filtering in JS — this is the default post-login landing page,
+  // so it stays cheap as the number of projects grows. Run everything in
+  // parallel so adding the count queries doesn't cost extra wall-clock time.
+  const [total, onTrack, atRisk, critical, recentEvents, adminWidgets] = await Promise.all([
+    db.franchiseProject.count(),
+    db.franchiseProject.count({ where: { health: "GREEN" } }),
+    db.franchiseProject.count({ where: { health: "AMBER" } }),
+    db.franchiseProject.count({ where: { health: { in: ["RED", "CRITICAL"] } } }),
+    db.auditEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { project: { select: { seq: true, brand: true, location: true } } },
+    }),
+    showAdminRow ? getAdminWidgets() : Promise.resolve(null),
+  ]);
+
+  const counts = { total, onTrack, atRisk, critical };
 
   return (
     <div className="space-y-6">

@@ -35,6 +35,9 @@ export default async function ComplaintsPage(props: PageProps<"/complaints">) {
         },
       },
       orderBy: { createdAt: "desc" },
+      // Portfolio-wide list, not an export — cap the row count so this stays
+      // cheap to query/render/serialize as complaints accumulate.
+      take: 50,
     }),
     db.user.findMany({
       where: { isActive: true },

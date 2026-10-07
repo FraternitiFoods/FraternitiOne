@@ -41,6 +41,9 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
         project: { select: { id: true, seq: true, brand: true, location: true } },
       },
       orderBy: [{ category: "asc" }, { createdAt: "desc" }],
+      // Portfolio-wide vault, not an export — cap the row count so this
+      // stays cheap to query/render/serialize as documents accumulate.
+      take: 50,
     }),
     projectId
       ? db.franchiseProject.findUnique({
@@ -53,6 +56,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
           where: user.role === "FRANCHISEE" ? { franchiseeId: user.id } : undefined,
           select: { id: true, seq: true, brand: true, location: true },
           orderBy: { createdAt: "desc" },
+          take: 50,
         })
       : Promise.resolve([]),
   ]);
