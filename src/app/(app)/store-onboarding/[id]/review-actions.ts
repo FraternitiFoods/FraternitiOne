@@ -94,7 +94,8 @@ export async function decideKyc(
   }
   await notifyIfNewlyReadyForSignature(recompute, onboarding);
 
-  revalidatePath("/reviews");
+  revalidatePath("/store-onboarding/[id]", "page");
+  revalidatePath("/store-onboarding");
   return { success: true };
 }
 
@@ -189,6 +190,7 @@ export async function decidePayment(
   }
   await notifyIfNewlyReadyForSignature(recompute, onboarding);
 
-  revalidatePath("/reviews");
+  revalidatePath("/store-onboarding/[id]", "page");
+  revalidatePath("/store-onboarding");
   return { success: true };
 }

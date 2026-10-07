@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ReviewActionState } from "./actions";
+import type { ReviewActionState } from "./review-actions";
 
 type FormAction = (state: ReviewActionState, formData: FormData) => Promise<ReviewActionState>;
 
 /**
- * Shared Accept / Request-changes form for both the KYC and Payment review
- * detail pages (P1-13: a reason is mandatory when requesting changes).
+ * Shared Accept / Request-changes form for both the KYC and Payment detail
+ * pages (P1-13: a reason is mandatory when requesting changes).
  *
  * Deliberately NOT `<form action={formAction}>` with two submit buttons —
  * a real Playwright run showed the server action receiving no `decision`
