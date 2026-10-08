@@ -15,7 +15,7 @@ export default async function NewProjectPage() {
   const [franchisees, internalUsers] = await Promise.all([
     db.user.findMany({
       where: { role: "FRANCHISEE", isActive: true },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, isPreExistingFranchisee: true },
       orderBy: { name: "asc" },
     }),
     db.user.findMany({

@@ -27,6 +27,7 @@ export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
   const [role, setRole] = useState<Role | undefined>(undefined);
 
   const isSupervisor = role === "SITE_SUPERVISOR";
+  const isFranchisee = role === "FRANCHISEE";
   const managedDepartments = role ? DEPARTMENT_OWNERS[role] : [];
 
   return (
@@ -151,6 +152,26 @@ export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
                 placeholder="10-digit mobile number"
               />
               <p className="text-xs text-muted-foreground">Contact number on file for this user.</p>
+            </div>
+          )}
+          {isFranchisee && (
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="isPreExistingFranchisee"
+                  value="true"
+                  className="mt-0.5 size-4"
+                />
+                <span>
+                  This franchisee already has an operational store (it was running before joining
+                  this platform)
+                </span>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                When their project is created at /projects/new, it won&apos;t get the usual
+                lifecycle-task checklist — they&apos;ll see a simplified home dashboard instead.
+              </p>
             </div>
           )}
         </>

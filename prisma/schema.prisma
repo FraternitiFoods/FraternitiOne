@@ -344,6 +344,14 @@ model User {
   role                Role
   department          Department?
   isActive            Boolean     @default(true)
+  /// Only meaningful for role === FRANCHISEE. Set by an admin at account
+  /// creation time when this franchisee's store was already built and
+  /// operating before joining the platform. User-creation and
+  /// project-creation are two separate admin steps (see /projects/new) — this
+  /// is the bridge that carries that answer forward to whenever their
+  /// FranchiseProject actually gets created, so it knows to skip lifecycle
+  /// task seeding (see FranchiseProject.isPreExisting, createProjectWithSeedTasks).
+  isPreExistingFranchisee Boolean @default(false)
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
@@ -435,6 +443,16 @@ model FranchiseProject {
   ownerId         String
   owner           User          @relation("ProjectOwner", fields: [ownerId], references: [id])
   nextAction      String?
+  /// True when this franchise was already built and operating before being
+  /// added to Fraterniti One — set at creation time (createProjectWithSeedTasks),
+  /// copied from the franchisee's User.isPreExistingFranchisee flag. Such a
+  /// project gets no seeded lifecycle Tasks, and the franchisee's dashboard/
+  /// sidebar (dashboard/page.tsx, app-sidebar.tsx) show the simplified
+  /// "already operational" home instead of the build-out tracker. Distinct
+  /// from `onboarding === null`, which is also true for a normal new-build
+  /// project created directly via /projects/new rather than the onboarding
+  /// wizard — that case must still get the full build-out UI.
+  isPreExisting   Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 

@@ -57,7 +57,18 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Reports", href: "/audit" },
 ];
 
-export function AppSidebar({ name, role }: { name: string; role: Role }) {
+export function AppSidebar({
+  name,
+  role,
+  isLegacyFranchisee = false,
+}: {
+  name: string;
+  role: Role;
+  /** True for a FRANCHISEE whose FranchiseProject.isPreExisting is true — their store
+   * was already built and operating before joining the platform, so the construction-only
+   * modules below (BOQ, Operations) have nothing relevant to show them. */
+  isLegacyFranchisee?: boolean;
+}) {
   const pathname = usePathname();
   // plan.md section 17 — every role with an onboarding-related permission
   // function in permissions.ts (mirrored here since that file is
@@ -85,10 +96,15 @@ export function AppSidebar({ name, role }: { name: string; role: Role }) {
   // is hidden entirely for them rather than shown as a disabled "Soon" link.
   const SALES_VISIBLE_ROLES: Role[] = ["FRANCHISEE", "SALES", "ADMIN", "MANAGEMENT", "ACCOUNTS"];
 
+  // Construction-only modules — nothing relevant to show a franchisee whose
+  // store was already operating before joining the platform (isLegacyFranchisee).
+  const CONSTRUCTION_NAV_LABELS = ["BOQ", "Operations"];
+
   const navItems = BASE_NAV_ITEMS.filter(
     (item) => !ONBOARDING_NAV_LABELS.includes(item.label) || ONBOARDING_ROLES.includes(role)
   )
     .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
+    .filter((item) => !isLegacyFranchisee || !CONSTRUCTION_NAV_LABELS.includes(item.label))
     .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
     .concat(
       role === "ADMIN"

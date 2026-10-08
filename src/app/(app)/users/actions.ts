@@ -33,6 +33,7 @@ const CreateUserSchema = z
     pin: z.string().optional(),
     confirmPin: z.string().optional(),
     projectIds: z.array(z.string()).optional(),
+    isPreExistingFranchisee: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.role === "SITE_SUPERVISOR") {
@@ -90,6 +91,7 @@ export async function createUser(
     pin: formData.get("pin") || undefined,
     confirmPin: formData.get("confirmPin") || undefined,
     projectIds: formData.getAll("projectIds"),
+    isPreExistingFranchisee: formData.get("isPreExistingFranchisee") === "true",
   });
 
   if (!parsed.success) {
@@ -129,6 +131,7 @@ export async function createUser(
         role: data.role,
         department: data.department,
         phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
+        isPreExistingFranchisee: data.role === "FRANCHISEE" ? data.isPreExistingFranchisee : undefined,
         // No passwordHash — set via the invite link below.
       },
     });

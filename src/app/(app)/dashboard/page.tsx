@@ -25,6 +25,7 @@ import {
   OPEN_COMPLAINT_STATUS_FILTER,
 } from "@/lib/dashboard/widgets";
 import { RecentEmailsCard } from "@/components/recent-emails-card";
+import { LegacyFranchiseeHome } from "./legacy-franchisee-home";
 import type { Department, Role, TaskStatus } from "@prisma/client";
 
 // FR-002: lifecycle stage, progress %, target opening, owner, next action —
@@ -91,6 +92,16 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
   // than one somehow exists, the home dashboard shows the most recent and
   // links out to the rest.
   const project = projects[0];
+
+  // A franchise that was already built and operating before joining the
+  // platform (schema.prisma's FranchiseProject.isPreExisting comment) has no
+  // lifecycle tasks to track — show the simplified operations-only home
+  // instead of the build-out tracker below. Distinct from `onboarding ===
+  // null`, which is also true for a normal new-build project created
+  // directly via /projects/new.
+  if (project.isPreExisting) {
+    return <LegacyFranchiseeHome project={project} projectsCount={projects.length} />;
+  }
 
   const total = project.tasks.length;
   const completed = project.tasks.filter((t) => t.status === "COMPLETED").length;
