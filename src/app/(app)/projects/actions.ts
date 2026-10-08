@@ -17,6 +17,7 @@ const CreateProjectSchema = z.object({
   ownerId: z.string().min(1, "Owner is required."),
   targetOpening: z.string().min(1, "Target opening date is required."),
   nextAction: z.string().trim().optional(),
+  skipSeeding: z.boolean().optional(),
 });
 
 export type ActionState = { error?: string } | undefined;
@@ -39,6 +40,7 @@ export async function createProject(
     ownerId: formData.get("ownerId"),
     targetOpening: formData.get("targetOpening"),
     nextAction: formData.get("nextAction") || undefined,
+    skipSeeding: formData.get("skipSeeding") === "true",
   });
 
   if (!parsed.success) {
@@ -62,6 +64,7 @@ export async function createProject(
       nextAction: data.nextAction,
       health: ProjectHealth.GREEN,
       actor: user,
+      seedTasks: !data.skipSeeding,
     });
   });
 

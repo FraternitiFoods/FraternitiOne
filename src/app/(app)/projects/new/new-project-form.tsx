@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useActionState } from "react";
 import { createProject } from "../actions";
 import { Button } from "@/components/ui/button";
@@ -14,17 +15,19 @@ import {
 } from "@/components/ui/select";
 
 type PersonOption = { id: string; name: string; email: string | null };
+type FranchiseeOption = PersonOption & { isPreExistingFranchisee: boolean };
 
 export function NewProjectForm({
   franchisees,
   internalUsers,
   defaultOwnerId,
 }: {
-  franchisees: PersonOption[];
+  franchisees: FranchiseeOption[];
   internalUsers: PersonOption[];
   defaultOwnerId?: string;
 }) {
   const [state, action, pending] = useActionState(createProject, undefined);
+  const [skipSeeding, setSkipSeeding] = useState(false);
 
   // Base UI's <Select.Value> (unlike Radix's) shows the raw selected
   // `value` unless given a render function — it doesn't look up the
@@ -34,6 +37,7 @@ export function NewProjectForm({
     franchisees.map((f) => [f.id, `${f.name} (${f.email ?? "no email"})`])
   );
   const ownerLabels = Object.fromEntries(internalUsers.map((u) => [u.id, u.name]));
+  const franchiseesById = Object.fromEntries(franchisees.map((f) => [f.id, f]));
 
   return (
     <form action={action} className="space-y-5">
@@ -56,7 +60,13 @@ export function NewProjectForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="franchiseeId">Franchisee</Label>
-          <Select name="franchiseeId" required>
+          <Select
+            name="franchiseeId"
+            required
+            onValueChange={(v) =>
+              setSkipSeeding(franchiseesById[v as string]?.isPreExistingFranchisee ?? false)
+            }
+          >
             <SelectTrigger id="franchiseeId" className="w-full">
               <SelectValue placeholder="Select franchisee">
                 {(value: string | null) => (value ? franchiseeLabels[value] : "Select franchisee")}
@@ -99,6 +109,25 @@ export function NewProjectForm({
       <div className="space-y-2">
         <Label htmlFor="nextAction">Next action (optional)</Label>
         <Input id="nextAction" name="nextAction" placeholder="e.g. Await signed LOI" />
+      </div>
+
+      <div className="space-y-2 rounded-md border p-3">
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="skipSeeding"
+            value="true"
+            checked={skipSeeding}
+            onChange={(e) => setSkipSeeding(e.target.checked)}
+            className="mt-0.5 size-4"
+          />
+          <span>Already operational — skip the lifecycle-task checklist</span>
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Pre-checked when the selected franchisee was marked &quot;already operational&quot; at
+          account creation. No lifecycle tasks get created, and they&apos;ll see a simplified
+          home dashboard instead of the build-out tracker.
+        </p>
       </div>
 
       {state?.error && (

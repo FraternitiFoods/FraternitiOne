@@ -35,8 +35,19 @@ export async function createProjectWithSeedTasks(
      * conversion.ts).
      */
     actor: { id: string; name: string; email: string | null; role: Role };
+    /**
+     * False for a franchise that was already built and operating before
+     * joining the platform (admin marks this via /projects/new, defaulted
+     * from User.isPreExistingFranchisee) — skips the ~963-task lifecycle
+     * seed entirely and marks the project `isPreExisting`. Defaults to
+     * `true` so the onboarding-conversion caller (conversion.ts), which never
+     * passes this, keeps seeding exactly as before.
+     */
+    seedTasks?: boolean;
   }
 ) {
+  const seedTasks = params.seedTasks ?? true;
+
   const created = await tx.franchiseProject.create({
     data: {
       id: params.id,
@@ -48,6 +59,7 @@ export async function createProjectWithSeedTasks(
       targetOpening: params.targetOpening,
       nextAction: params.nextAction || null,
       health: params.health ?? "GREEN",
+      isPreExisting: !seedTasks,
     },
   });
 
@@ -74,78 +86,82 @@ export async function createProjectWithSeedTasks(
     },
   });
 
-  type SeedTaskInput = {
-    module: Department;
-    category: string | null;
-    lifecycleStage: LifecycleStage;
-    order: number;
-    title: string;
-  };
+  // Skipped entirely for an already-operational franchise (isPreExisting) —
+  // there is no build-out to track, so no lifecycle Task rows get created.
+  if (seedTasks) {
+    type SeedTaskInput = {
+      module: Department;
+      category: string | null;
+      lifecycleStage: LifecycleStage;
+      order: number;
+      title: string;
+    };
 
-  const seedTasks: SeedTaskInput[] = [];
-  const nextOrderByStage = new Map<LifecycleStage, number>();
-  for (const stage of LIFECYCLE_STAGE_ORDER) {
-    STAGE_TASK_TEMPLATES[stage].forEach((title, order) => {
-      seedTasks.push({
-        module: STAGE_DEFAULT_DEPARTMENT[stage],
-        category: null,
-        lifecycleStage: stage,
-        order,
-        title,
+    const seedTaskInputs: SeedTaskInput[] = [];
+    const nextOrderByStage = new Map<LifecycleStage, number>();
+    for (const stage of LIFECYCLE_STAGE_ORDER) {
+      STAGE_TASK_TEMPLATES[stage].forEach((title, order) => {
+        seedTaskInputs.push({
+          module: STAGE_DEFAULT_DEPARTMENT[stage],
+          category: null,
+          lifecycleStage: stage,
+          order,
+          title,
+        });
       });
-    });
-    nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
-  }
-  for (const item of OPS_PROGRESS_TASK_TEMPLATES) {
-    const order = nextOrderByStage.get(item.lifecycleStage) ?? 0;
-    nextOrderByStage.set(item.lifecycleStage, order + 1);
-    seedTasks.push({
-      module: item.module,
-      category: item.category,
-      lifecycleStage: item.lifecycleStage,
-      order,
-      title: item.title,
-    });
-  }
+      nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
+    }
+    for (const item of OPS_PROGRESS_TASK_TEMPLATES) {
+      const order = nextOrderByStage.get(item.lifecycleStage) ?? 0;
+      nextOrderByStage.set(item.lifecycleStage, order + 1);
+      seedTaskInputs.push({
+        module: item.module,
+        category: item.category,
+        lifecycleStage: item.lifecycleStage,
+        order,
+        title: item.title,
+      });
+    }
 
-  // See createProject's own comment (same code, moved here): createManyAndReturn
-  // + createMany keeps this to 2 round trips instead of ~1,450 sequential ones,
-  // comfortably inside Prisma's default 5s interactive-transaction timeout.
-  const createdTasks = await tx.task.createManyAndReturn({
-    data: seedTasks.map((t) => ({
-      projectId: created.id,
-      module: t.module,
-      category: t.category,
-      lifecycleStage: t.lifecycleStage,
-      order: t.order,
-      title: t.title,
-      ownerId: created.ownerId,
-      createdById: params.actor.id,
-    })),
-  });
+    // See createProject's own comment (same code, moved here): createManyAndReturn
+    // + createMany keeps this to 2 round trips instead of ~1,450 sequential ones,
+    // comfortably inside Prisma's default 5s interactive-transaction timeout.
+    const createdTasks = await tx.task.createManyAndReturn({
+      data: seedTaskInputs.map((t) => ({
+        projectId: created.id,
+        module: t.module,
+        category: t.category,
+        lifecycleStage: t.lifecycleStage,
+        order: t.order,
+        title: t.title,
+        ownerId: created.ownerId,
+        createdById: params.actor.id,
+      })),
+    });
 
-  await tx.auditEvent.createMany({
-    data: createdTasks.map((task) => ({
-      projectId: created.id,
-      actorId: params.actor.id,
-      actorEmail: params.actor.email ?? "(no email on file)",
-      actorName: params.actor.name,
-      actorRole: params.actor.role,
-      entityType: "Task",
-      entityId: task.id,
-      action: "CREATE" as const,
-      newValue: {
-        module: task.module,
-        category: task.category,
-        lifecycleStage: task.lifecycleStage,
-        title: task.title,
-        ownerId: task.ownerId,
-        status: task.status,
-      },
-      reference: "Auto-seeded from lifecycle checklist",
-      source: "web",
-    })),
-  });
+    await tx.auditEvent.createMany({
+      data: createdTasks.map((task) => ({
+        projectId: created.id,
+        actorId: params.actor.id,
+        actorEmail: params.actor.email ?? "(no email on file)",
+        actorName: params.actor.name,
+        actorRole: params.actor.role,
+        entityType: "Task",
+        entityId: task.id,
+        action: "CREATE" as const,
+        newValue: {
+          module: task.module,
+          category: task.category,
+          lifecycleStage: task.lifecycleStage,
+          title: task.title,
+          ownerId: task.ownerId,
+          status: task.status,
+        },
+        reference: "Auto-seeded from lifecycle checklist",
+        source: "web",
+      })),
+    });
+  }
 
   return created;
 }
