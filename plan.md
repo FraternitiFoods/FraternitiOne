@@ -4385,3 +4385,287 @@ so the export route's import is unchanged. `next build` now compiles and
 type-checks cleanly; `tsc`, `eslint`, and the full `vitest run` (192 tests)
 all still green. Committed separately from the L5 commit.
 
+---
+
+## 21. Payment/LOI gate fixes + store-onboarding admin revamp — retrospective documentation (2026-10-06/07)
+
+**Process note, same gap sections 13/17/19 already flagged twice before:**
+six commits shipped 2026-10-06/07 with no corresponding plan.md entry at the
+time — `93058ef`/`344089f`, `c412120`/`4c72dbf`, `87fb014`/`bba8e59`,
+`26fe670`/`d4902a7` (four logical changes, each landed once on `dev` and once
+on `main`, byte-identical diffs), and `c782993`/`8d2d783` (one change, same
+dev/main pattern). Written up now by reading the actual diffs
+(`git show <hash>`), not from memory — every file/line below was confirmed
+in the diff or the current file, not inferred from the commit message alone.
+
+**1. LOI e-sign: require an "agree to terms" checkbox (`93058ef`, 2026-10-06).**
+`src/app/onboarding/loi/franchisee-sign-button.tsx` gained a client-side
+`agreed` checkbox state; the sign button is now
+`disabled={!canSign || !agreed || pending}`. UI-only guard —
+`canFranchiseeSignNow` (`src/lib/onboarding/state.ts`) is untouched, so this
+adds a client-side click guard, not a new server-side eligibility rule.
+
+**2. Show verified payment amount on the onboarding detail page (`c412120`,
+2026-10-06).** `src/app/(app)/store-onboarding/[id]/page.tsx` started
+rendering `payments[0].verifiedAmount` alongside the franchisee-declared
+amount. Purely additive — before this, an Admin looking at a stuck
+onboarding could see what the franchisee *claimed* they paid but not what
+had actually been *verified*, making it impossible to diagnose from the UI
+why the e-sign gate below stayed closed.
+
+**3. LOI gate: sum verified amount across all accepted payments, not just the
+latest (`87fb014`, 2026-10-06) — a real bug fix.** Root cause: a franchisee
+paying the franchise fee in installments (e.g. ₹499 + ₹2 + ₹4,499) was
+permanently blocked from signing the LOI, because both call sites that feed
+`canFranchiseeSignNow` (`src/app/onboarding/loi/actions.ts` and `.../page.tsx`)
+queried `payments: { orderBy: { createdAt: "desc" }, take: 1 }` and passed
+only that single latest row's `verifiedAmount` into the gate — so an
+installment payer's *total* verified amount never counted, only whichever
+row happened to be most recent. Fixed by querying all of a franchisee's
+`Payment` rows and computing `totalVerifiedAmount = payments.reduce((sum, p)
+=> sum + (p.verifiedAmount ?? 0), 0)`, passed into the gate instead.
+`canFranchiseeSignNow`'s own signature and logic in `state.ts` were not
+changed — only what gets computed and handed to it.
+
+**4. Allow resubmitting a payment when the total verified amount is still
+short (`26fe670`, 2026-10-06) — companion bug fix to #3.**
+`submitPaymentReceipt` (`src/app/onboarding/documents/actions.ts`) previously
+blocked *any* new payment submission once the onboarding's `paymentStatus`
+left `MISSING`/`CHANGES_REQUESTED` — so an installment payer whose first
+partial payment got marked `ACCEPTED` could never submit the second
+installment at all, directly conflicting with fix #3's premise that partial
+payments should accumulate. New rule: block a new submission only if (a) a
+payment is currently `SUBMITTED` (pending review — don't let a franchisee
+spam submissions while one is still being checked), or (b) the cumulative
+verified amount already meets `expectedAmount`. `documents/page.tsx` now
+fetches all payment rows (not `take: 1`) to compute `totalVerifiedAmount`,
+`hasPendingPayment`, and `paymentEditable`; `payment-section.tsx` gained a
+`totalVerifiedAmount` prop, shows "Verified so far: ₹X — ₹Y remaining", and
+pre-fills the new declared-amount field with the *remaining* balance rather
+than the full `expectedAmount` (a franchisee re-entering the full amount a
+second time would otherwise look like they're claiming to pay twice).
+`src/lib/onboarding/recompute.ts` was switched the same way, from
+`latestPayment?.verifiedAmount` to summing all payments, so
+`deriveOnboardingStatus`'s stored `onboardingStatus` can't silently disagree
+with the e-sign gate the way it could before. **Noted, not changed**:
+`onboarding.paymentStatus` itself still mirrors only the *latest* payment
+row's status — intentional, since `canFranchiseeSignNow` requires both
+`paymentStatus === "ACCEPTED"` on the latest row *and* the cumulative amount
+being sufficient; this wasn't re-verified end-to-end in a browser as part of
+writing this entry, only confirmed by reading the diff and the current gate
+logic together.
+
+**5. Store onboarding admin revamp (`c782993`/`8d2d783`, 2026-10-07) — an
+architecture change, not a bug fix.** Removed the standalone `/reviews`
+KYC/payment review queue entirely (`src/app/(app)/reviews/page.tsx`,
+`reviews/kyc/[id]/page.tsx`, `reviews/payment/[id]/page.tsx` — 402 lines
+deleted) and replaced it with three dedicated drill-down pages nested under
+the onboarding itself: `store-onboarding/[id]/kyc/page.tsx`,
+`.../payment/page.tsx` (both new, ~383 lines combined, carrying over the
+review logic from the deleted pages) and `.../loi/page.tsx` (new, 125 lines).
+`store-onboarding/[id]/page.tsx` itself was simplified from inline
+`LoiPrepPanel`/`LoiEditPanel` content to three clickable summary `Card`s
+(KYC/Payment/LOI) that link to those sub-pages. `decision-form.tsx` and
+`review-actions.ts` moved from `reviews/` into the `[id]/` folder alongside
+the pages that now use them. Sidebar's "Reviews" nav item was removed
+(`app-sidebar.tsx`). Both new `page.tsx` and `payment/page.tsx` compute
+`totalVerified` the same summed-across-all-payments way as fix #3/#4 — the
+revamp and the gate fixes agree with each other. Also touched:
+`.claude/settings.json` was added in this commit (two Bash permission
+allowlist entries, `node -e` and `xargs grep -l "/reviews"` — harness
+tooling, not app behavior).
+
+**Why this entry exists now rather than at the time**: same honest flag as
+every prior "process note" in this file — these six commits shipped without
+a plan.md write-up, so this section was written after the fact by reading
+`git show` diffs directly, not from a live memory of building them. Nothing
+here was re-verified with a fresh Playwright pass; if that matters before
+relying on it further, that's still open.
+
+---
+
+## 22. Navigation/performance smoothing pass — retrospective documentation (2026-10-07)
+
+Also undocumented at the time; written up the same way as section 21, from
+`git show` diffs. Three commits, one pattern repeated across the app: replace
+unbounded `findMany` + in-memory `.filter()`/`.length` counting with capped
+queries and/or `count()` aggregates, and add a `loading.tsx` skeleton route
+so Next.js streams a pulse-skeleton immediately on navigation instead of
+blocking on a blank screen while the query resolves. A `prisma.count()` can't
+silently disagree with a capped list the way manually filtering a
+`take`-limited array would, so capping the table queries didn't also require
+re-deriving the stat-tile math.
+
+**Pass 1 — projects & store-onboarding (`183ec12`/`339faea`, 2026-10-07):**
+- `src/lib/session.ts`: `CurrentUser` gained an optional `onboardingStatus`
+  field, populated from `session.user.onboardingAsFranchisee?.onboardingStatus`
+  inside the one query `requireUser()`/`getCurrentUser()` already runs.
+  `src/app/(app)/layout.tsx` and `src/app/onboarding/layout.tsx` (pass 3
+  below) now read `user.onboardingStatus` off that session object instead of
+  each running their own separate `db.storeOnboarding.findUnique` on every
+  single navigation — removes a DB round trip per page load for every
+  `FRANCHISEE` request through either layout.
+- `projects/page.tsx`: previously fetched **every** `FranchiseProject` row
+  unbounded and computed the stat tiles (total/on-track/at-risk/critical/
+  cities) by filtering that in-memory array — a query and a render that would
+  both have gotten slower as the table grew without bound. Now runs a
+  `Promise.all` of a capped `findMany({ take: 50 })` for the table alongside
+  separate `count()` queries for the stat tiles.
+- `store-onboarding/page.tsx`: same cap-and-count treatment.
+- New `projects/loading.tsx` and `store-onboarding/loading.tsx` skeleton
+  routes.
+
+**Pass 2 — dashboard/complaints/documents/actions (`e395633`, 2026-10-07,
+co-authored with Claude per the commit trailer):** `dashboard/page.tsx`'s
+`InternalDashboard` switched its portfolio-health counts from
+`db.franchiseProject.findMany({ select: { health: true } })` + a JS
+`.filter().length` per health value, to four parallel `count()` queries run
+in the same `Promise.all` as the existing `auditEvent.findMany` and
+`getAdminWidgets()` calls. New `loading.tsx` for `actions/`, `complaints/`,
+`dashboard/`, `documents/`. **Deliberately left untouched, by the commit's
+own stated reasoning**: `/actions`' stat-tile queries, because they depend
+on the `canActOnTask` authorization filter rather than a simple row cap — a
+`count()` can't cheaply replace a query whose rows are filtered by a
+per-row authorization check the same way it could replace a plain health
+tally, so only a `loading.tsx` skeleton was added there, no query change.
+
+**Pass 3 — franchisee onboarding portal (`bf888b4`, 2026-10-07):**
+`src/app/onboarding/layout.tsx` dropped its own `db.storeOnboarding.
+findUnique` call, mirroring pass 1 — reads `user.onboardingStatus` from the
+session field pass 1 added instead. New `loading.tsx` for
+`src/app/onboarding/`, `.../documents/`, `.../loi/`. Behavior at the `null`/
+`LOI_COMPLETE` branch is unchanged (both still redirect to `/dashboard`),
+just without the extra query on the way there.
+
+**Housekeeping, same day (`714808a`, 2026-10-07):** added this repo's
+`CLAUDE.md` (318 lines, the senior-engineer guidance file every session now
+loads) and added it to `.gitignore` in the *same* commit — meaning this is
+the one and only commit where `CLAUDE.md` is tracked in git history; any
+edits to it after this commit won't appear in `git status` or future diffs,
+which is worth knowing if `CLAUDE.md` content ever needs to be diffed or
+rolled back.
+
+**Note worth flagging forward, not yet reconciled**: section 23 below
+(`169335b`, the very next day) adds a *new* `db.franchiseProject.findFirst`
+query back into `src/app/(app)/layout.tsx` for every `FRANCHISEE` request —
+a different query than the one pass 1 removed from that same file, but it
+partially erodes the "no DB call in this layout for franchisees" property
+pass 1 had just established. Not a bug — `isPreExisting` genuinely isn't
+available on the session object the way `onboardingStatus` is — but if the
+layout's per-request query count matters, it's one, not zero, again.
+
+---
+
+## 23. "Already onboarded" / pre-existing franchisees (2026-10-08)
+
+**Mental model (read this first):** every franchise onboarded through this
+app so far goes through the full build-out lifecycle — KYC, LOI, then a
+seeded checklist of ~1,450 construction/BOQ `Task` rows tracked to
+completion before the store opens. This feature is for a different case:
+a franchisee whose store was **already built and operating in the real
+world** before anyone typed them into this app. For that franchisee there is
+no build-out to track — only day-to-day operations (sales, complaints,
+documents) — so seeding a construction checklist and showing a readiness %
+for a store that's already open doesn't make sense and was actively
+misleading on the dashboard.
+
+**Schema** (`prisma/schema.prisma`, migration
+`20261008054932_add_pre_existing_franchise_flags/`, plain additive
+`ALTER TABLE ... ADD COLUMN ... BOOLEAN NOT NULL DEFAULT false` — safe for
+existing rows, no backfill, no risk to any current franchisee's data):
+- `User.isPreExistingFranchisee` — meaningful only for `role === FRANCHISEE`;
+  set by an Admin at **user**-creation time (`/users/new`).
+- `FranchiseProject.isPreExisting` — set at **project**-creation time
+  (`createProjectWithSeedTasks`), normally copied from the franchisee's own
+  flag above; this is the field that actually drives the UI branching below,
+  not the `User` flag. The schema comment is explicit that this is deliberately
+  distinct from `onboarding === null` — a brand-new build project created
+  directly via `/projects/new` (skipping the onboarding wizard) also has no
+  onboarding record, but still needs the full build-out UI, not this one.
+
+**Why two separate flags instead of one**: user-creation and
+project-creation are two separate Admin steps that can happen on different
+days (an Admin might create the franchisee account before the project
+exists at all), so the flag has to be set once and carried forward to
+whichever project eventually gets created for that user — `User.
+isPreExistingFranchisee` is that carry-forward value, `FranchiseProject.
+isPreExisting` is the one actually consulted at render time.
+
+**`src/lib/project-seed.ts`**: `createProjectWithSeedTasks` gained an
+optional `seedTasks?: boolean` parameter, defaulting to `true` — so the
+onboarding-wizard's own call site (`conversion.ts`, which never passes this
+argument) is unaffected and still seeds the full checklist. When `seedTasks`
+is `false`, the ~1,450-row lifecycle `Task.createMany` block (and its paired
+`AuditEvent.createMany`) is skipped entirely, and `isPreExisting: !seedTasks`
+is stamped onto the created project.
+
+**Project creation UI** (`projects/new/new-project-form.tsx`,
+`projects/new/page.tsx`, `projects/actions.ts`): the franchisee-picker query
+now also selects `isPreExistingFranchisee`; the form adds a checkbox
+("Already operational — skip the lifecycle-task checklist", `skipSeeding`)
+that auto-checks itself via the franchisee `<Select>`'s `onValueChange` when
+the chosen franchisee's flag is true — but it is **not** pre-checked before
+an Admin actually picks someone, and an Admin can still uncheck it after
+auto-check fires, so the project's own flag is the real source of truth, not
+an assumption baked into the form. `createProject`'s action/schema gained
+`skipSeeding: z.boolean().optional()`, translated to `seedTasks: !data.
+skipSeeding` at the `createProjectWithSeedTasks` call site.
+
+**User creation UI** (`users/new/new-user-form.tsx`, `users/actions.ts`):
+when `role === "FRANCHISEE"` is selected, a checkbox appears ("This
+franchisee already has an operational store"); `createUser`'s schema/action
+gained `isPreExistingFranchisee`, written to the new `User` column only when
+`role === "FRANCHISEE"` (left undefined for every other role, where the
+field has no meaning).
+
+**Dashboard** (`dashboard/page.tsx` + new `legacy-franchisee-home.tsx`):
+`FranchiseeDashboard` now checks `project.isPreExisting` and, if true, renders
+`<LegacyFranchiseeHome>` instead of the normal build-out tracker. That
+component shows a welcome card, three stat tiles (Sales This Month via the
+existing `getSalesThisMonth`, Open Complaints, Documents count) and a
+"Latest Updates" feed of the 6 most recent `AuditEvent` rows for the project
+— deliberately no readiness %, lifecycle progress bar, or onboarding/KYC/LOI
+widgets, since none of those apply to a store that's already running.
+
+**Sidebar** (`app-sidebar.tsx` + `(app)/layout.tsx`): `AppSidebar` gained an
+`isLegacyFranchisee?: boolean` prop; when true, the "BOQ" and "Operations"
+nav items (construction-only modules) are filtered out of the list, same
+pattern already used there for `ONBOARDING_ROLES`/People-Admin-only entries.
+`(app)/layout.tsx` computes this with a new `db.franchiseProject.findFirst({
+where: { franchiseeId: user.id }, select: { isPreExisting: true },
+orderBy: { createdAt: "desc" } })`, run only when `user.role ===
+"FRANCHISEE"` — see section 22's closing note: this is a new per-request
+query on the same layout file section 22 had just removed a *different*
+query from the day before, so that layout is no longer free of DB calls for
+franchisees, even though neither change is wrong on its own.
+
+### NOT DECIDED YET — ask before assuming
+
+1. **Backfill for real already-operational franchisees who predate this
+   feature.** Both new columns default to `false` on every existing row —
+   any franchisee in production today whose store is, in fact, already
+   built and running will still see the normal build-out dashboard (with a
+   seeded task checklist that may already be fully/partially complete from
+   earlier manual data entry, or just stale) until an Admin manually sets
+   their flags. There is **no UI to flip either flag after creation** —
+   both are only settable at user-creation / project-creation time in the
+   diffs read for this entry. If any current production franchisee needs
+   reclassifying, that's either a one-off DB update or a small "edit
+   franchisee" UI addition — neither exists yet. Worth confirming with
+   Apoorv/Sushant ji whether this is "new franchises only, going forward" by
+   design (plausible — matches the "two separate manual Admin decisions"
+   shape of the rest of this feature) or an oversight.
+2. **What happens to an existing, non-preexisting project's seeded Tasks if
+   an Admin picks the wrong checkbox at creation time and wants to undo it
+   later** — not covered by any diff read for this entry; presumably "delete
+   and recreate the project" (the existing delete-project flow), but not
+   confirmed.
+
+**Honesty note on how this section was written**: like sections 21-22, this
+is retrospective documentation of an already-shipped commit (`169335b`,
+2026-10-08), written by reading `prisma/schema.prisma`, the new migration
+SQL, `legacy-franchisee-home.tsx` in full, and the diffs to every other file
+listed above — not from a live build session. No fresh Playwright/browser
+verification was run as part of writing this entry; the "NOT DECIDED YET"
+backfill question above is a real open gap, not a hedge.
+
