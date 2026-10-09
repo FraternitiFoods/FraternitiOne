@@ -5223,3 +5223,78 @@ reminders/cron (S4), no approval gates (S5), no vendor links (S6) — all still
 need their own separate go per the top-level task instructions. SLA numbers
 are still all `null` in the real dev DB; nothing is counted as "late" yet
 because S2 (the lateness-computation library) doesn't exist yet either.
+
+**S2 — lateness library + badges, and S3 — delay dashboards (2026-10-09).**
+Apoorv's go: continue past S1 into S2/S3 (both already pre-authorized by this
+section's own working rule — "S0-S3 are additive and low-risk, so they may
+start after Apoorv's OK"). What shipped:
+
+- **`src/lib/task-timing.ts`** (new, no DB access, deliberately not
+  `"server-only"` so it stays importable from anywhere): `effectiveDue`,
+  `getTaskTiming` (the `OVERDUE`/`DUE_SOON`/`ON_TRACK`/`LATE_DONE`/
+  `ON_TIME_DONE`/`UNTRACKED`/`CANCELLED` verdict, IST-calendar-day compare per
+  rule 4, `now` injectable for tests), `formatTaskTimingBadge` (label +
+  Tailwind class, `null` for every state not worth flagging), and
+  `summarizeDelays` (on-read aggregation into tiles + by-department/by-stage
+  buckets + top-N most-late, rule 9's `AWAITING_FRANCHISEE` → `"FRANCHISEE"`
+  bucket handled by `delayBucketKey`). 18 unit tests
+  (`src/lib/task-timing.test.ts`): IST-midnight rollover, due-today vs
+  due-tomorrow, untracked-despite-startedAt, cancelled-overrides-everything,
+  reopened-task-keeps-original-clock (no restart, matching rule/definition of
+  done), late-done vs on-time-done, and the department-bucketing + topLate-
+  ranking rules in `summarizeDelays`.
+- **Badges are computed server-side, not in `TaskCard`**: every page that
+  renders a task (`projects/[id]/page.tsx`, `stages/[stage]/page.tsx`,
+  `categories/[category]/page.tsx`, `actions/page.tsx`) already has
+  `slaDays`/`startedAt`/`completedAt` on the `Task` row for free (plain
+  `include`, no `select`, confirmed before writing any query changes — no
+  query changes were needed). Each calls `getTaskTiming` + `formatTaskTimingBadge`
+  and passes the already-formatted `{label, className} | null` down as a
+  plain prop. Deliberate choice over computing `now` inside the client
+  `TaskCard`: avoids a server/client clock mismatch and a hydration diff.
+  `/actions`' sort is now overdue-first **by real days late** (SLA- or
+  due-date-derived), not just "has a due date in the past" — ties among
+  non-overdue tasks still fall back to the existing priority/due-date order.
+- **Per-project card** (`projects/[id]/delay-summary-card.tsx`): tiles +
+  by-department + by-stage + top-5-most-late, computed from the project's
+  own already-fetched `tasks` (no extra query). Renders nothing at all when
+  the project has zero trackable tasks (true for every real project today —
+  see below). Rule 9/NOT DECIDED #6 default: a `FRANCHISEE` viewer sees only
+  the overdue count, never the breakdown or the named most-late list — a
+  separate, narrower branch in the same component, not a permission gate
+  (this card is not behind `canViewDelaysDashboard`; any role that can
+  already view the project sees at least the count).
+- **Portfolio `/delays`** (new route + `loading.tsx`): gated by the new
+  `canViewDelaysDashboard` (`permissions.ts`, flat `ADMIN`/`MANAGEMENT`
+  check, same shape as `canViewSales` — not `hasFullOverride`, per S3's own
+  spec). Query filters to only tasks with a manual `dueDate` or a `slaDays`
+  at the DB level (`OR: [...]`, excludes `CANCELLED`) — this is what keeps
+  the row count bounded without a raw-SQL `groupBy`, since lateness itself
+  (IST day-math against `effectiveDue`) isn't expressible as a plain SQL
+  aggregate; project/stage filters also push down to the DB query, while the
+  due-date-range filter runs in JS against `effectiveDue` (a DB-level filter
+  there could only ever see the manual-`dueDate` half of trackable tasks).
+  Tiles, by-department table, by-stage table, and a top-10 most-overdue table
+  (with store name — the one list `summarizeDelays`'s generic shape doesn't
+  carry, computed separately here). Added to the sidebar
+  (`app-sidebar.tsx`) behind the same `ADMIN`/`MANAGEMENT` mirror list the
+  other role-gated nav items already use.
+
+**Verified**: `tsc --noEmit` clean, `eslint` clean on every new/changed file,
+`vitest run` — 216/216 passed (18 new). **Not verified, unlike S1**: no live
+dev-DB/browser check this time — S0's own recon already established the real
+dev DB has 963/963 tasks `NOT_STARTED` with `slaDays` still `null` everywhere
+(blocker: the SLA CSV hasn't come back from Apoorv/the ops heads yet), so
+every screen built in this step currently renders its correct **empty**
+state (per-project card renders nothing, `/delays` shows all-zero tiles and
+"Nothing overdue right now.") against real data — there is no overdue task
+to visually confirm a badge or a department row against yet. That's expected
+given rule 1, not a sign something's broken, but it does mean the actual
+"3 days late" / department-blame rendering has only been exercised by the
+unit tests' synthetic timestamps, not by a real task in the real app.
+**Still needed before this is actually useful to the founder**: the filled-in
+`task-sla-template.csv` (human-intervention #1) — until that lands, `/delays`
+is a correctly-empty screen, not yet a populated one.
+
+**Not done in this step, by design**: reminders/cron (S4), approval gates
+(S5), vendor links (S6) — each still needs its own separate go.

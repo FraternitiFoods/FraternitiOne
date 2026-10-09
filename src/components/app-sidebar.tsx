@@ -36,6 +36,10 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { label: "Sales", href: "/sales" },
   { label: "Payments", href: null },
   { label: "Projects", href: "/projects" },
+  // plan.md section 24 S3 — mirrors canViewDelaysDashboard(permissions.ts)
+  // exactly (ADMIN/MANAGEMENT only, flat check). Hidden entirely for every
+  // other role, same reasoning as "Sales" above.
+  { label: "Delays", href: "/delays" },
   // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops
   // category rollup itself (plan.md section 9) so it's reachable without
   // drilling into a specific project's Overview section first. Split into two
@@ -96,6 +100,9 @@ export function AppSidebar({
   // is hidden entirely for them rather than shown as a disabled "Soon" link.
   const SALES_VISIBLE_ROLES: Role[] = ["FRANCHISEE", "SALES", "ADMIN", "MANAGEMENT", "ACCOUNTS"];
 
+  // plan.md section 24 S3 — mirrors canViewDelaysDashboard(permissions.ts).
+  const DELAYS_VISIBLE_ROLES: Role[] = ["ADMIN", "MANAGEMENT"];
+
   // Construction-only modules — nothing relevant to show a franchisee whose
   // store was already operating before joining the platform (isLegacyFranchisee).
   const CONSTRUCTION_NAV_LABELS = ["BOQ", "Operations"];
@@ -104,6 +111,7 @@ export function AppSidebar({
     (item) => !ONBOARDING_NAV_LABELS.includes(item.label) || ONBOARDING_ROLES.includes(role)
   )
     .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
+    .filter((item) => item.label !== "Delays" || DELAYS_VISIBLE_ROLES.includes(role))
     .filter((item) => !isLegacyFranchisee || !CONSTRUCTION_NAV_LABELS.includes(item.label))
     .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
     .concat(

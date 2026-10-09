@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { formatProjectCode } from "@/lib/format";
 import { computeStageStatus, STAGE_STATE_LABELS } from "@/lib/lifecycle-stage-status";
+import { getTaskTiming, formatTaskTimingBadge } from "@/lib/task-timing";
 import { TaskCard } from "../../task-card";
 
 export default async function CategoryDetailPage(
@@ -116,6 +117,7 @@ export default async function CategoryDetailPage(
                 fileSize: d.fileSize,
                 createdAt: d.createdAt.toISOString(),
               })),
+              timingBadge: formatTaskTimingBadge(getTaskTiming(task)),
             }}
           />
         ))}

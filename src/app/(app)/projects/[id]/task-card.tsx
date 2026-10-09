@@ -53,6 +53,12 @@ export type TaskCardData = {
   /// — reverses section 9 decision #5) — mainly supervisor uploads from
   /// `/m`, but any Document.taskId link shows up here the same way.
   documents: { id: string; fileName: string; fileSize: number; createdAt: string }[];
+  /// plan.md section 24 S2 — already computed server-side (getTaskTiming +
+  /// formatTaskTimingBadge in task-timing.ts) and passed down as a plain
+  /// label/class pair so this stays a dumb renderer: no client-side "now",
+  /// no hydration mismatch between server and client clocks. `null`/omitted
+  /// for every state that isn't worth flagging (on track, untracked, etc).
+  timingBadge?: { label: string; className: string } | null;
 };
 
 export function TaskCard({
@@ -210,9 +216,16 @@ export function TaskCard({
             </ul>
           )}
         </div>
-        <Badge variant="outline" className={TASK_STATUS_BADGE_CLASS[task.status]}>
-          {TASK_STATUS_LABELS[task.status]}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge variant="outline" className={TASK_STATUS_BADGE_CLASS[task.status]}>
+            {TASK_STATUS_LABELS[task.status]}
+          </Badge>
+          {task.timingBadge && (
+            <Badge variant="outline" className={task.timingBadge.className}>
+              {task.timingBadge.label}
+            </Badge>
+          )}
+        </div>
       </div>
 
       <button
