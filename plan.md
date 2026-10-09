@@ -5409,6 +5409,59 @@ before any code could call it:
    nothing stubbed or half-built in code until then, per the "no
    half-finished implementations" rule.
 
+**Update (2026-10-09) — a concrete provider is now available:** the user has
+a free subscription to **BigRadar** (`bigradar.io`, a WhatsApp Business
+Solution Provider built on Meta's Cloud API), via a personal contact who
+owns it. Confirmed by reading `bigradar.io/docs` directly (not from training
+data) — this changes step 3 above from "several weeks of manual Meta
+verification" to something much faster:
+
+- **Connection is fast, not a lengthy manual process**: `Settings →
+  Integrations → Connect with Facebook` in the BigRadar dashboard triggers
+  Meta's *embedded signup* flow — no separate Meta Business Manager setup
+  needed beforehand, docs quote "no separate Meta Business Manager setup
+  required beforehand" and estimate **~10 minutes** end to end. BigRadar
+  automatically registers as a Meta tech partner, wires the webhook, and
+  subscribes to WhatsApp events on the user's behalf.
+- **Prerequisites** (still real, still needed, not eliminated — just
+  faster): a **dedicated phone number** not currently active on WhatsApp or
+  WhatsApp Business (a new SIM, effectively), a business display
+  name + business email, a Facebook login to authenticate the signup, and
+  confirmation that the account is on BigRadar's **"Pro" plan** (the docs
+  gate WhatsApp connection behind it — worth confirming with Ethan whether
+  the free account already includes this).
+- **Template approval is still required** — this is a WhatsApp/Meta
+  platform rule, not something any provider can skip: "an approved template
+  can be sent even when the customer has not messaged you in the last 24
+  hours," but *un*-approved freeform messages can't be sent outside that
+  24h window at all. The weekly digest, sent cold every Monday with no
+  prior franchisee-side message, would always need an approved template.
+- **API shape** (`POST https://api.bigradar.io/api/public/v1/messages`,
+  `Authorization: Bearer <API key>`): sending a document takes a `type:
+  "document"` payload with `media.link` — **a public HTTPS URL**, not raw
+  attached bytes like Resend's `attachments` field takes today. This is the
+  one real code-shape difference from the email path: the generated PDF
+  would need to be uploaded to B2 (already used for Document/LOI storage —
+  `src/lib/storage.ts`) and a (presigned or public) URL obtained, then
+  passed to BigRadar instead of a `Buffer`. `generateBoardDigestPdf()` itself
+  (`src/lib/board-digest-pdf.ts`) needs no changes — only the delivery step
+  differs.
+- **Pricing**: not published in the docs (nothing found under
+  `/docs/templates`, `/docs/send-message`, or `/docs/guides`) — since this
+  account is a free favor from a personal contact, get actual terms (does
+  "free" mean free forever, free trial, or free API access with Meta's own
+  per-conversation cost still passed through?) confirmed with Ethan directly
+  before relying on it for anything production-facing.
+
+**Still not built** — this is now a *much* shorter path than originally
+scoped, but still needs the user to: (a) get a dedicated WhatsApp number and
+confirm the Pro-plan/pricing terms with Ethan, (b) actually run the ~10-min
+Meta embedded signup, (c) decide the digest's template wording and get it
+submitted for Meta approval, (d) hand over a BigRadar API key. Once those
+four exist, the code change is small (a B2-upload step + one HTTP call) —
+not attempted yet since none of the four exist yet, same "no half-finished
+implementations" reasoning as above.
+
 **Verified**: `tsc --noEmit`, `eslint`, `vitest run` clean (including the new
 `board-digest-pdf.test.ts`; `loi-pdf.test.ts` unchanged and still passing);
 `next typegen` run for the new `/board` route and `/api/cron/board-digest`
