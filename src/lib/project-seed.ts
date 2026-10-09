@@ -4,6 +4,7 @@ import type { Prisma, Department, LifecycleStage, ProjectHealth, Role } from "@p
 import { LIFECYCLE_STAGE_ORDER } from "@/lib/format";
 import { STAGE_DEFAULT_DEPARTMENT, STAGE_TASK_TEMPLATES } from "@/lib/lifecycle-stage-tasks";
 import { OPS_PROGRESS_TASK_TEMPLATES } from "@/lib/ops-progress-tasks";
+import { TASK_SLA_DEFAULTS, normalizeTaskTitle } from "@/lib/task-sla-defaults";
 
 /**
  * Extracted from the createProject Server Action (src/app/(app)/projects/
@@ -95,6 +96,7 @@ export async function createProjectWithSeedTasks(
       lifecycleStage: LifecycleStage;
       order: number;
       title: string;
+      slaDays: number | null;
     };
 
     const seedTaskInputs: SeedTaskInput[] = [];
@@ -107,6 +109,7 @@ export async function createProjectWithSeedTasks(
           lifecycleStage: stage,
           order,
           title,
+          slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(title)] ?? null,
         });
       });
       nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
@@ -120,6 +123,7 @@ export async function createProjectWithSeedTasks(
         lifecycleStage: item.lifecycleStage,
         order,
         title: item.title,
+        slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(item.title)] ?? null,
       });
     }
 
@@ -134,6 +138,7 @@ export async function createProjectWithSeedTasks(
         lifecycleStage: t.lifecycleStage,
         order: t.order,
         title: t.title,
+        slaDays: t.slaDays,
         ownerId: created.ownerId,
         createdById: params.actor.id,
       })),

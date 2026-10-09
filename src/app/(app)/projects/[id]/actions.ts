@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
+import { applyTaskStatusChange } from "@/lib/task-status";
 import {
   canActOnTask,
   canForceCompleteStage,
@@ -148,27 +149,9 @@ export async function updateTaskStatus(
   }
 
   const { status, completionEvidence } = parsed.data;
-  const isCompleting = status === TaskStatus.COMPLETED;
 
   await db.$transaction(async (tx) => {
-    const updated = await tx.task.update({
-      where: { id: taskId },
-      data: {
-        status,
-        completedAt: isCompleting ? new Date() : null,
-        completionEvidence: isCompleting ? completionEvidence || task.completionEvidence : task.completionEvidence,
-      },
-    });
-
-    await writeAuditEvent(tx, {
-      actor: user,
-      projectId,
-      entityType: "Task",
-      entityId: task.id,
-      action: "UPDATE",
-      oldValue: { status: task.status, completionEvidence: task.completionEvidence },
-      newValue: { status: updated.status, completionEvidence: updated.completionEvidence },
-    });
+    await applyTaskStatusChange(tx, task, status, user, { completionEvidence, projectId });
   });
 
   redirect(redirectTo);

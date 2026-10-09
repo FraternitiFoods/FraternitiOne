@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
+import { applyTaskStatusChange } from "@/lib/task-status";
 import { getSupervisorUploadUrl, buildDocumentKey } from "@/lib/storage";
 import { getTaskRoute, categoryHasBoqTasks } from "@/lib/ops-route";
 import type { CurrentUser } from "@/lib/session";
@@ -195,20 +196,10 @@ export async function finalizeUpload(input: {
       source: "mobile",
     });
 
-    await tx.task.update({
-      where: { id: task.id },
-      data: { status: "COMPLETED", completedAt: new Date() },
-    });
-    await writeAuditEvent(tx, {
-      actor: user,
-      projectId: input.projectId,
-      entityType: "Task",
-      entityId: task.id,
-      action: "UPDATE",
-      oldValue: { status: task.status },
-      newValue: { status: "COMPLETED" },
+    await applyTaskStatusChange(tx, task, "COMPLETED", user, {
       reference: "Marked complete via /m upload",
       source: "mobile",
+      projectId: input.projectId,
     });
 
     if (isOtherTask) {

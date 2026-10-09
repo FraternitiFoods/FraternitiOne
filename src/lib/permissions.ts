@@ -339,3 +339,16 @@ export function canViewSales(
 export function canManageSales(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
+
+/**
+ * plan.md section 24 S3 — the portfolio `/delays` screen ("where is it
+ * stuck", department-level blame). Flat role check, not `hasFullOverride`
+ * (same style as `canViewSales`): this is a different question from general
+ * cross-department task/document access, and no other role has a reason to
+ * see which department is causing delay across every store. A franchisee's
+ * own per-project delay card is a separate, narrower view gated by
+ * `canViewProject` instead — see the project page.
+ */
+export function canViewDelaysDashboard(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN" || user.role === "MANAGEMENT";
+}

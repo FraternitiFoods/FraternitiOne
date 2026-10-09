@@ -33,7 +33,7 @@ export type ActionItem = {
   projectBrand: string;
   projectLocation: string;
   dueDate: string | null;
-  overdue: boolean;
+  timingBadge: { label: string; className: string } | null;
   priority: TaskPriority;
   status: TaskStatus;
 };
@@ -179,9 +179,12 @@ export function ActionsList({ items }: { items: ActionItem[] }) {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {task.dueDate && (
-                    <span className={task.overdue ? "text-xs font-medium text-red-600" : "text-xs text-muted-foreground"}>
-                      Due {formatDate(task.dueDate)}
-                    </span>
+                    <span className="text-xs text-muted-foreground">Due {formatDate(task.dueDate)}</span>
+                  )}
+                  {task.timingBadge && (
+                    <Badge variant="outline" className={task.timingBadge.className}>
+                      {task.timingBadge.label}
+                    </Badge>
                   )}
                   <Badge variant="outline" className={TASK_PRIORITY_BADGE_CLASS[task.priority]}>
                     {TASK_PRIORITY_LABELS[task.priority]}

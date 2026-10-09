@@ -532,6 +532,18 @@ model Task {
   priority       TaskPriority     @default(MEDIUM)
   status         TaskStatus       @default(NOT_STARTED)
 
+  /// plan.md section 24 (delay tracking, proposed 2026-10-08): how many days
+  /// this task should take once started. Nullable — a task with no SLA and
+  /// no manual `dueDate` is "untracked" and never counted as late. Numbers
+  /// come from Apoorv/ops heads (src/lib/task-sla-defaults.ts), never
+  /// invented in code.
+  slaDays Int?
+  /// plan.md section 24: set once, the first time this task leaves
+  /// NOT_STARTED, by the single status choke point (applyTaskStatusChange,
+  /// src/lib/task-status.ts). Together with `slaDays` this is what lets
+  /// lateness be computed on read (S2) without storing it anywhere.
+  startedAt DateTime?
+
   /// Self-referencing dependency link (SRD: "dependency").
   dependsOnId String?
   dependsOn   Task?   @relation("TaskDependency", fields: [dependsOnId], references: [id])
@@ -553,6 +565,7 @@ model Task {
   @@index([projectId])
   @@index([ownerId])
   @@index([status])
+  @@index([projectId, status])
   @@index([lifecycleStage])
   @@index([category])
 }

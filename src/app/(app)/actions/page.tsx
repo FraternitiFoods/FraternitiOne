@@ -5,17 +5,15 @@ import { db } from "@/lib/db";
 import { canActOnTask } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
+import { getTaskTiming, formatTaskTimingBadge, type TaskTiming } from "@/lib/task-timing";
 import { ActionsList, type ActionItem } from "./actions-list";
 import type { Prisma, TaskPriority } from "@prisma/client";
 
-// Plain module-level helpers (not inline in the component body) so the
+// Plain module-level helper (not inline in the component body) so the
 // `Date.now()` call doesn't trip eslint-plugin-react-hooks' purity rule for
 // Server Components — same pattern as `daysUntil` in format.ts.
 function sevenDaysAgo(): Date {
   return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-}
-function isOverdue(dueDate: Date): boolean {
-  return dueDate.getTime() < Date.now();
 }
 
 /**
@@ -100,19 +98,33 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
     ? myCompletedThisWeekAll.filter((t) => t.projectId === selectedProjectId)
     : myCompletedThisWeekAll;
 
-  const overdue = myOpenTasks.filter((t) => t.dueDate && isOverdue(t.dueDate));
+  // plan.md section 24 S2 — real SLA/due-date-derived lateness, not just
+  // "dueDate is in the past" (a task can be overdue via slaDays with no
+  // manual dueDate at all). Computed once per task since it only depends on
+  // fields that don't change across the project-scoping filter below.
+  const timingByTaskId = new Map<string, TaskTiming>(myOpenTasksAll.map((t) => [t.id, getTaskTiming(t)]));
+  const daysOverdueOf = (taskId: string): number => {
+    const timing = timingByTaskId.get(taskId);
+    return timing?.kind === "OVERDUE" ? timing.daysOverdue : 0;
+  };
+
+  const overdue = myOpenTasks.filter((t) => daysOverdueOf(t.id) > 0);
   const critical = myOpenTasks.filter((t) => t.priority === "CRITICAL");
   // "The ball is in this user's court" — the status that means this specific
   // audience (franchisee vs. every internal role) is the one being waited on.
   const awaitingYouStatus = user.role === "FRANCHISEE" ? "AWAITING_FRANCHISEE" : "AWAITING_INTERNAL";
   const awaitingYou = myOpenTasks.filter((t) => t.status === awaitingYouStatus);
 
-  const overdueIds = new Set(overdue.map((t) => t.id));
   const priorityRank: Record<TaskPriority, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
   const sorted = [...myOpenTasks].sort((a, b) => {
-    const aOverdue = overdueIds.has(a.id) ? 0 : 1;
-    const bOverdue = overdueIds.has(b.id) ? 0 : 1;
+    const aDaysOverdue = daysOverdueOf(a.id);
+    const bDaysOverdue = daysOverdueOf(b.id);
+    const aOverdue = aDaysOverdue > 0 ? 0 : 1;
+    const bOverdue = bDaysOverdue > 0 ? 0 : 1;
     if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+    // Both overdue: most days late first (plan.md section 24 S2: "sort
+    // /actions overdue-first by real days late").
+    if (aOverdue === 0 && aDaysOverdue !== bDaysOverdue) return bDaysOverdue - aDaysOverdue;
     const rankDiff = priorityRank[a.priority] - priorityRank[b.priority];
     if (rankDiff !== 0) return rankDiff;
     if (a.dueDate && b.dueDate) return a.dueDate.getTime() - b.dueDate.getTime();
@@ -132,7 +144,7 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
     projectBrand: task.project.brand,
     projectLocation: task.project.location,
     dueDate: task.dueDate ? task.dueDate.toISOString() : null,
-    overdue: overdueIds.has(task.id),
+    timingBadge: formatTaskTimingBadge(timingByTaskId.get(task.id)!),
     priority: task.priority,
     status: task.status,
   }));

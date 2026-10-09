@@ -27,6 +27,8 @@ import {
 import { computeStageStatus } from "@/lib/lifecycle-stage-status";
 import { computeCategoryProgress } from "@/lib/category-progress";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
+import { getTaskTiming, formatTaskTimingBadge, summarizeDelays } from "@/lib/task-timing";
+import { DelaySummaryCard } from "./delay-summary-card";
 import { ProjectHeaderForm } from "./project-header-form";
 import { NewTaskForm } from "./new-task-form";
 import { TaskList } from "./task-list";
@@ -107,6 +109,26 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   ).length;
   const boqProgress = computeCategoryProgress(project.tasks, "BOQ");
   const opsProgress = computeCategoryProgress(project.tasks, "OPS");
+
+  // plan.md section 24 S3 — only tasks that are actually tracked (manual due
+  // date or an SLA) ever enter a delay number (rule 1); everything else is
+  // excluded here, at the source, rather than filtered out downstream.
+  const delaySummary = summarizeDelays(
+    project.tasks
+      .filter((t) => t.status !== "CANCELLED" && (t.dueDate !== null || t.slaDays !== null))
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        module: t.module,
+        lifecycleStage: t.lifecycleStage,
+        status: t.status,
+        dueDate: t.dueDate,
+        startedAt: t.startedAt,
+        completedAt: t.completedAt,
+        slaDays: t.slaDays,
+        ownerName: t.owner.name,
+      }))
+  );
 
   return (
     <div className="space-y-6">
@@ -220,6 +242,8 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         </CardContent>
       </Card>
 
+      <DelaySummaryCard summary={delaySummary} isFranchisee={user.role === "FRANCHISEE"} />
+
       {boqProgress.length > 0 && (
         <Card>
           <CardHeader>
@@ -331,6 +355,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
               fileSize: d.fileSize,
               createdAt: d.createdAt.toISOString(),
             })),
+            timingBadge: formatTaskTimingBadge(getTaskTiming(task)),
             canAct: canActOnTask(user, task, project),
           }))}
         />

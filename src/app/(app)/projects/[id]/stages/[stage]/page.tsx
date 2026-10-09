@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { LIFECYCLE_STAGE_LABELS, LIFECYCLE_STAGE_ORDER, formatProjectCode } from "@/lib/format";
 import { computeStageStatus, STAGE_STATE_LABELS } from "@/lib/lifecycle-stage-status";
+import { getTaskTiming, formatTaskTimingBadge } from "@/lib/task-timing";
 import { NewTaskForm } from "../../new-task-form";
 import { TaskCard } from "../../task-card";
 import { StageActions } from "./stage-actions";
@@ -138,6 +139,7 @@ export default async function StageDetailPage(
                   fileSize: d.fileSize,
                   createdAt: d.createdAt.toISOString(),
                 })),
+                timingBadge: formatTaskTimingBadge(getTaskTiming(task)),
               }}
             />
           ))
