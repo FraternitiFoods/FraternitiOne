@@ -40,6 +40,9 @@ const BASE_NAV_ITEMS: NavItem[] = [
   // exactly (ADMIN/MANAGEMENT only, flat check). Hidden entirely for every
   // other role, same reasoning as "Sales" above.
   { label: "Delays", href: "/delays" },
+  // Founder/board summary screen — mirrors canViewBoardSummary(permissions.ts),
+  // same ADMIN/MANAGEMENT-only gate as "Delays" above.
+  { label: "Board Summary", href: "/board" },
   // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops
   // category rollup itself (plan.md section 9) so it's reachable without
   // drilling into a specific project's Overview section first. Split into two
@@ -103,6 +106,9 @@ export function AppSidebar({
   // plan.md section 24 S3 — mirrors canViewDelaysDashboard(permissions.ts).
   const DELAYS_VISIBLE_ROLES: Role[] = ["ADMIN", "MANAGEMENT"];
 
+  // Mirrors canViewBoardSummary(permissions.ts).
+  const BOARD_VISIBLE_ROLES: Role[] = ["ADMIN", "MANAGEMENT"];
+
   // Construction-only modules — nothing relevant to show a franchisee whose
   // store was already operating before joining the platform (isLegacyFranchisee).
   const CONSTRUCTION_NAV_LABELS = ["BOQ", "Operations"];
@@ -112,6 +118,7 @@ export function AppSidebar({
   )
     .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
     .filter((item) => item.label !== "Delays" || DELAYS_VISIBLE_ROLES.includes(role))
+    .filter((item) => item.label !== "Board Summary" || BOARD_VISIBLE_ROLES.includes(role))
     .filter((item) => !isLegacyFranchisee || !CONSTRUCTION_NAV_LABELS.includes(item.label))
     .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
     .concat(

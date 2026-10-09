@@ -1075,7 +1075,8 @@ model EsignEvent {
   @@index([attemptId])
 }
 
-/// Seeded set of 8 keys (section 17 "Emails"), editable by Admin.
+/// Seeded set of keys (section 17 "Emails" + the weekly "board_digest" key),
+/// editable by Admin.
 model EmailTemplate {
   id        String   @id @default(cuid())
   key       String   @unique
@@ -1097,6 +1098,16 @@ model NotificationLog {
   sentAt       DateTime @default(now())
 
   @@index([onboardingId])
+}
+
+/// Weekly founder/board digest (/api/cron/board-digest) idempotency — one row
+/// per sent week. `weekStart` is unique so a double cron trigger in the same
+/// week fails to insert and the route skips sending a second time, same
+/// pattern plan.md section 24 S4 anticipated for its own TaskReminderRun.
+model BoardDigestRun {
+  id        String   @id @default(cuid())
+  weekStart DateTime @unique @db.Date
+  sentAt    DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------

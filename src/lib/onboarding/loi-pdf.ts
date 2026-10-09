@@ -3,6 +3,7 @@ import "server-only";
 import { PDFDocument, PDFFont, PDFPage, PDFImage, StandardFonts, rgb, degrees } from "pdf-lib";
 import { createHash } from "node:crypto";
 import { FRATERNITI_LOGO_PNG_BASE64, TULSI_LOGO_PNG_BASE64, PAYMENT_QR_JPG_BASE64 } from "./loi-assets";
+import { PAGE_WIDTH, PAGE_HEIGHT, MARGIN, CONTENT_WIDTH, toWinAnsiSafe, wrapText } from "@/lib/pdf-utils";
 
 /**
  * plan.md section 17 "LOI engine": render to PDF with a serverless-friendly
@@ -50,57 +51,6 @@ export function validateLoiValues(values: Partial<LoiValues>): string | null {
   return null;
 }
 
-// pdf-lib's StandardFonts (Helvetica etc.) use WinAnsi (Windows-1252)
-// encoding, which covers Latin text plus common "smart punctuation" but NOT
-// the Rupee sign or any non-Latin script. Drawing an unencodable character
-// throws and crashes generation outright -- a real bug found via testing:
-// the fee amount is *always* rendered with the Rupee sign, so LOI generation
-// would have failed on every single real Indian-Rupee LOI, not just in test
-// data. The Rupee sign gets a specific, readable replacement; anything else
-// outside WinAnsi's range falls back to "?" so a free-text field (Territory)
-// with an unexpected character can never crash the whole document, just
-// look slightly odd in that one spot.
-const RUPEE_SIGN = String.fromCodePoint(0x20b9);
-const WINANSI_EXTRA_CODEPOINTS = new Set([
-  0x2013, // en dash
-  0x2014, // em dash
-  0x2018, // left single quote
-  0x2019, // right single quote
-  0x201c, // left double quote
-  0x201d, // right double quote
-  0x2022, // bullet
-  0x2026, // ellipsis
-]);
-
-function toWinAnsiSafe(text: string): string {
-  return Array.from(text.split(RUPEE_SIGN).join("Rs. "))
-    .map((ch) => {
-      const code = ch.codePointAt(0) ?? 0;
-      if (code >= 0x20 && code <= 0x7e) return ch; // ASCII printable
-      if (code >= 0xa0 && code <= 0xff) return ch; // Latin-1 supplement
-      if (WINANSI_EXTRA_CODEPOINTS.has(code)) return ch; // common smart punctuation
-      return "?";
-    })
-    .join("");
-}
-
-function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  const words = text.split(" ");
-  let current = "";
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) > maxWidth && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = candidate;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
 function parseSections(body: string): Record<string, string> {
   const sections: Record<string, string> = {};
   const parts = body.split(/^§(\w+)$/m);
@@ -139,10 +89,6 @@ export function getTemplateSectionDefaults(templateBody: string, values: LoiValu
 }
 
 const HEADER_HEIGHT = 62;
-const PAGE_WIDTH = 595.28; // A4
-const PAGE_HEIGHT = 841.89;
-const MARGIN = 50;
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 /**
  * plan.md section 19 decision 7 — the watermark is the same gold crest
