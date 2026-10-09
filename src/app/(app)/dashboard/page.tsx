@@ -19,6 +19,7 @@ import { REVIEW_STATUS_LABELS, LOI_VERSION_STATUS_LABELS } from "@/lib/onboardin
 import { computeOnboardingCompletion } from "@/lib/onboarding/completion";
 import { formatPaiseAsRupees } from "@/lib/sales/format";
 import {
+  getAdminWidgets,
   getSalesThisMonth,
   getRecentEmails,
   isOpenComplaintStatus,
@@ -455,48 +456,6 @@ async function InternalDashboard({ role }: { role: Role }) {
       )}
     </div>
   );
-}
-
-/**
- * plan.md section 20B — ADMIN/MANAGEMENT widget row. Every count is its own
- * direct Prisma query (no stored counters); "KYC/payment queue size" uses the
- * same `status === "SUBMITTED"` definition the KYC/Payment status filters on
- * /store-onboarding use, so this number always matches what filtering the
- * store list by that status would show.
- */
-async function getAdminWidgets() {
-  const [
-    totalOnboardings,
-    salesUsers,
-    kycPending,
-    loiPending,
-    openComplaints,
-    salesThisMonth,
-    kycQueueSize,
-    paymentQueueSize,
-  ] = await Promise.all([
-    db.storeOnboarding.count(),
-    db.user.count({ where: { role: "SALES" } }),
-    db.storeOnboarding.count({ where: { kycStatus: { not: "ACCEPTED" } } }),
-    db.storeOnboarding.count({ where: { onboardingStatus: { not: "LOI_COMPLETE" } } }),
-    db.complaint.count({ where: { status: OPEN_COMPLAINT_STATUS_FILTER } }),
-    getSalesThisMonth(),
-    db.storeOnboarding.count({ where: { kycStatus: "SUBMITTED" } }),
-    db.storeOnboarding.count({ where: { paymentStatus: "SUBMITTED" } }),
-  ]);
-
-  return {
-    totalOnboardings,
-    salesUsers,
-    kycPending,
-    kycAccepted: totalOnboardings - kycPending,
-    loiPending,
-    loiComplete: totalOnboardings - loiPending,
-    openComplaints,
-    salesThisMonth,
-    kycQueueSize,
-    paymentQueueSize,
-  };
 }
 
 /**

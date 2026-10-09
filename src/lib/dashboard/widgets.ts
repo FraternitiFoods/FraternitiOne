@@ -72,3 +72,50 @@ export async function getSalesThisMonth(projectId?: string): Promise<SalesTotals
   }));
   return sumSalesDays(likeRows);
 }
+
+/**
+ * plan.md section 20B — ADMIN/MANAGEMENT widget row. Every count is its own
+ * direct Prisma query (no stored counters); "KYC/payment queue size" uses the
+ * same `status === "SUBMITTED"` definition the KYC/Payment status filters on
+ * /store-onboarding use, so this number always matches what filtering the
+ * store list by that status would show.
+ *
+ * Moved here from dashboard/page.tsx (plan.md section 24 S/board work) so
+ * the new /board founder summary screen and the weekly digest can reuse the
+ * exact same portfolio-wide figures /dashboard already shows ADMIN/MANAGEMENT
+ * — one function, three callers, impossible for the numbers to drift apart.
+ */
+export async function getAdminWidgets() {
+  const [
+    totalOnboardings,
+    salesUsers,
+    kycPending,
+    loiPending,
+    openComplaints,
+    salesThisMonth,
+    kycQueueSize,
+    paymentQueueSize,
+  ] = await Promise.all([
+    db.storeOnboarding.count(),
+    db.user.count({ where: { role: "SALES" } }),
+    db.storeOnboarding.count({ where: { kycStatus: { not: "ACCEPTED" } } }),
+    db.storeOnboarding.count({ where: { onboardingStatus: { not: "LOI_COMPLETE" } } }),
+    db.complaint.count({ where: { status: OPEN_COMPLAINT_STATUS_FILTER } }),
+    getSalesThisMonth(),
+    db.storeOnboarding.count({ where: { kycStatus: "SUBMITTED" } }),
+    db.storeOnboarding.count({ where: { paymentStatus: "SUBMITTED" } }),
+  ]);
+
+  return {
+    totalOnboardings,
+    salesUsers,
+    kycPending,
+    kycAccepted: totalOnboardings - kycPending,
+    loiPending,
+    loiComplete: totalOnboardings - loiPending,
+    openComplaints,
+    salesThisMonth,
+    kycQueueSize,
+    paymentQueueSize,
+  };
+}

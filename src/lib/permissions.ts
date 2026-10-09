@@ -352,3 +352,13 @@ export function canManageSales(user: Pick<CurrentUser, "role">): boolean {
 export function canViewDelaysDashboard(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN" || user.role === "MANAGEMENT";
 }
+
+/**
+ * Founder/board summary screen (/board) — same flat ADMIN/MANAGEMENT check
+ * as `canViewDelaysDashboard` above, for the same reason: no other role has
+ * a stake in a portfolio-wide board view, and there is no separate
+ * founder/board Role in the schema to check instead.
+ */
+export function canViewBoardSummary(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN" || user.role === "MANAGEMENT";
+}

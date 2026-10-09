@@ -25,7 +25,13 @@ export type EmailKey =
   | "franchise_signed"
   | "company_signed"
   | "loi_complete"
-  | "loi_feedback";
+  | "loi_feedback"
+  // Weekly founder/board digest (/api/cron/board-digest) — not tied to any
+  // onboarding, hence sendOnboardingEmail's onboardingId param being made
+  // optional below. Reuses this module's EmailTemplate/NotificationLog
+  // pattern exactly as plan.md section 24 S4 anticipated for its own
+  // (daily, per-person) task_digest/task_escalation keys.
+  | "board_digest";
 
 export const DEFAULT_EMAIL_TEMPLATES: Record<EmailKey, { subject: string; body: string }> = {
   invitation: {
@@ -65,6 +71,10 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailKey, { subject: string; body: 
     body:
       "Hi {{name}},\n\n{{franchiseeName}} has a question/concern about the LOI for {{store}} before signing:\n\n" +
       "\"{{message}}\"\n\nView the store: {{link}}",
+  },
+  board_digest: {
+    subject: "Fraterniti One — Weekly Board Summary ({{weekLabel}})",
+    body: "Hi,\n\nThe weekly board summary for {{weekLabel}} is attached as a PDF.\n\nView the live dashboard: {{link}}",
   },
 };
 
@@ -109,9 +119,13 @@ export async function notifyIfNewlyReadyForSignature(
 export async function sendOnboardingEmail(params: {
   key: EmailKey;
   to: string;
-  onboardingId: string;
+  /** Omitted for emails with no onboarding to attach to (e.g. "board_digest") — logged as `null`. */
+  onboardingId?: string;
   vars: Record<string, string>;
+  /** Passed straight through to Resend's `emails.send` (single-send only, not supported on batch sends). */
+  attachments?: { filename: string; content: Buffer }[];
 }): Promise<void> {
+  const onboardingId = params.onboardingId ?? null;
   const template = await db.emailTemplate.upsert({
     where: { key: params.key },
     update: {},
@@ -124,7 +138,7 @@ export async function sendOnboardingEmail(params: {
 
   if (!template.enabled) {
     await db.notificationLog.create({
-      data: { templateKey: params.key, to: params.to, onboardingId: params.onboardingId, status: "SKIPPED_DISABLED" },
+      data: { templateKey: params.key, to: params.to, onboardingId, status: "SKIPPED_DISABLED" },
     });
     return;
   }
@@ -144,9 +158,10 @@ export async function sendOnboardingEmail(params: {
       subject,
       text: body,
       html: body.replace(/\n/g, "<br/>"),
+      ...(params.attachments ? { attachments: params.attachments } : {}),
     });
     await db.notificationLog.create({
-      data: { templateKey: params.key, to: params.to, onboardingId: params.onboardingId, status: "SENT" },
+      data: { templateKey: params.key, to: params.to, onboardingId, status: "SENT" },
     });
   } catch (err) {
     console.error(`Failed to send onboarding email "${params.key}":`, err);
@@ -154,7 +169,7 @@ export async function sendOnboardingEmail(params: {
       data: {
         templateKey: params.key,
         to: params.to,
-        onboardingId: params.onboardingId,
+        onboardingId,
         status: "FAILED",
         error: err instanceof Error ? err.message : String(err),
       },
