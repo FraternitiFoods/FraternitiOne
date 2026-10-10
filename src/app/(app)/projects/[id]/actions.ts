@@ -192,6 +192,40 @@ export async function addTaskComment(
   redirect(redirectTo);
 }
 
+export type TaskCommentData = { id: string; body: string; createdAt: string; author: { name: string } };
+
+/**
+ * Read-only, called directly from TaskCard (not a <form action>) the first
+ * time a card is expanded, and again right after addTaskComment succeeds.
+ * Comments used to ship eagerly for every task in the page's initial query —
+ * fine at small scale, but a project can carry 700+ tasks (see task-list.tsx),
+ * and comments were never read by TaskList's search, only rendered once a
+ * card is expanded. Loading them on demand keeps the initial page payload to
+ * a per-task comment *count* instead of every thread body.
+ */
+export async function getTaskComments(taskId: string, projectId: string): Promise<TaskCommentData[]> {
+  const user = await requireUser();
+  const project = await loadProjectOrThrow(projectId);
+  const task = await db.task.findUnique({ where: { id: taskId } });
+
+  if (!task || task.projectId !== projectId || !canViewProject(user, project)) {
+    throw new Error("Task not found.");
+  }
+
+  const comments = await db.taskComment.findMany({
+    where: { taskId },
+    include: { author: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return comments.map((c) => ({
+    id: c.id,
+    body: c.body,
+    createdAt: c.createdAt.toISOString(),
+    author: c.author,
+  }));
+}
+
 const UpdateTaskTitleSchema = z.object({
   title: z.string().trim().min(1, "Title is required."),
 });

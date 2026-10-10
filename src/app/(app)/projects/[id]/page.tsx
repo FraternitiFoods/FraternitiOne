@@ -35,7 +35,7 @@ import { TaskList } from "./task-list";
 import { StageTile } from "./stage-tile";
 import { CategoryTile } from "./category-tile";
 import { DocumentUploadForm } from "./document-upload-form";
-import { DocumentCard } from "./document-card";
+import { DocumentList } from "./document-list";
 import { DeleteProjectButton } from "./delete-project-button";
 import { ComplaintList } from "@/app/(app)/complaints/complaint-list";
 import { NewComplaintForm } from "@/app/(app)/complaints/new-complaint-form";
@@ -63,14 +63,11 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           owner: { select: { name: true } },
           createdBy: { select: { name: true } },
           dependsOn: { select: { title: true } },
-          comments: {
-            include: { author: { select: { name: true } } },
-            orderBy: { createdAt: "asc" },
-          },
           documents: {
             select: { id: true, fileName: true, fileSize: true, createdAt: true },
             orderBy: { createdAt: "desc" },
           },
+          _count: { select: { comments: true } },
         },
         orderBy: [{ lifecycleStage: "asc" }, { order: "asc" }],
       },
@@ -352,12 +349,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             owner: task.owner,
             createdBy: task.createdBy,
             dependsOn: task.dependsOn,
-            comments: task.comments.map((c) => ({
-              id: c.id,
-              body: c.body,
-              createdAt: c.createdAt.toISOString(),
-              author: c.author,
-            })),
+            commentCount: task._count.comments,
             documents: task.documents.map((d) => ({
               id: d.id,
               fileName: d.fileName,
@@ -392,30 +384,21 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
       <div id="documents" className="scroll-mt-16 space-y-4">
         <h2 className="text-lg font-semibold">Documents (FR-005)</h2>
 
-        {project.documents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No documents yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {project.documents.map((document) => (
-              <DocumentCard
-                key={document.id}
-                projectId={project.id}
-                canAct={canActOnDocument(user, document, project)}
-                document={{
-                  id: document.id,
-                  category: document.category,
-                  title: document.title,
-                  version: document.version,
-                  status: document.status,
-                  fileName: document.fileName,
-                  fileSize: document.fileSize,
-                  createdAt: document.createdAt.toISOString(),
-                  owner: document.owner,
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <DocumentList
+          projectId={project.id}
+          documents={project.documents.map((document) => ({
+            id: document.id,
+            category: document.category,
+            title: document.title,
+            version: document.version,
+            status: document.status,
+            fileName: document.fileName,
+            fileSize: document.fileSize,
+            createdAt: document.createdAt.toISOString(),
+            owner: document.owner,
+            canAct: canActOnDocument(user, document, project),
+          }))}
+        />
 
         {manageableModules.length > 0 && (
           <>

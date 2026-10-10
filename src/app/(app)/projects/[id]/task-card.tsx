@@ -1,8 +1,16 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { cn } from "cn";
-import { updateTaskStatus, updateTaskTitle, addTaskComment, moveTask, type ActionState } from "./actions";
+import {
+  updateTaskStatus,
+  updateTaskTitle,
+  addTaskComment,
+  moveTask,
+  getTaskComments,
+  type ActionState,
+  type TaskCommentData,
+} from "./actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -48,7 +56,10 @@ export type TaskCardData = {
   owner: { name: string };
   createdBy: { name: string };
   dependsOn: { title: string } | null;
-  comments: { id: string; body: string; createdAt: string; author: { name: string } }[];
+  /// Just a count up front — the full thread is loaded lazily (getTaskComments)
+  /// the first time this card is expanded, so a project's whole task list
+  /// doesn't have to ship every comment body for every task on initial load.
+  commentCount: number;
   /// Evidence attached straight to this Task (plan.md section 16, decision 9
   /// — reverses section 9 decision #5) — mainly supervisor uploads from
   /// `/m`, but any Document.taskId link shows up here the same way.
@@ -82,7 +93,33 @@ export function TaskCard({
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [comments, setComments] = useState<TaskCommentData[] | null>(null);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const loadedForCommentCount = useRef<number | null>(null);
   const redirectTo = returnPath ?? `/projects/${projectId}`;
+
+  // Comments are fetched lazily (not shipped in the initial page payload —
+  // see TaskCardData.commentCount). Refetch whenever commentCount changes
+  // too, which covers the post-addTaskComment case: that action redirects
+  // back to this page, the server query re-counts comments, and the fresh
+  // `task.commentCount` prop flowing in here is what tells us to reload.
+  useEffect(() => {
+    if (!expanded || loadedForCommentCount.current === task.commentCount) return;
+    let cancelled = false;
+    setCommentsLoading(true);
+    getTaskComments(task.id, projectId)
+      .then((data) => {
+        if (cancelled) return;
+        setComments(data);
+        loadedForCommentCount.current = task.commentCount;
+      })
+      .finally(() => {
+        if (!cancelled) setCommentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, task.commentCount, task.id, projectId]);
 
   const statusAction = useActionState<ActionState, FormData>(
     updateTaskStatus.bind(null, task.id, projectId, redirectTo),
@@ -235,8 +272,7 @@ export function TaskCard({
       >
         <span className={cn("inline-block transition-transform", expanded && "rotate-90")}>▸</span>
         {expanded ? "Hide" : canAct ? "Update status / comment" : "Comment"}
-        {task.comments.length > 0 &&
-          ` · ${task.comments.length} comment${task.comments.length === 1 ? "" : "s"}`}
+        {task.commentCount > 0 && ` · ${task.commentCount} comment${task.commentCount === 1 ? "" : "s"}`}
       </button>
 
       {expanded && (
@@ -275,9 +311,12 @@ export function TaskCard({
           )}
 
           <div className="space-y-2">
-            {task.comments.length > 0 && (
+            {commentsLoading && comments === null && (
+              <p className="text-xs text-muted-foreground">Loading comments…</p>
+            )}
+            {comments !== null && comments.length > 0 && (
               <ul className="space-y-1.5">
-                {task.comments.map((c) => (
+                {comments.map((c) => (
                   <li key={c.id} className="text-xs">
                     <span className="font-medium">{c.author.name}</span>{" "}
                     <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>

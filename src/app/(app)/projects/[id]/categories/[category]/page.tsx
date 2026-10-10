@@ -37,14 +37,11 @@ export default async function CategoryDetailPage(
           owner: { select: { name: true } },
           createdBy: { select: { name: true } },
           dependsOn: { select: { title: true } },
-          comments: {
-            include: { author: { select: { name: true } } },
-            orderBy: { createdAt: "asc" },
-          },
           documents: {
             select: { id: true, fileName: true, fileSize: true, createdAt: true },
             orderBy: { createdAt: "desc" },
           },
+          _count: { select: { comments: true } },
         },
         orderBy: { order: "asc" },
       },
@@ -105,12 +102,7 @@ export default async function CategoryDetailPage(
               owner: task.owner,
               createdBy: task.createdBy,
               dependsOn: task.dependsOn,
-              comments: task.comments.map((c) => ({
-                id: c.id,
-                body: c.body,
-                createdAt: c.createdAt.toISOString(),
-                author: c.author,
-              })),
+              commentCount: task._count.comments,
               documents: task.documents.map((d) => ({
                 id: d.id,
                 fileName: d.fileName,
