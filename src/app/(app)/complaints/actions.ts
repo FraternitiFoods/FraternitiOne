@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
@@ -12,6 +13,7 @@ import {
   canViewProject,
 } from "@/lib/permissions";
 import { buildComplaintAttachmentKey, uploadDocument } from "@/lib/storage";
+import { getMalwareScanner } from "@/lib/malware-scan";
 import { ComplaintCategory, ComplaintStatus, TaskPriority } from "@prisma/client";
 
 export type ActionState = { error?: string } | undefined;
@@ -61,6 +63,7 @@ export async function createComplaint(
 
   // Optional — an empty file input still submits a 0-byte File, not null.
   let attachment: { key: string; fileName: string; mimeType: string; size: number } | null = null;
+  let attachmentBuffer: Buffer | null = null;
   const fileValue = formData.get("attachment");
   if (fileValue instanceof File && fileValue.size > 0) {
     if (fileValue.size > MAX_ATTACHMENT_BYTES) {
@@ -70,7 +73,8 @@ export async function createComplaint(
       return { error: "Unsupported attachment type. Use PDF, JPG, PNG, or WEBP." };
     }
     const key = buildComplaintAttachmentKey({ projectId, fileName: fileValue.name });
-    await uploadDocument({ key, body: Buffer.from(await fileValue.arrayBuffer()), contentType: fileValue.type });
+    attachmentBuffer = Buffer.from(await fileValue.arrayBuffer());
+    await uploadDocument({ key, body: attachmentBuffer, contentType: fileValue.type });
     attachment = { key, fileName: fileValue.name, mimeType: fileValue.type, size: fileValue.size };
   }
 
@@ -87,8 +91,26 @@ export async function createComplaint(
         attachmentFileName: attachment?.fileName ?? null,
         attachmentMimeType: attachment?.mimeType ?? null,
         attachmentFileSize: attachment?.size ?? null,
+        // Nullable field — only an attachment that actually exists needs a
+        // scan; schema default doesn't apply here since this column has no
+        // @default (there's nothing sensible to default an absent
+        // attachment's scan status to). Real scan runs in after(), same
+        // reasoning as the onboarding/Document Vault paths.
+        attachmentScanStatus: attachment ? "PENDING" : null,
       },
     });
+
+    if (attachment && attachmentBuffer) {
+      const buffer = attachmentBuffer;
+      const mimeType = attachment.mimeType;
+      after(async () => {
+        const scan = await getMalwareScanner().scan(buffer, mimeType);
+        await db.complaint.update({
+          where: { id: complaint.id },
+          data: { attachmentScanStatus: scan.status, attachmentScanError: scan.error },
+        });
+      });
+    }
 
     await writeAuditEvent(tx, {
       actor: user,

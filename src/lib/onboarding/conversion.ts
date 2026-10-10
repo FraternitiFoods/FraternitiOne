@@ -73,6 +73,12 @@ export async function convertOnboardingToProject(
   // 3. File the signed LOI + certificate under the new project as Document
   //    rows pointing at the same B2 objects (category Legal) — the KYC files
   //    themselves stay in OnboardingFile, restricted access (section 17).
+  // scanStatus: CLEAN set explicitly on both — these bytes come straight
+  // from Leegality's own API response, not a user-controlled upload, so
+  // malware scanning doesn't apply the same way it does to an arbitrary
+  // franchisee/staff upload. Leaving the schema's PENDING default here would
+  // make these two Documents unreviewable by anyone but the owner forever,
+  // since nothing would ever scan them.
   const signedLoiDoc = await tx.document.create({
     data: {
       projectId: project.id,
@@ -84,6 +90,7 @@ export async function convertOnboardingToProject(
       mimeType: "application/pdf",
       status: "APPROVED",
       ownerId: onboarding.franchiseeUserId,
+      scanStatus: "CLEAN",
     },
   });
   const certificateDoc = await tx.document.create({
@@ -97,6 +104,7 @@ export async function convertOnboardingToProject(
       mimeType: "application/pdf",
       status: "APPROVED",
       ownerId: onboarding.franchiseeUserId,
+      scanStatus: "CLEAN",
     },
   });
 

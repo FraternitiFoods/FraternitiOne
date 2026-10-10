@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
 import { getSupervisorUploadUrl, buildOnboardingFileKey, getObjectBuffer } from "@/lib/storage";
-import { scanFile } from "@/lib/onboarding/malware-scan";
+import { getMalwareScanner } from "@/lib/malware-scan";
+import { after } from "next/server";
 import { encryptPan } from "@/lib/onboarding/pan-encryption";
 import { transitionReview } from "@/lib/onboarding/state";
 import { requiredKycFileKinds } from "@/lib/onboarding/kyc-requirements";
@@ -64,7 +65,6 @@ async function recordOnboardingFile(
   });
 
   const buffer = await getObjectBuffer(input.key);
-  const scan = await scanFile(buffer, input.contentType);
   const sha256 = createHash("sha256").update(buffer).digest("hex");
 
   // `supersedesId` lives on the NEW row pointing back at the old one — the
@@ -72,6 +72,12 @@ async function recordOnboardingFile(
   // creating this row is the only write needed to complete the version
   // chain (mirrors the Document vault's version-history shape, plan.md
   // section 4/17).
+  //
+  // scanStatus starts PENDING (schema default) rather than being resolved
+  // inline: a real scanner call is a third-party HTTP request, and neither
+  // vercel.json nor next.config.ts sets maxDuration anywhere, so this
+  // Server Action runs on Vercel's unconfigured default timeout. The actual
+  // scan runs in `after()` below, after the response is already sent.
   const file = await tx.onboardingFile.create({
     data: {
       onboardingId,
@@ -83,8 +89,6 @@ async function recordOnboardingFile(
       mimeType: input.contentType,
       sizeBytes: input.fileSize,
       sha256,
-      scanStatus: scan.status,
-      scanError: scan.error,
       uploadedById: user.id,
     },
   });
@@ -97,6 +101,14 @@ async function recordOnboardingFile(
     action: "CREATE",
     newValue: { kind: file.kind, fileName: file.fileName, version: file.version, scanStatus: file.scanStatus },
     reference: `Uploaded by franchisee (version ${file.version})`,
+  });
+
+  after(async () => {
+    const scan = await getMalwareScanner().scan(buffer, input.contentType);
+    await db.onboardingFile.update({
+      where: { id: file.id },
+      data: { scanStatus: scan.status, scanError: scan.error },
+    });
   });
 
   return file;

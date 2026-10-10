@@ -40,6 +40,15 @@ import { DeleteProjectButton } from "./delete-project-button";
 import { ComplaintList } from "@/app/(app)/complaints/complaint-list";
 import { NewComplaintForm } from "@/app/(app)/complaints/new-complaint-form";
 
+// Raised from Vercel's unconfigured default: createDocument/
+// createDocumentVersion/createComplaint's after() callbacks call a real
+// malware scanner (src/lib/malware-scan), a third-party HTTP request with
+// its own 15s internal timeout — this must stay comfortably above that so
+// the serverless invocation doesn't get killed mid-scan. Server Action
+// timeouts are configured at the page level (Next.js maxDuration docs), not
+// in actions.ts itself.
+export const maxDuration = 20;
+
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
   const user = await requireUser();

@@ -177,7 +177,7 @@ export function buildOnboardingFileKey(params: {
 
 /**
  * Downloads an object's full bytes — used by the malware-scan step
- * (src/lib/onboarding/malware-scan.ts) right after a presigned-PUT upload
+ * (src/lib/malware-scan/) right after a presigned-PUT upload
  * lands in B2, since the server never sees the bytes during the upload
  * itself (that's the whole point of a presigned PUT — see section 16's own
  * note on why uploads don't proxy through a Next.js route). Onboarding files

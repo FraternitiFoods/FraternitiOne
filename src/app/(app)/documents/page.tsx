@@ -8,6 +8,11 @@ import type { Prisma } from "@prisma/client";
 import { DocumentVaultBrowser, type DocumentVaultRow } from "./document-vault-browser";
 import { AddDocumentDialog } from "./add-document-dialog";
 
+// See projects/[id]/page.tsx's identical comment — createVaultDocument's
+// after() callback calls a real malware scanner, which needs headroom above
+// Vercel's unconfigured default Server Action timeout.
+export const maxDuration = 20;
+
 export default async function DocumentsPage(props: PageProps<"/documents">) {
   const user = await requireUser();
   const searchParams = await props.searchParams;
