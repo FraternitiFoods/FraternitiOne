@@ -128,7 +128,7 @@ export default async function BoqPage(props: PageProps<"/boq">) {
             <p className="text-xs text-muted-foreground">Rolled up from the BOQ checklist</p>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {categoryProgress.map((c) => (
                 <CategoryTile
                   key={c.category}

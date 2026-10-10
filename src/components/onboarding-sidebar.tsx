@@ -90,7 +90,7 @@ export function OnboardingSidebar({ name }: { name: string }) {
             </Button>
           </form>
         </div>
-        <nav className="flex gap-1 overflow-x-auto">
+        <nav className="flex min-w-0 gap-1 overflow-x-auto">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             return (

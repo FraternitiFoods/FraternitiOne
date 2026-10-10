@@ -127,7 +127,7 @@ export function ImportForm({ projectId, returnPath }: { projectId: string; retur
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
               <SummaryStat label="New" value={preview.newCount} />
               <SummaryStat label="Changed" value={preview.changedCount} />
               <SummaryStat label="Unchanged" value={preview.unchangedCount} />

@@ -131,62 +131,119 @@ export function AppSidebar({
     );
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-hidden bg-[#0b1220]">
-      <div className="shrink-0 px-5 pt-6 pb-5">
-        <div className="text-lg leading-tight font-bold tracking-tight text-white">
-          FRATERNITI
+    <>
+      {/* Desktop: fixed left column. */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col overflow-hidden bg-[#0b1220] sm:flex">
+        <div className="shrink-0 px-5 pt-6 pb-5">
+          <div className="text-lg leading-tight font-bold tracking-tight text-white">
+            FRATERNITI
+          </div>
+          <div className="text-lg leading-tight font-bold tracking-tight text-white">ONE</div>
         </div>
-        <div className="text-lg leading-tight font-bold tracking-tight text-white">ONE</div>
-      </div>
 
-      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
-        {navItems.map((item) => {
-          if (!item.href) {
+        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
+          {navItems.map((item) => {
+            if (!item.href) {
+              return (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-600"
+                  title="Coming in a later phase"
+                >
+                  <span>{item.label}</span>
+                  <span className="text-[10px] tracking-wide text-slate-700 uppercase">Soon</span>
+                </div>
+              );
+            }
+
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
             return (
-              <div
+              <Link
                 key={item.label}
-                className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-600"
-                title="Coming in a later phase"
+                href={item.href}
+                className={cn(
+                  "block rounded-lg px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                )}
               >
-                <span>{item.label}</span>
-                <span className="text-[10px] tracking-wide text-slate-700 uppercase">Soon</span>
-              </div>
+                {item.label}
+              </Link>
             );
-          }
+          })}
+        </nav>
 
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={cn(
-                "block rounded-lg px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-white/10 font-medium text-white"
-                  : "text-slate-400 hover:bg-white/5 hover:text-white"
-              )}
+        <div className="shrink-0 border-t border-white/10 px-6 py-4">
+          <div className="truncate text-sm font-medium text-white">{name}</div>
+          <div className="text-xs text-slate-500">{ROLE_LABELS[role]}</div>
+          <form action={logout} className="mt-2">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-full justify-start px-0 text-slate-400 hover:bg-white/5 hover:text-white"
             >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+              Sign out
+            </Button>
+          </form>
+        </div>
+      </aside>
 
-      <div className="shrink-0 border-t border-white/10 px-6 py-4">
-        <div className="truncate text-sm font-medium text-white">{name}</div>
-        <div className="text-xs text-slate-500">{ROLE_LABELS[role]}</div>
-        <form action={logout} className="mt-2">
-          <Button
-            type="submit"
-            variant="ghost"
-            size="sm"
-            className="h-7 w-full justify-start px-0 text-slate-400 hover:bg-white/5 hover:text-white"
-          >
-            Sign out
-          </Button>
-        </form>
-      </div>
-    </aside>
+      {/* Mobile: sticky top bar, horizontally scrollable nav. */}
+      <header className="sticky top-0 z-40 flex flex-col gap-2 border-b bg-[#0b1220] px-4 py-3 sm:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold tracking-tight text-white">FRATERNITI ONE</div>
+            <div className="truncate text-xs text-slate-500">
+              {name} · {ROLE_LABELS[role]}
+            </div>
+          </div>
+          <form action={logout} className="shrink-0">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-slate-400 hover:bg-white/5 hover:text-white"
+            >
+              Sign out
+            </Button>
+          </form>
+        </div>
+        <nav className="flex min-w-0 gap-1 overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
+          {navItems.map((item) => {
+            if (!item.href) {
+              return (
+                <div
+                  key={item.label}
+                  className="shrink-0 rounded-lg px-3 py-1.5 text-xs whitespace-nowrap text-slate-600"
+                  title="Coming in a later phase"
+                >
+                  {item.label} <span className="text-[9px] text-slate-700 uppercase">Soon</span>
+                </div>
+              );
+            }
+
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={cn(
+                  "shrink-0 rounded-lg px-3 py-1.5 text-xs whitespace-nowrap transition-colors",
+                  active
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </header>
+    </>
   );
 }

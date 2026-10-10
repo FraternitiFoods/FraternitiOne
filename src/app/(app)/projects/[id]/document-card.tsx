@@ -92,7 +92,7 @@ export function DocumentCard({
         <>
           <form action={statusFormAction} className="flex flex-wrap items-end gap-2 border-t pt-3">
             <Select name="status" defaultValue={document.status}>
-              <SelectTrigger className="h-8 w-[180px]">
+              <SelectTrigger className="h-8 w-full sm:w-[180px]">
                 <SelectValue>
                   {(value: DocumentStatus | null) => (value ? DOCUMENT_STATUS_LABELS[value] : "")}
                 </SelectValue>

@@ -120,28 +120,28 @@ export function StoreOnboardingList({
           onChange={setOnboardingStatusFilter}
           options={ONBOARDING_STATUS_OPTIONS}
           allLabel="All onboarding statuses"
-          className="h-9 w-[190px]"
+          className="h-9 w-full sm:w-[190px]"
         />
         <FilterSelect
           value={kycStatusFilter}
           onChange={setKycStatusFilter}
           options={REVIEW_STATUS_OPTIONS}
           allLabel="All KYC statuses"
-          className="h-9 w-[170px]"
+          className="h-9 w-full sm:w-[170px]"
         />
         <FilterSelect
           value={paymentStatusFilter}
           onChange={setPaymentStatusFilter}
           options={REVIEW_STATUS_OPTIONS}
           allLabel="All payment statuses"
-          className="h-9 w-[170px]"
+          className="h-9 w-full sm:w-[170px]"
         />
         <FilterSelect
           value={loiStatusFilter}
           onChange={setLoiStatusFilter}
           options={LOI_STATUS_OPTIONS}
           allLabel="All LOI statuses"
-          className="h-9 w-[170px]"
+          className="h-9 w-full sm:w-[170px]"
         />
         {hasActiveFilters && (
           <Button
