@@ -1836,6 +1836,9 @@ sign-off** — say so in the final report.
    KYC_REVIEWER/ADMIN, audited, no auto-delete yet]. **Real Aadhaar
    documents must not be uploaded in production until this is settled.**
 9. **Production malware scanner** [basic checks + Admin warning banner].
+   **Resolved 2026-10-09: real scanner is Cloudmersive Virus Scan API**
+   (`MALWARE_SCANNER=api`), adapter pattern mirroring `src/lib/esign/` — see
+   build log below.
 10. **Official product spelling and domain** [use "Fraterniti One"].
 11. **Whether foreign/NRI applicants are ever onboarded** [no; India-only, PAN
     + Aadhaar. Flag to Apur/Sushant, nothing built for it].
@@ -2132,6 +2135,95 @@ accurate at the time it was written.
   Also: `.gitignore` widened from two explicitly-named PDFs to `*.pdf` —
   spec/reference PDFs dropped into the repo root generally shouldn't be
   committed, not just those two.
+
+**Malware scanner (2026-10-09) — resolving NOT DECIDED YET #9.** Rollout
+review found the gap was worse than the item's own one-line description:
+the "basic" magic-byte+EICAR checker only ran on the KYC/payment-proof
+path — Document Vault (project PDFs/Word/Excel/PowerPoint) and Complaint
+attachments had zero scanning, not even a `scanStatus` column. Fixed all
+three (the `/m` mobile supervisor upload-evidence flow is a deliberate
+scope cut, below).
+
+- **Adapter pattern**, mirroring `src/lib/esign/`'s own shape: new
+  `src/lib/malware-scan/` — `provider.ts` (interface), `basic-scanner.ts`
+  (today's check, moved as-is, extended with magic bytes for webp/Office
+  formats so Document Vault's wider type list doesn't always come back
+  INFECTED in dev), `cloudmersive-scanner.ts` (real adapter), `index.ts`
+  (`getMalwareScanner()` factory + `currentScannerName()`). Deleted the old
+  `src/lib/onboarding/malware-scan.ts` and its dead
+  `isProductionWithoutRealScanner()` (zero call sites anywhere). The admin
+  banner (`/admin/esign-events`) now calls `currentScannerName()` instead of
+  re-implementing its own inline, `NODE_ENV`-blind env check.
+- **Real scanner: Cloudmersive Virus Scan API** (`MALWARE_SCANNER=api`,
+  `POST /virus/scan/file`, native `fetch`, same AbortController/15s-timeout/
+  no-retry convention as `leegality-provider.ts`). `MALWARE_SCANNER=basic`
+  now throws in production unless `ALLOW_BASIC_SCANNER_IN_PRODUCTION=true`
+  — same shape as `ALLOW_MOCK_ESIGN_IN_PRODUCTION`, turning the old silent
+  gap into an explicit opt-in.
+- **Async via `after()`**: neither `vercel.json` nor `next.config.ts` sets
+  `maxDuration` anywhere, and this project is confirmed on Vercel's Hobby
+  plan (`vercel teams ls`) — a third-party scan call risked timing out an
+  upload action. Every write now starts at `scanStatus: PENDING` (already
+  the schema default, previously unused in practice) and the real scan runs
+  in `after()`, updating the row once it resolves. `maxDuration = 20` added
+  to the three pages hosting these Server Actions
+  (`onboarding/documents/page.tsx`, `projects/[id]/page.tsx`,
+  `documents/page.tsx`) — Next's docs say Server Action timeouts are
+  page-level config, not per-action.
+- **Schema**: `Document` gained `scanStatus`/`scanError` (same shape as
+  `OnboardingFile`); `Complaint` gained nullable `attachmentScanStatus`/
+  `attachmentScanError` (nullable since the attachment itself is optional).
+  Migration `add_document_complaint_scan_status`, additive-only.
+- **Two call sites explicitly set `scanStatus: CLEAN` instead of leaving the
+  PENDING default**: the signed-LOI and signing-certificate `Document` rows
+  in `onboarding/conversion.ts` — bytes come straight from Leegality's API
+  response, not a user upload, so scanning doesn't apply (same reasoning
+  section 19 already uses for not scanning other vendor-fetched PDFs).
+  Leaving them at PENDING would have made them unreviewable by anyone but
+  the owner forever, since nothing would ever scan them.
+- **Deliberate scope cut, flagged to and confirmed with the user**: the
+  `/m` mobile supervisor upload-evidence flow (`finalizeUpload`,
+  `src/app/m/[id]/actions.ts`, photos **and videos** up to 50MB) is a real
+  user upload that is **not** wired to a scanner in this pass — Cloudmersive's
+  free-tier 10MB cap vs this flow's 50MB allowance needs its own decision
+  once real account limits are known, and silently scanning-then-blocking
+  routine field videos at ERROR felt like the wrong default to pick
+  unilaterally. These Documents stay at the PENDING default forever by
+  design; the new download-route gate exempts them via `taskId !== null`
+  (the schema's existing signal for "this Document came from `/m`," not a
+  new field) rather than silently making working functionality
+  unreviewable.
+- **Download-route gates added** (mirroring the existing
+  `onboarding-files/[fileId]/download` pattern — owner always allowed,
+  everyone else waits for CLEAN): `projects/[id]/documents/[documentId]/
+  download/route.ts` (owner = `Document.ownerId`) and `projects/[id]/
+  complaints/[complaintId]/attachment/route.ts` (owner =
+  `Complaint.raisedById`). Neither had any scan-status check before this.
+- **New human-gated item, same shape as BLOCKERS.md's Leegality entries**
+  (not added to BLOCKERS.md itself — that file's own header scopes it to
+  section 19/Leegality only): **what's blocked** — `CLOUDMERSIVE_API_KEY`;
+  **why** — Claude Code doesn't create accounts or enter payment info;
+  **who** — the user; **cost** — free tier is 600 calls/month, 10MB/file,
+  no expiration (checked directly against cloudmersive.com, 2026-10); not
+  confirmed whether signup needs a card, or what paid pricing looks like
+  past the free tier — confirm both at signup, don't assume; **exact
+  steps** — sign up at cloudmersive.com, get an API key, set
+  `CLOUDMERSIVE_API_KEY` (and `MALWARE_SCANNER=api`) in Vercel production;
+  **built meanwhile** — everything above is fully built and tested against
+  a mocked `fetch` (`cloudmersive-scanner.test.ts`), same order Leegality's
+  L1-L5 followed before its own real key existed.
+- **Verified**: `tsc --noEmit`, `eslint`, `vitest run` clean — 226/226
+  tests passing (7 new, in `cloudmersive-scanner.test.ts`: clean, infected,
+  non-2xx, missing-field, timeout, no-key-leak, missing-API-key). `prisma
+  migrate dev` applied the new migration cleanly against the local dev DB.
+  **Not verified**: no live dev-DB/browser click-through of any of the four
+  upload paths with a real file (the dev server was running throughout —
+  stopped once, with the user's explicit go-ahead, only to clear a Windows
+  file lock blocking `prisma generate`, then restarted immediately after);
+  no real Cloudmersive account exists yet, so the "api" path has only ever
+  been exercised against a mocked `fetch`, never a real request — same
+  "mock success is not production proof" caveat section 19 states plainly
+  for Leegality.
 
 ## 18. Email domain whitelist + Complaint/Support module — adapted from a
 separate investor-onboarding SRD (2026-09-30)
@@ -5408,59 +5500,6 @@ before any code could call it:
    `sendBoardDigestWhatsApp()`-style function have anything real to call —
    nothing stubbed or half-built in code until then, per the "no
    half-finished implementations" rule.
-
-**Update (2026-10-09) — a concrete provider is now available:** the user has
-a free subscription to **BigRadar** (`bigradar.io`, a WhatsApp Business
-Solution Provider built on Meta's Cloud API), via a personal contact who
-owns it. Confirmed by reading `bigradar.io/docs` directly (not from training
-data) — this changes step 3 above from "several weeks of manual Meta
-verification" to something much faster:
-
-- **Connection is fast, not a lengthy manual process**: `Settings →
-  Integrations → Connect with Facebook` in the BigRadar dashboard triggers
-  Meta's *embedded signup* flow — no separate Meta Business Manager setup
-  needed beforehand, docs quote "no separate Meta Business Manager setup
-  required beforehand" and estimate **~10 minutes** end to end. BigRadar
-  automatically registers as a Meta tech partner, wires the webhook, and
-  subscribes to WhatsApp events on the user's behalf.
-- **Prerequisites** (still real, still needed, not eliminated — just
-  faster): a **dedicated phone number** not currently active on WhatsApp or
-  WhatsApp Business (a new SIM, effectively), a business display
-  name + business email, a Facebook login to authenticate the signup, and
-  confirmation that the account is on BigRadar's **"Pro" plan** (the docs
-  gate WhatsApp connection behind it — worth confirming with Ethan whether
-  the free account already includes this).
-- **Template approval is still required** — this is a WhatsApp/Meta
-  platform rule, not something any provider can skip: "an approved template
-  can be sent even when the customer has not messaged you in the last 24
-  hours," but *un*-approved freeform messages can't be sent outside that
-  24h window at all. The weekly digest, sent cold every Monday with no
-  prior franchisee-side message, would always need an approved template.
-- **API shape** (`POST https://api.bigradar.io/api/public/v1/messages`,
-  `Authorization: Bearer <API key>`): sending a document takes a `type:
-  "document"` payload with `media.link` — **a public HTTPS URL**, not raw
-  attached bytes like Resend's `attachments` field takes today. This is the
-  one real code-shape difference from the email path: the generated PDF
-  would need to be uploaded to B2 (already used for Document/LOI storage —
-  `src/lib/storage.ts`) and a (presigned or public) URL obtained, then
-  passed to BigRadar instead of a `Buffer`. `generateBoardDigestPdf()` itself
-  (`src/lib/board-digest-pdf.ts`) needs no changes — only the delivery step
-  differs.
-- **Pricing**: not published in the docs (nothing found under
-  `/docs/templates`, `/docs/send-message`, or `/docs/guides`) — since this
-  account is a free favor from a personal contact, get actual terms (does
-  "free" mean free forever, free trial, or free API access with Meta's own
-  per-conversation cost still passed through?) confirmed with Ethan directly
-  before relying on it for anything production-facing.
-
-**Still not built** — this is now a *much* shorter path than originally
-scoped, but still needs the user to: (a) get a dedicated WhatsApp number and
-confirm the Pro-plan/pricing terms with Ethan, (b) actually run the ~10-min
-Meta embedded signup, (c) decide the digest's template wording and get it
-submitted for Meta approval, (d) hand over a BigRadar API key. Once those
-four exist, the code change is small (a B2-upload step + one HTTP call) —
-not attempted yet since none of the four exist yet, same "no half-finished
-implementations" reasoning as above.
 
 **Verified**: `tsc --noEmit`, `eslint`, `vitest run` clean (including the new
 `board-digest-pdf.test.ts`; `loi-pdf.test.ts` unchanged and still passing);

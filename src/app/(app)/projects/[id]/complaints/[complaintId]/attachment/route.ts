@@ -27,6 +27,14 @@ export async function GET(
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
+  // Same P1-04 rule as the OnboardingFile/Document download routes: the
+  // person who raised the complaint (and attached the file) can always see
+  // their own upload, everyone else waits for CLEAN.
+  const isOwner = complaint.raisedById === user.id;
+  if (!isOwner && complaint.attachmentScanStatus !== "CLEAN") {
+    return NextResponse.json({ error: "File has not passed the malware scan yet." }, { status: 403 });
+  }
+
   const url = await getDocumentDownloadUrl(complaint.attachmentFileKey, complaint.attachmentFileName ?? "attachment");
   return NextResponse.redirect(url);
 }

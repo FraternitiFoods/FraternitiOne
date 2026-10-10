@@ -636,6 +636,22 @@ model Document {
   /// exists (plan.md section 2).
   approvalRef String?
 
+  /// Nothing is reviewable by a non-owner until CLEAN (same P1-04 rule as
+  /// OnboardingFile) — enforced in the download route, not here. Defaults
+  /// PENDING. Two exceptions, deliberately not left at the PENDING default:
+  /// (1) the vendor-fetched signed-LOI/certificate Documents created in
+  /// onboarding/conversion.ts set CLEAN explicitly — not a user upload, so
+  /// scanning doesn't apply. (2) The /m mobile upload-evidence flow
+  /// (finalizeUpload, src/app/m/[id]/actions.ts) is a real user upload NOT
+  /// yet wired to a scanner (deliberate scope cut — Cloudmersive's free-tier
+  /// 10MB cap vs this flow's 50MB video allowance needs its own decision) —
+  /// it stays PENDING forever by design, so the download route's gate
+  /// exempts it via `taskId !== null` (the existing signal that already
+  /// distinguishes a /m-sourced Document from a vault one) rather than
+  /// silently blocking something that was never going to get scanned.
+  scanStatus ScanStatus @default(PENDING)
+  scanError  String?
+
   /// Version history (SRD FR-005: "Latest approved version clearly
   /// identified"): each new version points back at the one it supersedes.
   supersedesId String?   @unique
@@ -685,6 +701,12 @@ model Complaint {
   attachmentFileName String?
   attachmentMimeType String?
   attachmentFileSize Int?
+  /// Nullable, unlike OnboardingFile/Document's non-null scanStatus — the
+  /// attachment itself is optional, and a complaint with no attachment has
+  /// nothing to scan. Same P1-04 "nothing reviewable until CLEAN" rule
+  /// applies whenever an attachment exists.
+  attachmentScanStatus ScanStatus?
+  attachmentScanError  String?
 
   resolutionDate DateTime?
 

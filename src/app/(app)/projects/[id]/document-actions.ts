@@ -2,12 +2,15 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
 import { canActOnDocument, canManageDocumentCategory, canViewProject } from "@/lib/permissions";
 import { buildDocumentKey, uploadDocument } from "@/lib/storage";
-import { Department, DocumentStatus } from "@prisma/client";
+import { getMalwareScanner } from "@/lib/malware-scan";
+import { Department, DocumentStatus, type Document, type Prisma } from "@prisma/client";
+import type { CurrentUser } from "@/lib/session";
 
 export type ActionState = { error?: string } | undefined;
 
@@ -48,6 +51,58 @@ function validateFile(value: FormDataEntryValue | null): { error: string } | { f
   return { file: value };
 }
 
+/**
+ * Shared by all three Document-creating actions below (createDocument,
+ * createVaultDocument, createDocumentVersion) — upload-then-create was
+ * identical across all three, and each needs the same scan wiring, so this
+ * is the one place it's written. scanStatus starts at the schema's PENDING
+ * default; the real scan runs in `after()`, after the response is sent —
+ * same reasoning as the onboarding KYC/payment-proof path (a third-party
+ * scanner call is a real HTTP request, and neither vercel.json nor
+ * next.config.ts sets maxDuration anywhere).
+ */
+async function uploadAndCreateDocument(
+  tx: Prisma.TransactionClient,
+  user: CurrentUser,
+  params: {
+    projectId: string;
+    category: Department;
+    title: string;
+    file: File;
+    version?: number;
+    supersedesId?: string;
+  }
+): Promise<Document> {
+  const buffer = Buffer.from(await params.file.arrayBuffer());
+  const key = buildDocumentKey({ projectId: params.projectId, category: params.category, fileName: params.file.name });
+  await uploadDocument({ key, body: buffer, contentType: params.file.type });
+
+  const document = await tx.document.create({
+    data: {
+      projectId: params.projectId,
+      category: params.category,
+      title: params.title,
+      version: params.version ?? 1,
+      supersedesId: params.supersedesId ?? null,
+      fileKey: key,
+      fileName: params.file.name,
+      fileSize: params.file.size,
+      mimeType: params.file.type,
+      ownerId: user.id,
+    },
+  });
+
+  after(async () => {
+    const scan = await getMalwareScanner().scan(buffer, params.file.type);
+    await db.document.update({
+      where: { id: document.id },
+      data: { scanStatus: scan.status, scanError: scan.error },
+    });
+  });
+
+  return document;
+}
+
 const CreateDocumentSchema = z.object({
   category: z.nativeEnum(Department),
   title: z.string().trim().min(1, "Title is required."),
@@ -84,26 +139,8 @@ export async function createDocument(
   }
   const { file } = fileResult;
 
-  const key = buildDocumentKey({ projectId, category, fileName: file.name });
-  await uploadDocument({
-    key,
-    body: Buffer.from(await file.arrayBuffer()),
-    contentType: file.type,
-  });
-
   await db.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        projectId,
-        category,
-        title,
-        fileKey: key,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        ownerId: user.id,
-      },
-    });
+    const document = await uploadAndCreateDocument(tx, user, { projectId, category, title, file });
 
     await writeAuditEvent(tx, {
       actor: user,
@@ -167,26 +204,8 @@ export async function createVaultDocument(
   }
   const { file } = fileResult;
 
-  const key = buildDocumentKey({ projectId, category, fileName: file.name });
-  await uploadDocument({
-    key,
-    body: Buffer.from(await file.arrayBuffer()),
-    contentType: file.type,
-  });
-
   await db.$transaction(async (tx) => {
-    const document = await tx.document.create({
-      data: {
-        projectId,
-        category,
-        title,
-        fileKey: key,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        ownerId: user.id,
-      },
-    });
+    const document = await uploadAndCreateDocument(tx, user, { projectId, category, title, file });
 
     await writeAuditEvent(tx, {
       actor: user,
@@ -239,29 +258,16 @@ export async function createDocumentVersion(
   }
   const { file } = fileResult;
 
-  // New version inherits the category — the version chain is meant to track
-  // one document's history, not let a replacement jump departments.
-  const key = buildDocumentKey({ projectId, category: previous.category, fileName: file.name });
-  await uploadDocument({
-    key,
-    body: Buffer.from(await file.arrayBuffer()),
-    contentType: file.type,
-  });
-
   await db.$transaction(async (tx) => {
-    const next = await tx.document.create({
-      data: {
-        projectId,
-        category: previous.category,
-        title: parsed.data.title,
-        version: previous.version + 1,
-        supersedesId: previous.id,
-        fileKey: key,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        ownerId: user.id,
-      },
+    // New version inherits the category — the version chain is meant to
+    // track one document's history, not let a replacement jump departments.
+    const next = await uploadAndCreateDocument(tx, user, {
+      projectId,
+      category: previous.category,
+      title: parsed.data.title,
+      file,
+      version: previous.version + 1,
+      supersedesId: previous.id,
     });
 
     await tx.document.update({

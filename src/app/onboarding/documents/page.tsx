@@ -7,6 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KycSection } from "./kyc-section";
 import { PaymentSection } from "./payment-section";
 
+// Raised from Vercel's unconfigured default: finalizeKycFileUpload/
+// submitPaymentReceipt's after() callback calls a real malware scanner
+// (src/lib/malware-scan), a third-party HTTP request with its own 15s
+// internal timeout — this must stay comfortably above that so the
+// serverless invocation doesn't get killed mid-scan, leaving the file stuck
+// on scanStatus=PENDING. Server Action timeouts are configured at the page
+// level (Next.js maxDuration docs), not in actions.ts itself.
+export const maxDuration = 20;
+
 export default async function OnboardingDocumentsPage() {
   const user = await requireUser();
 

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { currentProviderName } from "@/lib/esign";
 import { getLeegalityWalletBalance } from "@/lib/esign/leegality-provider";
+import { currentScannerName } from "@/lib/malware-scan";
 import { ReconcileButton } from "./reconcile-button";
 
 /** plan.md section 17, P1-10: webhook log, visible to Admin, retryable via Reconcile. */
@@ -46,7 +47,7 @@ export default async function EsignEventsPage() {
         </p>
       )}
 
-      {process.env.MALWARE_SCANNER !== "clamav" && process.env.MALWARE_SCANNER !== "api" && (
+      {currentScannerName() === "basic" && (
         <p className="rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           Malware scanning is running on the &quot;basic&quot; checker (type/magic-byte + EICAR only) — not
           configured for production use.

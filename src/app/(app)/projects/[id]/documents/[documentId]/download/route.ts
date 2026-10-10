@@ -32,6 +32,19 @@ export async function GET(
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
+  // Same P1-04 rule as the OnboardingFile download route: the uploader can
+  // always see their own upload, everyone else on the project waits for
+  // CLEAN. `taskId !== null` marks a /m mobile upload-evidence Document —
+  // that flow isn't wired to a real scanner yet (deliberate scope cut, see
+  // the schema comment on Document.scanStatus), so it would otherwise be
+  // stuck PENDING and unreviewable by non-owners forever; exempted here
+  // rather than silently breaking something that already worked.
+  const isOwner = document.ownerId === user.id;
+  const isMobileUpload = document.taskId !== null;
+  if (!isOwner && !isMobileUpload && document.scanStatus !== "CLEAN") {
+    return NextResponse.json({ error: "File has not passed the malware scan yet." }, { status: 403 });
+  }
+
   const url = await getDocumentDownloadUrl(document.fileKey, document.fileName);
   return NextResponse.redirect(url);
 }
