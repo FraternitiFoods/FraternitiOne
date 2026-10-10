@@ -136,7 +136,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
       />
 
       <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground" htmlFor="project">
             Store
           </label>
@@ -144,7 +144,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             id="project"
             name="project"
             defaultValue={projectFilter}
-            className="block h-9 w-56 rounded-md border bg-background px-2 text-sm"
+            className="block h-9 w-full rounded-md border bg-background px-2 text-sm sm:w-56"
           >
             <option value="">All stores</option>
             {projects.map((p) => (
@@ -154,7 +154,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             ))}
           </select>
         </div>
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground" htmlFor="stage">
             Stage
           </label>
@@ -162,7 +162,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             id="stage"
             name="stage"
             defaultValue={stageFilter}
-            className="block h-9 w-48 rounded-md border bg-background px-2 text-sm"
+            className="block h-9 w-full rounded-md border bg-background px-2 text-sm sm:w-48"
           >
             <option value="">All stages</option>
             {LIFECYCLE_STAGE_ORDER.map((s) => (
@@ -172,7 +172,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             ))}
           </select>
         </div>
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground" htmlFor="from">
             Due from
           </label>
@@ -181,10 +181,10 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             type="date"
             name="from"
             defaultValue={fromFilter}
-            className="block h-9 w-40 rounded-md border bg-background px-2 text-sm"
+            className="block h-9 w-full rounded-md border bg-background px-2 text-sm sm:w-40"
           />
         </div>
-        <div className="space-y-1">
+        <div className="w-full space-y-1 sm:w-auto">
           <label className="text-xs text-muted-foreground" htmlFor="to">
             Due to
           </label>
@@ -193,7 +193,7 @@ export default async function DelaysPage(props: PageProps<"/delays">) {
             type="date"
             name="to"
             defaultValue={toFilter}
-            className="block h-9 w-40 rounded-md border bg-background px-2 text-sm"
+            className="block h-9 w-full rounded-md border bg-background px-2 text-sm sm:w-40"
           />
         </div>
         <Button type="submit" size="sm" variant="secondary">

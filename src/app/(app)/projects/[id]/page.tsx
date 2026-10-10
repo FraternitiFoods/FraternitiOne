@@ -162,28 +162,28 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
         }
       />
 
-      <nav className="sticky top-0 z-10 flex gap-1 rounded-lg bg-card px-2 py-1.5 ring-1 ring-foreground/10">
+      <nav className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-lg bg-card px-2 py-1.5 ring-1 ring-foreground/10">
         <a
           href="#overview"
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           Overview
         </a>
         <a
           href="#tasks"
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           Tasks
         </a>
         <a
           href="#documents"
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           Documents
         </a>
         <a
           href="#complaints"
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           Complaints
         </a>
@@ -229,7 +229,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           <p className="text-xs text-muted-foreground">Your complete journey from LOI to launch</p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {LIFECYCLE_STAGE_ORDER.map((stage, index) => {
               const stageTasks = project.tasks.filter((t) => t.lifecycleStage === stage);
               const isOverridden = overriddenStages.has(stage);
@@ -262,7 +262,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             </p>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {boqProgress.map((c) => (
                 <CategoryTile
                   key={c.category}
@@ -287,7 +287,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             </p>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {opsProgress.map((c) => (
                 <CategoryTile
                   key={c.category}
@@ -316,13 +316,13 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
               targetOpening={project.targetOpening.toISOString().slice(0, 10)}
             />
           ) : (
-            <dl className="grid grid-cols-2 gap-y-2 text-sm sm:grid-cols-4">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm sm:grid-cols-4">
               <dt className="text-muted-foreground">Target opening</dt>
-              <dd className="col-span-3">{formatDate(project.targetOpening)}</dd>
+              <dd className="sm:col-span-3">{formatDate(project.targetOpening)}</dd>
               <dt className="text-muted-foreground">Owner</dt>
-              <dd className="col-span-3">{project.owner.name}</dd>
+              <dd className="sm:col-span-3">{project.owner.name}</dd>
               <dt className="text-muted-foreground">Next action</dt>
-              <dd className="col-span-3">{project.nextAction ?? "—"}</dd>
+              <dd className="sm:col-span-3">{project.nextAction ?? "—"}</dd>
             </dl>
           )}
         </CardContent>

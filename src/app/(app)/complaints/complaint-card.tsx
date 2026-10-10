@@ -146,7 +146,7 @@ export function ComplaintCard({
           {canAct && (
             <form action={statusFormAction} className="flex flex-wrap items-end gap-2">
               <Select name="status" defaultValue={complaint.status}>
-                <SelectTrigger className="h-8 w-[200px]">
+                <SelectTrigger className="h-8 w-full sm:w-[200px]">
                   <SelectValue>
                     {(value: ComplaintStatus | null) => (value ? COMPLAINT_STATUS_LABELS[value] : "")}
                   </SelectValue>
@@ -169,7 +169,7 @@ export function ComplaintCard({
           {canAssign && (
             <form action={assignFormAction} className="flex flex-wrap items-end gap-2">
               <Select name="assignedToId" defaultValue={complaint.assignedTo?.id}>
-                <SelectTrigger className="h-8 w-[200px]">
+                <SelectTrigger className="h-8 w-full sm:w-[200px]">
                   <SelectValue placeholder="Assign to…">
                     {(value: string | null) => people.find((p) => p.id === value)?.name ?? "Assign to…"}
                   </SelectValue>

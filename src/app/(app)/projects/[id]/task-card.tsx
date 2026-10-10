@@ -243,9 +243,9 @@ export function TaskCard({
         <>
           {canAct && (
             <form action={statusFormAction} className="flex flex-wrap items-end gap-2">
-              <div className="space-y-1">
+              <div className="w-full space-y-1 sm:w-auto">
                 <Select name="status" defaultValue={task.status}>
-                  <SelectTrigger className="h-8 w-[180px]">
+                  <SelectTrigger className="h-8 w-full sm:w-[180px]">
                     <SelectValue>
                       {(value: TaskStatus | null) => (value ? TASK_STATUS_LABELS[value] : "")}
                     </SelectValue>
