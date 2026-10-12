@@ -386,6 +386,9 @@ model User {
   salesDaysCreated          SalesDay[]          @relation("SalesDayCreatedBy")
   salesDaysUpdated          SalesDay[]          @relation("SalesDayUpdatedBy")
   salesImportBatchesCreated SalesImportBatch[]  @relation("SalesImportBatchCreatedBy")
+
+  // --- plan.md section 26 (live Petpooja sales webhook) ---
+  posWebhookEventsReprocessed PosWebhookEvent[] @relation("PosWebhookEventReprocessedBy")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password"
@@ -453,6 +456,17 @@ model FranchiseProject {
   /// project created directly via /projects/new rather than the onboarding
   /// wizard — that case must still get the full build-out UI.
   isPreExisting   Boolean       @default(false)
+  /// plan.md section 26 — Petpooja's `properties.Restaurant.restID`,
+  /// lower-cased + trimmed before storage. Null until an Admin maps this
+  /// project to an outlet on /admin/pos; unique so two projects can never
+  /// claim the same outlet.
+  petpoojaRestId  String?       @unique
+  /// plan.md section 26 — the first IST calendar day the webhook is
+  /// authoritative for this project's SalesDay totals. A bill dated before
+  /// this is still stored as a PosOrder but never recomputes SalesDay — lets
+  /// an outlet go live mid-month without retroactively overwriting whatever
+  /// CSV/manual history already exists for earlier days.
+  posLiveFrom     DateTime?     @db.Date
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -470,6 +484,9 @@ model FranchiseProject {
   // --- plan.md section 20A (sales tracking) ---
   salesDays          SalesDay[]
   salesImportBatches SalesImportBatch[]
+
+  // --- plan.md section 26 (live Petpooja sales webhook) ---
+  posOrders PosOrder[]
 
   @@index([franchiseeId])
   @@index([ownerId])
@@ -1160,11 +1177,22 @@ model SalesDay {
   source        SalesSource       @default(CSV)
   importBatchId String?
   importBatch   SalesImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  /// plan.md section 26 — set when an Admin manual edit or CSV import
+  /// touches a day the webhook has also written to ("my number is the
+  /// truth"). A pinned day's totals are never overwritten by the webhook's
+  /// recompute; new bills still arrive and are counted separately as "bills
+  /// since pin" on /admin/pos.
+  isPinned      Boolean           @default(false)
 
-  createdById String
-  createdBy   User   @relation("SalesDayCreatedBy", fields: [createdById], references: [id])
-  updatedById String
-  updatedBy   User   @relation("SalesDayUpdatedBy", fields: [updatedById], references: [id])
+  /// Nullable as of plan.md section 26: the webhook recompute has no
+  /// signed-in human to attribute, unlike the CSV importer and manual-edit
+  /// action (both always pass a real user.id). Null only on a row the
+  /// webhook alone has ever touched; /sales and /admin/pos show "via POS"
+  /// instead of a name when null.
+  createdById String?
+  createdBy   User?   @relation("SalesDayCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("SalesDayUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1197,4 +1225,120 @@ model SalesImportBatch {
   days SalesDay[]
 
   @@index([projectId])
+}
+
+// =============================================================================
+// plan.md section 26 — live Petpooja sales via webhook (Global API)
+// =============================================================================
+
+/// Mirrors the payload's own `status` field (`Success` | `Cancelled`).
+enum PosOrderStatus {
+  SUCCESS
+  CANCELLED
+}
+
+/// An inbound webhook POST that did NOT become a clean `PosOrder` row. A
+/// successfully processed bill — including a resend, or one that turns
+/// Cancelled — is never logged here; `PosOrder` itself is the ledger
+/// (decision 7: no per-bill AuditEvent, and deliberately no per-bill success
+/// log either, since one store can print hundreds of bills a day).
+enum PosWebhookOutcome {
+  IGNORED_UNKNOWN_OUTLET
+  FAILED
+  REJECTED_AUTH
+}
+
+/// One row per Petpooja bill ("SAVE AND PRINT"), pushed live via the Global
+/// API webhook. `(restId, orderId)` is the bill's real identity (not `id`)
+/// — a resend upserts the same row instead of creating a duplicate, which is
+/// what makes the webhook idempotent (plan.md section 26 rule 1). Every
+/// money column is integer paise (never float), parsed from whatever the
+/// payload sent — JSON number or string — never a guess (see
+/// src/lib/pos/petpooja-parse.ts). The `Customer` block, `comment` and the
+/// token are never stored anywhere on this row (rule 3).
+model PosOrder {
+  id        String           @id @default(cuid())
+  projectId String
+  project   FranchiseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// `properties.Restaurant.restID`, lower-cased + trimmed — kept alongside
+  /// projectId (not just derived from the FK) so a row stays traceable to
+  /// its real source outlet even if the project's mapping is later changed,
+  /// and so @@unique can be keyed on it directly.
+  restId  String
+  orderId String
+
+  invoiceNo String?
+
+  /// The real instant of `created_on`, converted from naive IST wall-clock
+  /// text to a correct UTC instant — NOT a naive `new Date(string)` (plan.md
+  /// section 26 rule 5: the server runs in UTC, `created_on` has no
+  /// timezone and must be treated as IST).
+  createdAtIst DateTime
+  /// The IST calendar date of `created_on` — date-only, what `SalesDay`
+  /// aggregates against. `@db.Date` so it round-trips the same way
+  /// `SalesDay.date` already does.
+  businessDate DateTime @db.Date
+
+  orderType         String
+  subOrderType      String?
+  orderFrom         String
+  aggregatorOrderId String?
+  paymentType       String
+  /// Only `{ payment_type, amount }` pairs kept (plan.md section 26 field
+  /// mapping table) — nothing else on each `part_payments[]` entry is
+  /// stored.
+  partPayments Json?
+
+  status PosOrderStatus
+
+  coreTotal       Int
+  discountTotal   Int
+  taxTotal        Int
+  packagingCharge Int
+  deliveryCharge  Int
+  serviceCharge   Int
+  /// Signed (can be negative) — the only money column where that's true.
+  roundOff Int
+  total    Int
+
+  /// Sanity flags set during ingestion, e.g. `TOTAL_MISMATCH` when the
+  /// cross-check formula (plan.md section 26) is off by more than ₹1 —
+  /// surfaced on /admin/pos, never rejects the bill on its own.
+  flags String[]
+  /// Incremented only when a resend actually changes a stored value (plan.md
+  /// section 26 rule 1) — lets /admin/pos distinguish "resent, unchanged"
+  /// from "resent with different numbers".
+  revision Int @default(0)
+
+  receivedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([restId, orderId])
+  @@index([projectId, businessDate, status])
+  @@index([restId, receivedAt])
+}
+
+/// An inbound webhook POST that did not become a clean `PosOrder` row:
+/// unknown restID, a value that couldn't be parsed exactly, or a rejected
+/// auth attempt. `payload` is the scrubbed body — `Customer`, `comment` and
+/// the token/Token are always stripped before this is ever written (plan.md
+/// section 26 rule 3) — so /admin/pos can show what came in and a FAILED
+/// event can be reprocessed after the underlying data is fixed.
+/// REJECTED_AUTH rows get no payload at all (rule 2: a wrong secret stores
+/// nothing except the rejection itself).
+model PosWebhookEvent {
+  id         String            @id @default(cuid())
+  receivedAt DateTime          @default(now())
+  restId     String?
+  outcome    PosWebhookOutcome
+  error      String?
+  payload    Json?
+
+  reprocessedAt   DateTime?
+  reprocessedById String?
+  reprocessedBy   User?     @relation("PosWebhookEventReprocessedBy", fields: [reprocessedById], references: [id], onDelete: SetNull)
+
+  @@index([restId, receivedAt])
+  @@index([outcome, receivedAt])
 }
