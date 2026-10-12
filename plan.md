@@ -6232,3 +6232,93 @@ section 24/25's "bnade bro" precedent.
   0 errors), `vitest run` — **270/270 passing** (226 pre-existing + 24 from
   P2 + 20 new from P3), no regressions. No Playwright pass yet — the route
   exists but there's still no UI pointing at it (`/admin/pos` is P4).
+
+**P4 — `/admin/pos` page (2026-10-12):**
+
+- **`canManagePosIntegration`** added to `permissions.ts` — flat `ADMIN`
+  check (NOT DECIDED #7's default), same shape as `canManageSales`, not
+  routed through `hasFullOverride`.
+- **`src/app/(app)/admin/pos/page.tsx`** — the four things section 26 lists:
+  1. **Outlet mapping** — every `FranchiseProject`, its `petpoojaRestId`,
+     `posLiveFrom`, last bill received and bills today. The latter two are
+     two `groupBy` queries (`_max: { receivedAt }`, `_count` filtered to
+     today's IST date via the now-exported `istTodayKey`), not one query per
+     store — the portfolio is ~70-80 stores, so this stays two queries
+     regardless of N, not N+1.
+  2. **Health** — outlets mapped but silent >24h (plan's own caveat kept
+     verbatim: "during their trading hours is a later refinement" — not
+     built), a 7-day `TOTAL_MISMATCH` count (`flags: { has: "TOTAL_MISMATCH" }`),
+     and pinned days with new bills since the pin (`SalesDay.isPinned`,
+     joined against a per-day count of `PosOrder.receivedAt > SalesDay.updatedAt`
+     — N+1 here, but N is "how many days are currently pinned", which is
+     small and rare by construction, not every store every day).
+  3. **Problem events** — most recent 100 `PosWebhookEvent` rows with a
+     Reprocess button wherever `payload !== null` and it hasn't already been
+     reprocessed.
+  4. **Webhook URL** — `${APP_URL}/api/webhooks/petpooja` in a read-only
+     input (natively copyable by selecting it — didn't build a JS "Copy"
+     button for this, not worth a Client Component for a one-line
+     convenience), plus which of `PETPOOJA_WEBHOOK_TOKEN` /
+     `PETPOOJA_WEBHOOK_PATH_SECRET` is configured. Deliberately **never
+     renders the secret's actual value** — only whether each one is set —
+     even though this is an Admin-only page; rendering a secret into HTML is
+     a bigger exposure surface (page cache, screenshots, browser history)
+     than the risk this page needs to take on, and the plan's own "never log
+     the token" instinct extends naturally to "never display it" too. An
+     Admin who needs the literal secret already has it in Vercel's env vars.
+- **`src/lib/pos/webhook-processor.ts` refactor + additions**: extracted the
+  aggregate-then-upsert half of `recomputeSalesDayForDate` into a new
+  exported `aggregateAndWriteSalesDay(tx, projectId, dateValue)` with no
+  guards, so both the webhook's own guarded path and the new "Unpin and
+  recompute" admin action (the Pinning rule's own words: "'Unpin and
+  recompute' is an Admin action") share the real aggregate logic instead of
+  a second copy of it. Added `reprocessStoredEvent(eventId, reprocessedById,
+  options)`: re-parses a stored event's already-scrubbed payload (the fields
+  scrubbing removes — `Customer`, `comment`, the token — were never read by
+  `parsePetpoojaPayload` in the first place, so nothing is lost) and runs it
+  through the same outlet-lookup + `ingestParsedOrder` the real webhook uses,
+  skipping auth entirely since this is an already-permission-checked Admin
+  action, not an inbound request. Stamps `reprocessedAt`/`reprocessedById` on
+  success.
+- **`src/app/(app)/admin/pos/actions.ts`**: `updateOutletMapping` (lower-cases
+  + trims `petpoojaRestId`, catches the `@@unique` constraint as a friendly
+  "already mapped to another project" error per the plan's own instruction,
+  not a raw Prisma error), `reprocessEvent` (thin wrapper around
+  `reprocessStoredEvent`), `unpinSalesDay` (flips `isPinned` and calls
+  `aggregateAndWriteSalesDay` in the same transaction). All three write a
+  real `AuditEvent` with the actual Admin as actor — decision 7's explicit
+  list of human actions that *do* get audited ("map an outlet, set go-live
+  date, … retry a failed event") — unlike the webhook's own automatic
+  per-bill writes, which still get none.
+- **Sidebar**: one "POS" entry added to the Admin-only `.concat(...)` block
+  in `app-sidebar.tsx`, same place "E-sign Events" and "Email Templates"
+  already live.
+- **Browser-checked, not just type-checked** (CLAUDE.md: UI changes need an
+  actual look, not just `tsc`): started `next dev`, logged in as the seeded
+  Admin (`tech@fraterniti.co.in`) and the seeded `SALES` user via raw HTTP
+  (no browser available in this environment, so a cookie-jar `curl` session
+  simulating the no-JS server-action form-submit protocol stood in for one).
+  Caught and fixed one real bug this way before calling it done: the
+  Webhook-URL `<Input readOnly ... onFocus={...}>` passed an inline event
+  handler from this Server Component page into a Client Component prop,
+  which Next.js rejects outright (`Error: Event handlers cannot be passed to
+  Client Component props`) — the page 500'd. Fixed by dropping the
+  `onFocus`-select convenience entirely (a plain `readOnly` input is already
+  copyable by selecting it; not worth a wrapping Client Component for this).
+  After the fix: `/admin/pos` returns 200 for the Admin and renders all four
+  sections against the real (near-empty) local dev DB — 2 seeded projects,
+  both correctly shown "not mapped", zero problem events, zero pinned days;
+  `/admin/pos` returns a 307 to `/dashboard` for the `SALES` user, confirming
+  `canManagePosIntegration` actually gates the page and not just the
+  sidebar link. **Not verified this way**: the three dialogs/buttons
+  (`OutletMappingDialog`, `ReprocessButton`, `UnpinButton`) — they're Client
+  Components whose `useActionState`-bound submissions use the fetch-based
+  RSC action protocol, not the plain no-JS form fallback the login page
+  happened to use, so a JS-less `curl` session can't drive them. Saying so
+  plainly rather than claiming full coverage: their actual click-through
+  behavior is exactly what P6's Playwright pass (real browser, real role
+  logins) is the designed place to verify, and that step hasn't run yet.
+- **Verified**: `tsc --noEmit` clean, `eslint .` clean (same 8 pre-existing
+  warnings, 0 new, 0 errors), `vitest run` — still 270/270 (no new unit tests
+  this step — `/admin/pos` is a server-rendered list/dialog page, same "no
+  dedicated test file" precedent as `/admin/esign-events`'s own page.tsx).

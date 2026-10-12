@@ -341,6 +341,18 @@ export function canManageSales(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
+ * plan.md section 26 "NOT DECIDED YET" #7: working default is `ADMIN` only
+ * (MANAGEMENT read-only was floated but not asked for — not built). Flat
+ * check, same shape as `canManageSales` — this gates `/admin/pos` itself
+ * (outlet mapping, health, problem events, reprocess, webhook URL), not the
+ * webhook route, which has its own token/secret auth and no human user at
+ * all.
+ */
+export function canManagePosIntegration(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
  * plan.md section 24 S3 — the portfolio `/delays` screen ("where is it
  * stuck", department-level blame). Flat role check, not `hasFullOverride`
  * (same style as `canViewSales`): this is a different question from general

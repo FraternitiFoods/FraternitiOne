@@ -162,6 +162,34 @@ function hasOrderChanged(existing: PosOrder, data: PosOrderWriteData): boolean {
  * the date is before `posLiveFrom`, or the day is pinned ("my number is the
  * truth" — new bills still count on /admin/pos, just not here).
  */
+/**
+ * The aggregate-and-write step alone, with no guards — reused by both
+ * `recomputeSalesDayForDate` below (which adds the `posLiveFrom`/pinned
+ * guards for the automatic webhook path) and `/admin/pos`'s "Unpin and
+ * recompute" action (P4), which wants this to run unconditionally since the
+ * admin is explicitly asking for it.
+ */
+export async function aggregateAndWriteSalesDay(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  dateValue: Date
+): Promise<void> {
+  const agg = await tx.posOrder.aggregate({
+    where: { projectId, businessDate: dateValue, status: "SUCCESS" },
+    _sum: { coreTotal: true, discountTotal: true },
+    _count: { _all: true },
+  });
+  const grossSales = agg._sum.coreTotal ?? 0;
+  const netSales = grossSales - (agg._sum.discountTotal ?? 0);
+  const orders = agg._count._all;
+
+  await tx.salesDay.upsert({
+    where: { projectId_date: { projectId, date: dateValue } },
+    create: { projectId, date: dateValue, grossSales, netSales, orders, source: "API" },
+    update: { grossSales, netSales, orders, source: "API" },
+  });
+}
+
 async function recomputeSalesDayForDate(
   tx: Prisma.TransactionClient,
   project: { id: string; posLiveFrom: Date | null },
@@ -175,20 +203,7 @@ async function recomputeSalesDayForDate(
   });
   if (existingSalesDay?.isPinned) return;
 
-  const agg = await tx.posOrder.aggregate({
-    where: { projectId: project.id, businessDate: dateValue, status: "SUCCESS" },
-    _sum: { coreTotal: true, discountTotal: true },
-    _count: { _all: true },
-  });
-  const grossSales = agg._sum.coreTotal ?? 0;
-  const netSales = grossSales - (agg._sum.discountTotal ?? 0);
-  const orders = agg._count._all;
-
-  await tx.salesDay.upsert({
-    where: { projectId_date: { projectId: project.id, date: dateValue } },
-    create: { projectId: project.id, date: dateValue, grossSales, netSales, orders, source: "API" },
-    update: { grossSales, netSales, orders, source: "API" },
-  });
+  await aggregateAndWriteSalesDay(tx, project.id, dateValue);
 }
 
 /**
@@ -317,4 +332,60 @@ export async function processPetpoojaWebhook(
   }
 
   return { status: 200, body: { ok: true, outcome: "PROCESSED" } };
+}
+
+export type ReprocessResult = {
+  outcome: "PROCESSED" | "IGNORED_UNKNOWN_OUTLET" | "FAILED" | "NOT_FOUND" | "NO_PAYLOAD";
+  message?: string;
+};
+
+/**
+ * `/admin/pos`'s Reprocess action (P4): re-runs a stored `FAILED` or
+ * `IGNORED_UNKNOWN_OUTLET` event's (already-scrubbed) payload through the
+ * same parse + ingest path after the underlying issue is fixed (a bad value
+ * corrected, or the outlet now mapped). Skips auth entirely — unlike the real
+ * webhook, this is an already-authenticated Admin action — and the scrubbed
+ * fields it's missing (`Customer`, `comment`, the token, …) were never read
+ * by `parsePetpoojaPayload` in the first place, so scrubbing cost nothing
+ * here. `REJECTED_AUTH` events (no payload at all, by rule 2) simply can't
+ * reach this — the caller only offers Reprocess where `payload` is non-null.
+ */
+export async function reprocessStoredEvent(
+  eventId: string,
+  reprocessedById: string,
+  options: { now?: Date } = {}
+): Promise<ReprocessResult> {
+  const now = options.now ?? new Date();
+
+  const event = await db.posWebhookEvent.findUnique({ where: { id: eventId } });
+  if (!event) return { outcome: "NOT_FOUND" };
+  if (event.payload === null) return { outcome: "NO_PAYLOAD", message: "Nothing was stored for this event." };
+
+  const parsed = parsePetpoojaPayload(event.payload, { now });
+  if (parsed.kind === "ignored_event") {
+    return { outcome: "FAILED", message: `Still not an "orderdetails" event (${parsed.event}).` };
+  }
+  if (parsed.kind === "failed") {
+    return { outcome: "FAILED", message: parsed.reason };
+  }
+
+  const order = parsed.order;
+  const project = await db.franchiseProject.findUnique({
+    where: { petpoojaRestId: order.restId },
+    select: { id: true, posLiveFrom: true },
+  });
+  if (!project) {
+    return { outcome: "IGNORED_UNKNOWN_OUTLET", message: `No project is mapped to restID "${order.restId}" yet.` };
+  }
+
+  try {
+    await ingestParsedOrder(project, order);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error.";
+    console.error("Petpooja reprocess ingestion failed:", err);
+    return { outcome: "FAILED", message };
+  }
+
+  await db.posWebhookEvent.update({ where: { id: eventId }, data: { reprocessedAt: now, reprocessedById } });
+  return { outcome: "PROCESSED" };
 }

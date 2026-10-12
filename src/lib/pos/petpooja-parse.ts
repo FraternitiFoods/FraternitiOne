@@ -132,8 +132,8 @@ function istWallClockToUtcInstant(y: number, m: number, d: number, h: number, mi
   return new Date(utcIfItWereUtc - IST_OFFSET_MS);
 }
 
-/** Today's IST calendar date (`YYYY-MM-DD`), given the real UTC instant `now`. */
-function istTodayKey(now: Date): string {
+/** Today's IST calendar date (`YYYY-MM-DD`), given the real UTC instant `now`. Exported for `/admin/pos`'s "bills today" column (P4) — same clock, not reimplemented there. */
+export function istTodayKey(now: Date): string {
   return toUtcDateKey(new Date(now.getTime() + IST_OFFSET_MS));
 }
 

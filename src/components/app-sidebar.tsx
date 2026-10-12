@@ -124,6 +124,7 @@ export function AppSidebar({
     .concat(
       role === "ADMIN"
         ? [
+            { label: "POS", href: "/admin/pos" },
             { label: "E-sign Events", href: "/admin/esign-events" },
             { label: "Email Templates", href: "/admin/email-templates" },
           ]
