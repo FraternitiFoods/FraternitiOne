@@ -148,8 +148,13 @@ function parseFlexibleDate(raw: string): string | null {
  * integer paise, never float"). Returns null for anything that isn't a
  * plain non-negative number (negative sign, letters, etc.) — the caller
  * reports a specific reason for a negative value vs. a malformed one.
+ *
+ * Exported (plan.md section 26) so `src/lib/pos/petpooja-parse.ts` reuses
+ * this exact digit-based conversion for Petpooja's money fields instead of
+ * re-implementing it — it just needs to turn a JSON number into a string
+ * first (`String(253.4) === "253.4"`, safe for this value range).
  */
-function rupeesToPaise(raw: string): number | null {
+export function rupeesToPaise(raw: string): number | null {
   const cleaned = raw.trim().replace(/,/g, "");
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
   const [intPart, decPart = ""] = cleaned.split(".");
