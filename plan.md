@@ -6470,3 +6470,24 @@ section 24/25's "bnade bro" precedent.
   warnings, 0 new, 0 errors — including the new script itself), `vitest run`
   — **270/270** (after the one test fix above; no new unit tests added by
   this step itself, which is an e2e script, not a unit-testable module).
+
+**P7 — go-live checklist, human-gated (2026-10-12):**
+
+All code for section 26 is now built, tested (`vitest` 270/270, `tsc`,
+`eslint` clean) and verified end-to-end on synthetic data (P6). Per the
+build order, this step is not code — it is the human-intervention list
+(items 1-7 above) printed as an actionable checklist for Apoorv/Sushant ji,
+with the exact Vercel env var names for item 3. Presented in chat,
+2026-10-12. Nothing in this step contacted Petpooja, touched Vercel, or
+enabled any real outlet — none of that is Claude Code's to do.
+
+Definition of done's own caveat still holds and is repeated here on purpose:
+**synthetic success (P6) is not production sign-off.** Real Petpooja
+payloads may differ from the PDF's documented samples in ways no amount of
+synthetic testing can anticipate, and only the pilot outlet's comparison
+against the POS's own daily report (human item 4) actually proves the
+numbers are right. The next concrete step after this is Apoorv reading the
+checklist and starting with human item 1 (the cost/contract question) —
+there is nothing further for Claude Code to build until an outlet is
+actually mapped and live, at which point helping compare the pilot day's
+POS report against `/sales` is the next real task.
