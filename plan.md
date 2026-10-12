@@ -6386,3 +6386,87 @@ section 24/25's "bnade bro" precedent.
   **270/270** (no new unit tests this step — `upsertSalesDay`/
   `confirmSalesImport` are server actions with no existing dedicated test
   file to extend, same precedent as P4).
+
+**P6 — local end-to-end (2026-10-12):**
+
+- **`scripts/tmp-send-petpooja-sample.ts`** — kept permanently (same
+  precedent as `tmp-e2e-sales.ts`, `tmp-e2e-onboarding.ts`: "tmp-" in the
+  name, not actually temporary — real dev tooling, not run in CI). A real
+  HTTP sender against a *running* `next dev`, not a mock. Documented
+  precondition in its own header: `.env` needs `PETPOOJA_WEBHOOK_ENABLED=
+  "true"` and a non-empty `PETPOOJA_WEBHOOK_TOKEN`, `next dev` restarted
+  after editing `.env`.
+- **Part A — shape fidelity**: four payloads matching the PDF's four
+  documented variants (basic; discount + round-off; part payment; aggregator
+  with the capitalized `Token` key) sent to the real route, each verified as
+  exactly one correctly-mapped `PosOrder` row by direct DB read — the same
+  field mappings P2's unit tests already proved at the pure-parser level,
+  now proved again through the real HTTP route + auth + DB write.
+- **Part B — synthetic batch, ~200 bills over 3 real (safely-past) days**:
+  every cause -> effect rule from the "Webhook route rules" section, each
+  checked against an **independently hand-computed** expected total (built
+  up in the script's own `Map`, never read back from the app's aggregation
+  code):
+  - A duplicate bill (identical payload sent twice) — `revision` stayed `0`,
+    exactly one `PosOrder` row, no double-counting.
+  - A cancel (Success, then resent as Cancelled only after every other bill
+    for that day was already in) — dropped out of the `SUCCESS`-only
+    aggregate and the hand-calc exactly.
+  - A late bill — dated for the *oldest* of the three days but physically
+    sent *last*, after both later days were fully processed — still landed
+    on the correct day's `SalesDay`, proving recompute doesn't care about
+    arrival order, only `businessDate`.
+  - A leak-check bill carrying a full `Customer` block, `comment`, and the
+    real token value — checked **across the whole database**, not just this
+    project's rows (`PosWebhookEvent` has no project scope at all): none of
+    the customer's name, phone, comment text, or the token string appear
+    anywhere in any `PosOrder` or `PosWebhookEvent` row. Zero
+    `PosWebhookEvent` rows were created at all (every one of the ~200 bills
+    ingested cleanly — no FAILED/IGNORED_UNKNOWN_OUTLET noise).
+  - `SalesDay.grossSales`/`netSales`/`orders`/`source` for all three days
+    matched the hand-calc exactly, read directly from the DB (not the UI).
+- **Real browser, real role logins** (Playwright, `chromium.launch()` driven
+  directly — same pattern as `tmp-e2e-sales.ts`, not the Playwright test
+  runner): logged in as the real seeded Admin, confirmed `/sales` shows the
+  "Live from POS" banner and the exact hand-calculated gross figure for each
+  of the three days in the Recent Days table; confirmed `/admin/pos` is
+  reachable (200) and lists the throwaway `restID`. Logged out, logged in as
+  a fresh throwaway `FRANCHISEE` (direct Prisma insert, same "dedicated
+  throwaway user, not a shared seed account" precedent as `tmp-e2e-sales.ts`
+  — a seed account could carry unrelated onboarding-redirect state from
+  other e2e scripts): confirmed they land on their own store with the same
+  hand-calc'd number, confirmed a direct URL to a *different* real project's
+  `/sales` 404s (**franchisee of store A cannot see store B**, the literal
+  ask), and confirmed `/admin/pos` bounces them away entirely (**refused to
+  non-Admins**, the literal ask).
+- **Every artifact deleted afterward**, in a `finally` that runs regardless
+  of where an earlier check failed (the exact discipline `tmp-e2e-sales.ts`'s
+  own module comment describes adopting after a real leftover-data
+  incident): the throwaway project (cascades its `PosOrder` and `SalesDay`
+  rows via the existing `onDelete: Cascade` FKs), the throwaway franchisee
+  user, and an explicit safety-net delete of any `PosWebhookEvent` row for
+  the test `restID` (not expected to exist, since the DB check above already
+  confirmed zero — belt and suspenders). The script's own final checks
+  re-query the DB after cleanup and assert all four are gone.
+- **First full run: 56/56 checks passed**, no failures to debug.
+- **Found and fixed a real, unrelated test-fragility bug this step
+  surfaced**: setting `PETPOOJA_WEBHOOK_TOKEN` in the local `.env` (this
+  step's own precondition) broke an *existing* P3 unit test —
+  "answers 503 … when neither secret is configured" — because that test
+  called `vi.unstubAllEnvs()` expecting it to reveal an *unset* env var, but
+  unstubbing only reverts to whatever the real `.env` on the machine actually
+  contains, which was no longer empty. Fixed by stubbing both vars to an
+  explicit empty string instead of unstubbing — deterministic regardless of
+  whatever happens to be in any given machine's `.env`. This was a latent
+  bug in the P3 test from the day it was written, just not yet triggered;
+  worth knowing about since the same `.env`-dependent-unstub pattern could
+  bite again elsewhere.
+- **`.env`**: `PETPOOJA_WEBHOOK_TOKEN`/`PETPOOJA_WEBHOOK_PATH_SECRET`/
+  `PETPOOJA_WEBHOOK_ENABLED` added locally (gitignored, never committed) so
+  this script has something to run against; `ENABLED` reverted to `"false"`
+  immediately after the verification run, preserving the documented
+  off-by-default posture for this machine's ordinary `next dev` use.
+- **Verified**: `tsc --noEmit` clean, `eslint .` clean (same 8 pre-existing
+  warnings, 0 new, 0 errors — including the new script itself), `vitest run`
+  — **270/270** (after the one test fix above; no new unit tests added by
+  this step itself, which is an e2e script, not a unit-testable module).

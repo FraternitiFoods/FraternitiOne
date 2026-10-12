@@ -92,7 +92,13 @@ async function send(payload: unknown) {
 
 describe("processPetpoojaWebhook — config and auth", () => {
   it("answers 503 and touches no table when neither secret is configured", async () => {
-    vi.unstubAllEnvs();
+    // Explicit empty-string stubs, not vi.unstubAllEnvs() — unstubbing only
+    // reverts to whatever the real .env on this machine happens to contain
+    // (which may well be a real, non-empty PETPOOJA_WEBHOOK_TOKEN for local
+    // manual testing against next dev, e.g. scripts/tmp-send-petpooja-sample.ts's
+    // own precondition) rather than reliably "unset".
+    vi.stubEnv("PETPOOJA_WEBHOOK_TOKEN", "");
+    vi.stubEnv("PETPOOJA_WEBHOOK_PATH_SECRET", "");
     const result = await send(makePayload());
     expect(result.status).toBe(503);
     expect(result.body.outcome).toBe("MISCONFIGURED");
