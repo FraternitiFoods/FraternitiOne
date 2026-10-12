@@ -196,6 +196,10 @@ export async function confirmSalesImport(projectId: string, formData: FormData):
           netSales: row.netSalesPaise,
           orders: row.orders,
           source: "CSV",
+          // plan.md section 26 P5: same "my number is the truth" pin as the
+          // manual-edit path — only reached for rows that are actually
+          // new/changed (the unchanged-row branch above `continue`s first).
+          isPinned: true,
           createdById: user.id,
           updatedById: user.id,
         },
@@ -204,6 +208,7 @@ export async function confirmSalesImport(projectId: string, formData: FormData):
           netSales: row.netSalesPaise,
           orders: row.orders,
           source: "CSV",
+          isPinned: true,
           updatedById: user.id,
         },
       });

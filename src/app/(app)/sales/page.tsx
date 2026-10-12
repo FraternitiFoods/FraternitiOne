@@ -60,6 +60,7 @@ export default async function SalesPage(props: PageProps<"/sales">) {
         brand: true,
         location: true,
         franchiseeId: true,
+        petpoojaRestId: true,
         onboarding: { select: { salesOwnerId: true } },
       },
     });
@@ -132,6 +133,7 @@ type SalesProject = {
   brand: string;
   location: string;
   franchiseeId: string;
+  petpoojaRestId: string | null;
   onboarding: { salesOwnerId: string } | null;
 };
 
@@ -143,6 +145,16 @@ async function renderSalesPage(user: Awaited<ReturnType<typeof requireUser>>, pr
     where: { projectId: project.id },
     orderBy: { date: "desc" },
   });
+
+  // plan.md section 26 P5: "a 'Live from POS · last bill hh:mm' line" — only
+  // worth a query at all once this store has been mapped to an outlet.
+  const lastBill = project.petpoojaRestId
+    ? await db.posOrder.findFirst({
+        where: { projectId: project.id },
+        orderBy: { receivedAt: "desc" },
+        select: { receivedAt: true },
+      })
+    : null;
 
   const now = new Date();
   const rowsLike: SalesDayLike[] = rows.map((r) => ({
@@ -195,6 +207,14 @@ async function renderSalesPage(user: Awaited<ReturnType<typeof requireUser>>, pr
         }
       />
 
+      {lastBill && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />
+          Live from POS · last bill{" "}
+          {lastBill.receivedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+        </p>
+      )}
+
       {rows.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -213,6 +233,11 @@ async function renderSalesPage(user: Awaited<ReturnType<typeof requireUser>>, pr
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <PeriodCard label="Last Month" totals={periods.lastMonth} />
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Gross = core bill total before discount. Net = core total minus discount. AOV = net ÷ orders.{" "}
+            <span className="italic">These definitions are unconfirmed against a real POS report.</span>
+          </p>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
@@ -284,7 +309,17 @@ async function renderSalesPage(user: Awaited<ReturnType<typeof requireUser>>, pr
                     const aov = computeAovPaise(row.netSales, row.orders);
                     return (
                       <TableRow key={row.id}>
-                        <TableCell className="whitespace-nowrap text-xs">{formatDate(row.date)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {formatDate(row.date)}
+                          {row.isPinned && (
+                            <span
+                              className="ml-1.5 inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                              title="Pinned — a manual edit or CSV import set this day's number; new POS bills still arrive but don't change it."
+                            >
+                              Pinned
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs">{formatPaiseAsRupees(row.grossSales)}</TableCell>
                         <TableCell className="text-xs">{formatPaiseAsRupees(row.netSales)}</TableCell>
                         <TableCell className="text-xs">{row.orders}</TableCell>

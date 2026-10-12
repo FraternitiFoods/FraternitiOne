@@ -81,6 +81,10 @@ export async function upsertSalesDay(
         netSales: validated.netSalesPaise,
         orders: validated.orders,
         source: "MANUAL",
+        // plan.md section 26 P5: a manual edit is the Admin saying "my
+        // number is the truth" — the webhook's recompute never overwrites
+        // a pinned day again (new bills still arrive, just don't change it).
+        isPinned: true,
         createdById: user.id,
         updatedById: user.id,
       },
@@ -89,6 +93,7 @@ export async function upsertSalesDay(
         netSales: validated.netSalesPaise,
         orders: validated.orders,
         source: "MANUAL",
+        isPinned: true,
         updatedById: user.id,
       },
     });

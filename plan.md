@@ -6322,3 +6322,67 @@ section 24/25's "bnade bro" precedent.
   warnings, 0 new, 0 errors), `vitest run` — still 270/270 (no new unit tests
   this step — `/admin/pos` is a server-rendered list/dialog page, same "no
   dedicated test file" precedent as `/admin/esign-events`'s own page.tsx).
+
+**P5 — `/sales` small additions + pin on manual/CSV edit (2026-10-12):**
+
+- **`src/app/(app)/sales/page.tsx`**, three additions, nothing else about the
+  page changed:
+  1. **"Live from POS · last bill hh:mm"** — a one-line banner (green dot +
+     text) shown whenever this project has a `petpoojaRestId` *and* at least
+     one `PosOrder` has ever arrived (`db.posOrder.findFirst`, only queried
+     at all when `petpoojaRestId` is set, to avoid the extra query for every
+     non-mapped store). "Last bill" is the most recent bill this store has
+     *ever* received, not scoped to whichever day is on screen — read
+     literally from the plan's own wording, which describes one banner, not
+     a per-row timestamp.
+  2. **Gross/Net help text** — one `<p>` under the period cards, in plain
+     language (no section-number references — this is user-facing, not a
+     code comment): "Gross = core bill total before discount. Net = core
+     total minus discount. AOV = net ÷ orders." plus an italicized
+     "unconfirmed against a real POS report" caveat, per NOT DECIDED #1.
+  3. **Pinned-day marker** — a small amber "Pinned" badge next to the date in
+     the Recent Days table wherever `row.isPinned` is true (the query already
+     selects every column, so no query change was needed for this one).
+- **Pin-on-write**: `isPinned: true` added to both the `create` and `update`
+  branches of `upsertSalesDay` (`sales/actions.ts`) and `confirmSalesImport`
+  (`sales/import/actions.ts`). Deliberately unconditional — not "only if this
+  day was previously an API day" — because pinning a day the webhook was
+  never going to touch anyway (no outlet mapped, or before `posLiveFrom`) is
+  a harmless no-op, and checking `source === "API"` first would add a branch
+  for no behavioral difference. `confirmSalesImport`'s unchanged-row branch
+  (`continue`s before reaching either create/update) correctly never pins a
+  row that wasn't actually written — consistent with the plan's own
+  "idempotent, no churn" rule for that path.
+- **Browser-checked**: started `next dev`, logged in as Admin via the same
+  cookie-jar `curl` session as P4. Direct-Prisma seed (a throwaway script,
+  deleted immediately after — no app code imported into it, since
+  `webhook-processor.ts`'s `"server-only"` import throws outside Next's own
+  build/runtime, confirmed the hard way on the first attempt) gave one
+  project a `petpoojaRestId`, one `PosOrder` for today, an API-sourced
+  `SalesDay` for today, and a `MANUAL`-sourced pinned `SalesDay` three days
+  back. `/sales?project=...` rendered all three additions correctly — "Live
+  from POS · last bill 02:13 pm", the gross/net caveat text, and the amber
+  "Pinned" badge — confirmed by grepping the actual response body, not just
+  trusting the code. `/admin/pos` correctly showed the newly-mapped
+  `tmp-demo-rest` outlet and, just as correctly, showed **no** "pinned day
+  with new bills" row for the pinned day — exactly right, since the seed
+  never added a bill to that specific day after its pin, so there was
+  nothing to flag; a deliberately-crafted "pin, then a late bill arrives"
+  fixture is P6's job, not this quick check's. All demo rows deleted and
+  `petpoojaRestId`/`posLiveFrom` reset to `null` afterward, verified back to
+  the pre-check state (2 projects, 0 mapped, 0 `PosOrder`, 0 pinned days)
+  before moving on.
+- **Process note**: force-killing the `next dev` process tree
+  (`Stop-Process -Force`) after this check left `.next/dev/types/*.ts`
+  truncated mid-write, which then made `tsc --noEmit` fail with syntax
+  errors in Next's own generated route-typing files — not a real code
+  defect. Fixed with `rm -rf .next && npx next typegen` (regenerates those
+  files cleanly without a full `next build`). Noting this so a future
+  session recognizes the symptom (`.next/dev/types/routes.d.ts` syntax
+  errors right after a dev-server session) instead of chasing it as a real
+  TypeScript bug.
+- **Verified**: `tsc --noEmit` clean (after the typegen fix above), `eslint .`
+  clean (same 8 pre-existing warnings, 0 new, 0 errors), `vitest run` — still
+  **270/270** (no new unit tests this step — `upsertSalesDay`/
+  `confirmSalesImport` are server actions with no existing dedicated test
+  file to extend, same precedent as P4).
