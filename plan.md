@@ -6116,3 +6116,119 @@ section 24/25's "bnade bro" precedent.
   `_event` unused in a destructure — same intentional-underscore pattern as
   7 pre-existing warnings elsewhere in the repo, not an error), `vitest run`
   — 250/250 passing (226 pre-existing + 24 new), no regressions.
+
+**P3 — ingestion + webhook route (2026-10-12):**
+
+- **`src/app/api/webhooks/petpooja/route.ts`** and **`.../petpooja/[secret]/route.ts`**:
+  two thin route files, not one — Next.js's app router happily serves a
+  static path and a deeper dynamic path side by side, which is exactly what
+  NOT DECIDED #4 ("Token vs URL secret — use both when Petpooja can send a
+  token; URL secret alone if it cannot") needs: Petpooja is given whichever
+  one URL actually fits them, `/api/webhooks/petpooja` or
+  `/api/webhooks/petpooja/<secret>`. Both do the same three things —
+  `PETPOOJA_WEBHOOK_ENABLED !== "true"` ⇒ 404 (so a dev DB never ingests a
+  real bill), read the raw text body, hand off to the processor — and
+  nothing else; no `proxy.ts` edit needed, confirmed again (P0's finding
+  holds for the new `[secret]` path too, same blanket `/api` exclusion).
+- **`src/lib/pos/webhook-processor.ts`** (`processPetpoojaWebhook`, DB-touching,
+  `server-only`): same thin-route-plus-shared-processor shape as
+  `src/lib/esign/webhook-processor.ts`. Order of work, exactly as the plan's
+  "Webhook route rules" lists it:
+  1. **Size guard** — a body over 1 MB is rejected (413) before it's ever
+     parsed or touched the DB. Not explicitly asked for in section 26, but a
+     public unauthenticated POST endpoint accepting an unbounded body is a
+     textbook resource-exhaustion opening (CLAUDE.md security-is-not-optional
+     + edge-case guidance) — a one-line guard, not scope creep.
+  2. **Config check** — neither `PETPOOJA_WEBHOOK_TOKEN` nor
+     `PETPOOJA_WEBHOOK_PATH_SECRET` set ⇒ 503, touches no table.
+  3. **Auth** — JSON-parses the body just far enough to read `token`/`Token`
+     (both spellings, NOT DECIDED #4), constant-time-compares it and/or the
+     URL's `secret` segment against the two env vars, using the same
+     length-check-then-`timingSafeEqual` pattern already used twice in
+     `src/lib/esign/{mock,leegality}-provider.ts` (not reimplemented, copied).
+     Failure ⇒ 401, `REJECTED_AUTH`, **no payload, no restId** — and
+     rate-limited: at most one `PosWebhookEvent` row per rolling 60-second
+     window regardless of how many bad requests arrive, satisfying rule 2's
+     "so an attacker cannot fill the table" without standing up any new
+     infrastructure (Redis, etc.) — it's one extra indexed read against the
+     `@@index([outcome, receivedAt])` index P1 already added, checking
+     whether the most recent `REJECTED_AUTH` row is younger than 60s.
+  4. **Malformed body** (auth passed but the body wasn't valid JSON) ⇒ 400,
+     `FAILED`, no payload (there's nothing safe or useful to store).
+  5. **Parse** via `parsePetpoojaPayload` (P2) — `ignored_event` ⇒ 200,
+     nothing stored; `failed` ⇒ 400, `FAILED` with a **scrubbed** payload.
+  6. **Outlet lookup** — `FranchiseProject.petpoojaRestId` — no match ⇒ 200,
+     `IGNORED_UNKNOWN_OUTLET` with a scrubbed payload and the `restId` (so
+     `/admin/pos`, in P4, can show it and offer to map it).
+  7. **Ingest** (one `$transaction`): upsert `PosOrder` on
+     `restId_orderId` (Prisma's own compound-unique name, not a custom one);
+     `revision` only increments when `hasOrderChanged` finds an actual
+     difference across every stored column (so a byte-identical resend is a
+     true no-op on that counter) — then recompute `SalesDay` for the bill's
+     `businessDate` via one indexed `aggregate()` (`Σ coreTotal`,
+     `Σ (coreTotal − discountTotal)`, `count`) over `SUCCESS` rows only,
+     never loading rows into memory (rule: "one indexed aggregate query per
+     bill is fine… do not load all orders into memory" — the
+     `@@index([projectId, businessDate, status])` from P1 is exactly what
+     this query hits). Three early-outs before that aggregate ever runs:
+     `posLiveFrom` unset, the bill's day is before `posLiveFrom`, or that
+     `SalesDay` row is `isPinned` — all three leave the `PosOrder` row
+     written but `SalesDay` untouched, per the plan's own wording for each
+     case. One addition beyond the literal spec: if a resend's parsed
+     `businessDate` itself differs from what's already stored (a corrected
+     `created_on`), the *old* day is recomputed too — a few lines, directly
+     in service of rule 6 ("`SalesDay` must always equal a direct `SUM`… if
+     the two ever disagree, the recompute is the bug"), not a hypothetical.
+  8. **DB error** inside the transaction ⇒ 500, with a best-effort `FAILED`
+     event logged outside the now-rolled-back transaction (same "record it
+     separately since the transaction that would have logged it no longer
+     exists" shape as the esign processor's own catch block).
+- **Scrubbing**: `scrubPayloadForStorage` (`structuredClone` first, since the
+  caller still holds the original parsed object) deletes the top-level
+  `token`/`Token` and `properties.Customer`/`Tax`/`Discount`/`OrderItem` and
+  `properties.Order.comment`/`biller`/`assignee` before anything is ever
+  written to `PosWebhookEvent.payload` — the one place a payload is stored at
+  all. `isRecord` exported from `petpooja-parse.ts` rather than re-implemented
+  here.
+- **Two real bugs caught by writing the tests, not by inspection — both
+  fixed before moving on:**
+  1. `recordRejectedAuth`'s 60-second rate-limit window compared against real
+     `Date.now()` instead of the same injectable `now` clock the parser's
+     future-date check already uses. Harmless in production (both are real
+     wall-clock there), but it meant the rate-limit path couldn't be tested
+     with a fixed clock — fixed by threading `now` through from
+     `processPetpoojaWebhook`'s own `options.now ?? new Date()` into
+     `recordRejectedAuth(now)` too, so the whole request uses exactly one
+     clock reading, not two independent ones.
+  2. My own first draft of the "resend an unchanged bill" test used
+     rupee-scale numbers (`1000`) for `PosOrder.coreTotal`/`total`, which are
+     integer **paise** — so it wasn't actually testing "unchanged" at all
+     (100000 ≠ 1000, `hasOrderChanged` correctly said "changed", test was
+     wrong, not the code). A reminder that the paise discipline has to be
+     respected in test fixtures too, not just production code paths.
+- **Also found while regenerating the Prisma client to check types**: this
+  repo installs via pnpm, and the top-level `node_modules/.prisma/client` is
+  a stale, irrelevant artifact (it's not what `@prisma/client` actually
+  resolves to under pnpm's isolated layout) — the real generated client
+  lives nested at
+  `node_modules/.pnpm/@prisma+client@<version>_.../node_modules/.prisma/client`,
+  and it *was* correctly regenerated back in P1. Cost some time double-
+  checking the wrong path; noting it here so a future session doesn't repeat
+  that.
+- **`src/lib/pos/webhook-processor.test.ts`** (20 tests, mocked `db`/`tx`,
+  same pattern as `webhook-processor.test.ts`'s own `mockDb`/`mockTx`): the
+  build order's required list — duplicate bill (unchanged resend keeps
+  revision, still recomputes idempotently), cancel after success (excluded
+  from the `SUCCESS`-only aggregate), bill before `posLiveFrom` (and the
+  `posLiveFrom: null` variant), pinned day (not overwritten, `PosOrder` still
+  written), unknown outlet, wrong token, malformed body, future date — plus
+  misconfigured (neither secret set), the rate-limit behaviour itself, both
+  auth mechanisms individually (path secret alone, body token alone, the
+  capitalized `Token` spelling), the oversized-body guard, a new bill's
+  revision starting at 0, a changed resend bumping it, and a DB error during
+  ingestion answering 500 with a best-effort logged event.
+- **Verified**: `tsc --noEmit` clean, `eslint .` clean (same 8 warnings as
+  P2's log — 7 pre-existing plus P2's own `_event` one, nothing new from P3,
+  0 errors), `vitest run` — **270/270 passing** (226 pre-existing + 24 from
+  P2 + 20 new from P3), no regressions. No Playwright pass yet — the route
+  exists but there's still no UI pointing at it (`/admin/pos` is P4).

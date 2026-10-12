@@ -61,7 +61,8 @@ export type ParsePetpoojaOptions = {
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** Exported for reuse by webhook-processor.ts's payload-scrubbing (rule 3) — same object-ness check, not re-implemented there. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
