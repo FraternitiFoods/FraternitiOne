@@ -56,20 +56,29 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true, skipped: "no-recipients-configured" });
   }
 
-  const summary = await getBoardSummary();
-  const pdf = await generateBoardDigestPdf(summary);
-  const appUrl = process.env.APP_URL || "http://localhost:3000";
+  try {
+    const summary = await getBoardSummary();
+    const pdf = await generateBoardDigestPdf(summary);
+    const appUrl = process.env.APP_URL || "http://localhost:3000";
 
-  for (const to of recipients) {
-    // Each send is independently logged/never-throws (notify.ts, P1-14) — one
-    // bad address in the list can't block the rest.
-    await sendOnboardingEmail({
-      key: "board_digest",
-      to,
-      vars: { weekLabel: weekStartKey, link: `${appUrl}/board` },
-      attachments: [{ filename: `board-summary-${weekStartKey}.pdf`, content: pdf }],
-    });
+    for (const to of recipients) {
+      // Each send is independently logged/never-throws (notify.ts, P1-14) —
+      // one bad address in the list can't block the rest.
+      await sendOnboardingEmail({
+        key: "board_digest",
+        to,
+        vars: { weekLabel: weekStartKey, link: `${appUrl}/board` },
+        attachments: [{ filename: `board-summary-${weekStartKey}.pdf`, content: pdf }],
+      });
+    }
+
+    return NextResponse.json({ ok: true, weekStart: weekStartKey, recipients: recipients.length });
+  } catch (err) {
+    // The idempotency row was already written above — without deleting it
+    // here, a failure in summary/PDF generation permanently blocks any
+    // retry for this week behind the unique constraint on weekStart.
+    await db.boardDigestRun.delete({ where: { weekStart } }).catch(() => {});
+    console.error(`Board digest failed for week ${weekStartKey}:`, err);
+    return NextResponse.json({ ok: false, error: "Board digest failed" }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, weekStart: weekStartKey, recipients: recipients.length });
 }

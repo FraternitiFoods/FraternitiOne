@@ -104,11 +104,25 @@ async function recordOnboardingFile(
   });
 
   after(async () => {
-    const scan = await getMalwareScanner().scan(buffer, input.contentType);
-    await db.onboardingFile.update({
-      where: { id: file.id },
-      data: { scanStatus: scan.status, scanError: scan.error },
-    });
+    try {
+      const scan = await getMalwareScanner().scan(buffer, input.contentType);
+      await db.onboardingFile.update({
+        where: { id: file.id },
+        data: { scanStatus: scan.status, scanError: scan.error },
+      });
+    } catch (err) {
+      // after() runs post-response with nothing watching it — without this,
+      // a scan or DB failure here leaves the file stuck at PENDING forever,
+      // silently blocking KYC/payment review (the download route hard-blocks
+      // on scanStatus !== "CLEAN"). Mark it ERROR so it's visible instead.
+      console.error(`Malware scan failed for OnboardingFile ${file.id}:`, err);
+      await db.onboardingFile
+        .update({
+          where: { id: file.id },
+          data: { scanStatus: "ERROR", scanError: err instanceof Error ? err.message : "Scan failed." },
+        })
+        .catch((updateErr) => console.error(`Failed to record scan ERROR for OnboardingFile ${file.id}:`, updateErr));
+    }
   });
 
   return file;

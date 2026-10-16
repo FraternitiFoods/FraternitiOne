@@ -262,7 +262,12 @@ export async function confirmSalesImport(projectId: string, formData: FormData):
     });
 
     return { inserted, updated, rejected: parsed.rejectedRows.length };
-  });
+  },
+  // Up to MAX_ROWS sequential row upserts can run past Prisma's default 5s
+  // interactive-transaction timeout on a large import — same fix as
+  // projects/actions.ts and esign/webhook-processor.ts for the identical
+  // issue.
+  { timeout: 20000 });
 
   return { ok: true, ...result };
 }

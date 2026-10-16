@@ -93,11 +93,24 @@ async function uploadAndCreateDocument(
   });
 
   after(async () => {
-    const scan = await getMalwareScanner().scan(buffer, params.file.type);
-    await db.document.update({
-      where: { id: document.id },
-      data: { scanStatus: scan.status, scanError: scan.error },
-    });
+    try {
+      const scan = await getMalwareScanner().scan(buffer, params.file.type);
+      await db.document.update({
+        where: { id: document.id },
+        data: { scanStatus: scan.status, scanError: scan.error },
+      });
+    } catch (err) {
+      // Same reasoning as the onboarding KYC scan path — after() has no
+      // watcher, so an unguarded failure here leaves the document stuck at
+      // PENDING forever with no trace of what happened.
+      console.error(`Malware scan failed for Document ${document.id}:`, err);
+      await db.document
+        .update({
+          where: { id: document.id },
+          data: { scanStatus: "ERROR", scanError: err instanceof Error ? err.message : "Scan failed." },
+        })
+        .catch((updateErr) => console.error(`Failed to record scan ERROR for Document ${document.id}:`, updateErr));
+    }
   });
 
   return document;

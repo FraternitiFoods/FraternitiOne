@@ -54,15 +54,20 @@ export async function login(
     // an unknown email still gets the same generic message (don't leak which
     // case it was), but there's no row to increment a counter on.
     if (user && user.isActive) {
-      const attempts = user.loginFailedAttempts + 1;
-      await db.user.update({
+      // Atomic DB-level increment, not read-then-write — concurrent wrong
+      // guesses (a scripted brute-force attempt) can't race and undercount
+      // toward the lockout threshold.
+      const updated = await db.user.update({
         where: { id: user.id },
-        data: {
-          loginFailedAttempts: attempts,
-          loginLockedUntil:
-            attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null,
-        },
+        data: { loginFailedAttempts: { increment: 1 } },
+        select: { loginFailedAttempts: true },
       });
+      if (updated.loginFailedAttempts >= MAX_FAILED_ATTEMPTS) {
+        await db.user.update({
+          where: { id: user.id },
+          data: { loginLockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) },
+        });
+      }
     }
     return { error: "Incorrect email or password." };
   }

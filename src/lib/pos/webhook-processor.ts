@@ -174,6 +174,14 @@ export async function aggregateAndWriteSalesDay(
   projectId: string,
   dateValue: Date
 ): Promise<void> {
+  // Postgres advisory lock scoped to this transaction, keyed on (projectId,
+  // date) — without it, two webhook deliveries landing close together for
+  // the same outlet/day each aggregate a snapshot that misses the other's
+  // not-yet-committed PosOrder insert, and whichever commits last silently
+  // overwrites SalesDay with a total that's missing the other's sales.
+  // Released automatically at transaction end.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${projectId}:${dateValue.toISOString()}`})::bigint)`;
+
   const agg = await tx.posOrder.aggregate({
     where: { projectId, businessDate: dateValue, status: "SUCCESS" },
     _sum: { coreTotal: true, discountTotal: true },

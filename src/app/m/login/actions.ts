@@ -53,18 +53,23 @@ export async function loginSupervisor(
   const valid = await verifyPin(pin, user.pinHash);
 
   if (!valid) {
-    const attempts = user.pinFailedAttempts + 1;
-    const locking = attempts >= LOCKOUT_THRESHOLD;
-    await db.user.update({
+    // Atomic DB-level increment, not read-then-write — concurrent wrong PIN
+    // guesses can't race and undercount toward the lockout threshold.
+    const updated = await db.user.update({
       where: { id: user.id },
-      data: {
-        // Reset to 0 the moment a lock is applied, so the supervisor gets a
-        // fresh 5 attempts once the 15-minute window passes, rather than
-        // re-locking on their very next try.
-        pinFailedAttempts: locking ? 0 : attempts,
-        pinLockedUntil: locking ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null,
-      },
+      data: { pinFailedAttempts: { increment: 1 } },
+      select: { pinFailedAttempts: true },
     });
+    const locking = updated.pinFailedAttempts >= LOCKOUT_THRESHOLD;
+    if (locking) {
+      // Reset to 0 the moment a lock is applied, so the supervisor gets a
+      // fresh 5 attempts once the 15-minute window passes, rather than
+      // re-locking on their very next try.
+      await db.user.update({
+        where: { id: user.id },
+        data: { pinFailedAttempts: 0, pinLockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) },
+      });
+    }
     return locking
       ? { error: "Too many wrong attempts. Try again in a few minutes." }
       : genericError;

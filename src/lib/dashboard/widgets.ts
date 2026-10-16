@@ -2,8 +2,9 @@ import "server-only";
 
 import type { ComplaintStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { sumSalesDays, type SalesDayLike, type SalesTotals } from "@/lib/sales/aggregate";
-import { toUtcDateKey } from "@/lib/sales/parse-csv";
+import { monthKeyOf, sumSalesDays, type SalesDayLike, type SalesTotals } from "@/lib/sales/aggregate";
+import { dateKeyToDate, toUtcDateKey } from "@/lib/sales/parse-csv";
+import { istTodayKey } from "@/lib/pos/petpooja-parse";
 
 /**
  * plan.md section 20B — dashboard widgets (Franchisee/Sales/Admin rows on
@@ -18,8 +19,10 @@ import { toUtcDateKey } from "@/lib/sales/parse-csv";
  * between the Franchisee, Sales and Admin/Management views. It does not
  * modify, and is not imported by, src/lib/sales/* or src/app/(app)/sales/*
  * (plan.md section 20's boundary) — it only reuses sales' own pure
- * aggregation helpers (sumSalesDays, toUtcDateKey) against a fresh SalesDay
- * query, the same read-only access any other report would have.
+ * aggregation helpers (sumSalesDays, monthKeyOf, dateKeyToDate) and the POS
+ * layer's istTodayKey (same IST business-day clock as aggregate.ts) against
+ * a fresh SalesDay query, the same read-only access any other report would
+ * have.
  */
 
 /** Same "open" definition already used by projects/[id]/page.tsx's complaint stat card. */
@@ -44,8 +47,11 @@ export async function getRecentEmails(onboardingId: string, take = 5) {
 }
 
 /**
- * Sums SalesDay rows for the current calendar month (UTC, matching the
- * @db.Date column's own storage convention — see parse-csv.ts's toUtcDateKey).
+ * Sums SalesDay rows for the current calendar month, where "current" is the
+ * IST business month (same clock as aggregate.ts's computePeriodCards) —
+ * SalesDay.date is IST-business-day-keyed even though it's stored as a UTC
+ * @db.Date value, so the month boundary must be derived from IST "now", not
+ * the server's UTC calendar month.
  * Pass a projectId to scope to one store (Franchisee/Sales widgets); omit it
  * for the portfolio-wide Admin/Management figure. Queries only this month's
  * rows rather than a full year of history, since a widget only needs one
@@ -53,8 +59,9 @@ export async function getRecentEmails(onboardingId: string, take = 5) {
  */
 export async function getSalesThisMonth(projectId?: string): Promise<SalesTotals> {
   const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const thisMonthKey = monthKeyOf(istTodayKey(now));
+  const monthStart = dateKeyToDate(`${thisMonthKey}-01`);
+  const nextMonthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
 
   const rows = await db.salesDay.findMany({
     where: {

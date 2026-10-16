@@ -14,6 +14,7 @@ const mockTx = {
     findUnique: vi.fn(),
     upsert: vi.fn(),
   },
+  $executeRaw: vi.fn(),
 };
 
 const mockDb = {

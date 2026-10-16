@@ -104,11 +104,24 @@ export async function createComplaint(
       const buffer = attachmentBuffer;
       const mimeType = attachment.mimeType;
       after(async () => {
-        const scan = await getMalwareScanner().scan(buffer, mimeType);
-        await db.complaint.update({
-          where: { id: complaint.id },
-          data: { attachmentScanStatus: scan.status, attachmentScanError: scan.error },
-        });
+        try {
+          const scan = await getMalwareScanner().scan(buffer, mimeType);
+          await db.complaint.update({
+            where: { id: complaint.id },
+            data: { attachmentScanStatus: scan.status, attachmentScanError: scan.error },
+          });
+        } catch (err) {
+          // Same reasoning as the onboarding KYC scan path — after() has no
+          // watcher, so an unguarded failure here leaves the attachment
+          // stuck at PENDING forever with no trace of what happened.
+          console.error(`Malware scan failed for Complaint ${complaint.id} attachment:`, err);
+          await db.complaint
+            .update({
+              where: { id: complaint.id },
+              data: { attachmentScanStatus: "ERROR", attachmentScanError: err instanceof Error ? err.message : "Scan failed." },
+            })
+            .catch((updateErr) => console.error(`Failed to record scan ERROR for Complaint ${complaint.id}:`, updateErr));
+        }
       });
     }
 
