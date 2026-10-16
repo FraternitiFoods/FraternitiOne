@@ -127,9 +127,11 @@ export async function createProjectWithSeedTasks(
       });
     }
 
-    // See createProject's own comment (same code, moved here): createManyAndReturn
-    // + createMany keeps this to 2 round trips instead of ~1,450 sequential ones,
-    // comfortably inside Prisma's default 5s interactive-transaction timeout.
+    // createManyAndReturn + createMany keeps this to 2 round trips instead of
+    // ~1,450 sequential ones. Still measured 5.2-5.5s against the production
+    // DB — over Prisma's default 5s interactive-transaction timeout — so both
+    // callers (projects/actions.ts, esign/webhook-processor.ts) now pass an
+    // explicit longer `timeout` to their `$transaction` call.
     const createdTasks = await tx.task.createManyAndReturn({
       data: seedTaskInputs.map((t) => ({
         projectId: created.id,

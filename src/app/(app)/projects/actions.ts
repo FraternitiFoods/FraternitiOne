@@ -53,20 +53,27 @@ export async function createProject(
     return { error: "Target opening date is invalid." };
   }
 
-  const project = await db.$transaction(async (tx) => {
-    return createProjectWithSeedTasks(tx, {
-      brand: data.brand,
-      format: data.format,
-      location: data.location,
-      franchiseeId: data.franchiseeId,
-      ownerId: data.ownerId,
-      targetOpening,
-      nextAction: data.nextAction,
-      health: ProjectHealth.GREEN,
-      actor: user,
-      seedTasks: !data.skipSeeding,
-    });
-  });
+  const project = await db.$transaction(
+    async (tx) => {
+      return createProjectWithSeedTasks(tx, {
+        brand: data.brand,
+        format: data.format,
+        location: data.location,
+        franchiseeId: data.franchiseeId,
+        ownerId: data.ownerId,
+        targetOpening,
+        nextAction: data.nextAction,
+        health: ProjectHealth.GREEN,
+        actor: user,
+        seedTasks: !data.skipSeeding,
+      });
+    },
+    // Prisma's default interactive-transaction timeout (5000ms) is too tight
+    // in production: seeding the ~963 lifecycle tasks + their audit trail
+    // measured 5.2-5.5s there (see project-seed.ts), closing the transaction
+    // mid-write and 500ing every project creation (P2028).
+    { timeout: 20000 }
+  );
 
   redirect(`/projects/${project.id}`);
 }

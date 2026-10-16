@@ -193,9 +193,16 @@ export async function processEsignEvent(
 
   let outcome: { result: ProcessOutcome; notifications: PendingNotification[] };
   try {
-    outcome = await db.$transaction(async (tx) => {
-      return processWithinTransaction(tx, effectiveParsed, signatureValid, providerName, idempotencyKey, attemptIdHint);
-    });
+    outcome = await db.$transaction(
+      async (tx) => {
+        return processWithinTransaction(tx, effectiveParsed, signatureValid, providerName, idempotencyKey, attemptIdHint);
+      },
+      // When both signers complete, this also runs convertOnboardingToProject
+      // -> createProjectWithSeedTasks, which seeds ~963 lifecycle tasks + audit
+      // rows. That measured 5.2-5.5s in production, over Prisma's default 5s
+      // interactive-transaction timeout — same fix as projects/actions.ts.
+      { timeout: 20000 }
+    );
   } catch (err) {
     // A real failure partway through (e.g. B2/provider error fetching the
     // signed PDF in handleAttemptCompleted) rolls the transaction back —
