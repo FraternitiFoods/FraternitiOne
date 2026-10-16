@@ -6,6 +6,7 @@
  * rows in, returns plain numbers out.
  */
 import { toUtcDateKey } from "./parse-csv";
+import { istTodayKey } from "@/lib/pos/petpooja-parse";
 
 export type SalesDayLike = {
   date: string; // YYYY-MM-DD
@@ -61,7 +62,7 @@ export type SalesPeriodCards = {
 };
 
 export function computePeriodCards(rows: SalesDayLike[], now: Date): SalesPeriodCards {
-  const todayKey = toUtcDateKey(now);
+  const todayKey = istTodayKey(now);
   const yesterdayKey = addDays(todayKey, -1);
   const thisMonthKey = monthKeyOf(todayKey);
   const lastMonthKey = previousMonthKey(todayKey);
@@ -80,7 +81,7 @@ export type TrendPoint = { date: string; netSales: number };
 
 /** Last 30 calendar days ending today, zero-filled for days with no SalesDay row. */
 export function computeDailyTrend(rows: SalesDayLike[], now: Date, days = 30): TrendPoint[] {
-  const todayKey = toUtcDateKey(now);
+  const todayKey = istTodayKey(now);
   const byDate = new Map(rows.map((r) => [r.date, r.netSales]));
   const points: TrendPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {
@@ -94,7 +95,7 @@ export type MonthlyBar = { month: string; netSales: number };
 
 /** Jan-Dec of the current year, zero-filled for months with no rows. */
 export function computeMonthlyBars(rows: SalesDayLike[], now: Date): MonthlyBar[] {
-  const yearKey = yearKeyOf(toUtcDateKey(now));
+  const yearKey = yearKeyOf(istTodayKey(now));
   const byMonth = new Map<string, number>();
   for (const r of rows) {
     if (yearKeyOf(r.date) !== yearKey) continue;
