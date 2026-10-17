@@ -53,7 +53,7 @@ export async function sendPasswordSetupEmail(params: {
     ? "This link expires in 7 days."
     : "This link expires in 1 hour. If you didn't request this, you can ignore this email.";
 
-  await getClient().emails.send({
+  const { error } = await getClient().emails.send({
     from: getFrom(),
     to: params.to,
     subject,
@@ -65,4 +65,12 @@ export async function sendPasswordSetupEmail(params: {
       <p style="color:#666;font-size:13px;">${expiryNote}</p>
     `,
   });
+
+  // The Resend SDK resolves normally even on API-level failures (bad key,
+  // unverified domain, etc.) — it never rejects the promise. Without this
+  // check, callers' try/catch never fires and a failed send looks identical
+  // to a successful one.
+  if (error) {
+    throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
+  }
 }

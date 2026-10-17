@@ -152,7 +152,7 @@ export async function sendOnboardingEmail(params: {
     if (!client || !from) {
       throw new Error("RESEND_API_KEY / EMAIL_FROM not configured.");
     }
-    await client.emails.send({
+    const { error } = await client.emails.send({
       from,
       to: params.to,
       subject,
@@ -160,6 +160,13 @@ export async function sendOnboardingEmail(params: {
       html: body.replace(/\n/g, "<br/>"),
       ...(params.attachments ? { attachments: params.attachments } : {}),
     });
+    // The Resend SDK resolves normally even on API-level failures (bad key,
+    // unverified domain, etc.) — it never rejects the promise. Without this
+    // check, this would log "SENT" to notificationLog for a send that never
+    // actually went out.
+    if (error) {
+      throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
+    }
     await db.notificationLog.create({
       data: { templateKey: params.key, to: params.to, onboardingId, status: "SENT" },
     });
