@@ -20,12 +20,14 @@ import { computeOnboardingCompletion } from "@/lib/onboarding/completion";
 import { formatPaiseAsRupees } from "@/lib/sales/format";
 import {
   getAdminWidgets,
+  getMyDepartmentWidgets,
   getSalesThisMonth,
   getRecentEmails,
   isOpenComplaintStatus,
   OPEN_COMPLAINT_STATUS_FILTER,
 } from "@/lib/dashboard/widgets";
 import { RecentEmailsCard } from "@/components/recent-emails-card";
+import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
 import { LegacyFranchiseeHome } from "./legacy-franchisee-home";
 import type { Department, Role, TaskStatus } from "@prisma/client";
 
@@ -333,11 +335,18 @@ async function InternalDashboard({ role }: { role: Role }) {
   // today's InternalDashboard exactly as it was.
   const showAdminRow = role === "ADMIN" || role === "MANAGEMENT";
 
+  // Internal roles that own a department (LEGAL, INTERIORS, PROJECT_MANAGER,
+  // ACCOUNTS, HR, CULINARY, MARKETING, OPERATIONS) but have no dashboard of
+  // their own — ADMIN/MANAGEMENT own none (empty in DEPARTMENT_OWNERS, they
+  // get adminWidgets above instead), and KYC_REVIEWER/LOI_PREPARER/
+  // COMPANY_SIGNATORY are onboarding-step-scoped, not department-scoped.
+  const myDepartments = DEPARTMENT_OWNERS[role];
+
   // Portfolio-health counts via count() rather than fetching every project
   // row and filtering in JS — this is the default post-login landing page,
   // so it stays cheap as the number of projects grows. Run everything in
   // parallel so adding the count queries doesn't cost extra wall-clock time.
-  const [total, onTrack, atRisk, critical, recentEvents, adminWidgets] = await Promise.all([
+  const [total, onTrack, atRisk, critical, recentEvents, adminWidgets, myDeptWidgets] = await Promise.all([
     db.franchiseProject.count(),
     db.franchiseProject.count({ where: { health: "GREEN" } }),
     db.franchiseProject.count({ where: { health: "AMBER" } }),
@@ -348,6 +357,7 @@ async function InternalDashboard({ role }: { role: Role }) {
       include: { project: { select: { seq: true, brand: true, location: true } } },
     }),
     showAdminRow ? getAdminWidgets() : Promise.resolve(null),
+    myDepartments.length > 0 ? getMyDepartmentWidgets(myDepartments) : Promise.resolve(null),
   ]);
 
   const counts = { total, onTrack, atRisk, critical };
@@ -451,6 +461,22 @@ async function InternalDashboard({ role }: { role: Role }) {
               value={adminWidgets.kycQueueSize + adminWidgets.paymentQueueSize}
               caption={`${adminWidgets.kycQueueSize} KYC · ${adminWidgets.paymentQueueSize} payment`}
             />
+          </div>
+        </div>
+      )}
+
+      {myDeptWidgets && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            My Department — {myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Open Tasks"
+              value={myDeptWidgets.openTasks}
+              caption="Across all projects"
+            />
+            <StatCard label="Documents" value={myDeptWidgets.documents} caption="Across all projects" />
           </div>
         </div>
       )}

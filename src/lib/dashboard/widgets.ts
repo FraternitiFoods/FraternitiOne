@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ComplaintStatus } from "@prisma/client";
+import type { ComplaintStatus, Department } from "@prisma/client";
 import { db } from "@/lib/db";
 import { monthKeyOf, sumSalesDays, type SalesDayLike, type SalesTotals } from "@/lib/sales/aggregate";
 import { dateKeyToDate, toUtcDateKey } from "@/lib/sales/parse-csv";
@@ -125,4 +125,22 @@ export async function getAdminWidgets() {
     kycQueueSize,
     paymentQueueSize,
   };
+}
+
+/**
+ * Minimal per-role widget row for internal roles that own a department
+ * (DEPARTMENT_OWNERS, role-departments.ts) but have no bespoke dashboard of
+ * their own (everyone except Franchisee/Sales — see InternalDashboard). Scoped
+ * to Task.module/Document.category, the same fields canManageTaskModule and
+ * canManageDocumentCategory (permissions.ts) already gate write access by —
+ * this is a read-only count over the same scope, not a new access concept.
+ */
+export async function getMyDepartmentWidgets(departments: Department[]) {
+  const [openTasks, documents] = await Promise.all([
+    db.task.count({
+      where: { module: { in: departments }, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+    }),
+    db.document.count({ where: { category: { in: departments } } }),
+  ]);
+  return { openTasks, documents };
 }

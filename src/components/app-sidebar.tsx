@@ -94,7 +94,14 @@ export function AppSidebar({
   // rest of the not-yet-built Phase 2/3/4 modules. "Store Onboarding" is
   // hidden entirely (not "Soon") for roles with no stake in it — Franchisee
   // uses their own /onboarding portal instead (different sidebar).
-  const ONBOARDING_NAV_LABELS = ["Store Onboarding", "Signing"];
+  const ONBOARDING_NAV_LABELS = ["Store Onboarding"];
+
+  // "Signing" is its own, narrower queue (company countersignature only,
+  // wireframe 07) — mirrors canCompanySign(permissions.ts) exactly, not the
+  // broader ONBOARDING_ROLES list above. Previously bundled with "Store
+  // Onboarding"'s visibility, which showed Sales/KYC Reviewer/Accounts/LOI
+  // Preparer a link that immediately redirects them to /dashboard.
+  const SIGNING_VISIBLE_ROLES: Role[] = ["ADMIN", "COMPANY_SIGNATORY"];
 
   // plan.md section 20A — mirrors canViewSales(permissions.ts) exactly
   // (FRANCHISEE/SALES always have *a* store to check; ADMIN/MANAGEMENT/
@@ -113,12 +120,32 @@ export function AppSidebar({
   // store was already operating before joining the platform (isLegacyFranchisee).
   const CONSTRUCTION_NAV_LABELS = ["BOQ", "Operations"];
 
+  // BOQ/Operations are construction-trade rollups (Task.category, see
+  // ops-route.ts), not generic tools — only relevant to roles that own a
+  // build-out-adjacent department, track their own store's construction
+  // (Franchisee), or manage the sales pipeline feeding into it (Sales).
+  // Hidden entirely for every other role, same reasoning as "Sales"/"Delays"
+  // above — they can still see the same read-only progress by opening a
+  // project from Projects (the same CategoryTile grid is embedded there).
+  const CONSTRUCTION_VISIBLE_ROLES: Role[] = [
+    "ADMIN",
+    "MANAGEMENT",
+    "FRANCHISEE",
+    "SALES",
+    "PROJECT_MANAGER",
+    "INTERIORS",
+    "OPERATIONS",
+    "CULINARY",
+  ];
+
   const navItems = BASE_NAV_ITEMS.filter(
     (item) => !ONBOARDING_NAV_LABELS.includes(item.label) || ONBOARDING_ROLES.includes(role)
   )
+    .filter((item) => item.label !== "Signing" || SIGNING_VISIBLE_ROLES.includes(role))
     .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
     .filter((item) => item.label !== "Delays" || DELAYS_VISIBLE_ROLES.includes(role))
     .filter((item) => item.label !== "Board Summary" || BOARD_VISIBLE_ROLES.includes(role))
+    .filter((item) => !CONSTRUCTION_NAV_LABELS.includes(item.label) || CONSTRUCTION_VISIBLE_ROLES.includes(role))
     .filter((item) => !isLegacyFranchisee || !CONSTRUCTION_NAV_LABELS.includes(item.label))
     .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
     .concat(
