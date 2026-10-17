@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { GreetingBanner } from "@/components/greeting-banner";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DEPARTMENT_LABELS,
+  ROLE_LABELS,
   daysUntil,
   formatDate,
   formatDateTime,
@@ -50,7 +52,14 @@ export default async function DashboardPage() {
   if (user.role === "SALES") {
     return <SalesDashboard userId={user.id} />;
   }
-  return <InternalDashboard role={user.role} additionalRoles={user.additionalRoles} />;
+  return (
+    <InternalDashboard
+      role={user.role}
+      additionalRoles={user.additionalRoles}
+      name={user.name}
+      category={user.category}
+    />
+  );
 }
 
 async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
@@ -339,9 +348,13 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
 async function InternalDashboard({
   role,
   additionalRoles,
+  name,
+  category,
 }: {
   role: Role;
   additionalRoles: Role[];
+  name: string;
+  category: string | null;
 }) {
   // plan.md section 20B — ADMIN/MANAGEMENT widget row, added alongside the
   // existing portfolio-health stat row above (not replacing it). Every
@@ -358,6 +371,15 @@ async function InternalDashboard({
   // KYC_REVIEWER/LOI_PREPARER/COMPANY_SIGNATORY are onboarding-step-scoped,
   // not department-scoped.
   const myDepartments = showAdminRow ? [] : getManageableModules({ role, additionalRoles });
+
+  // Plain-language role/department summary for the welcome card below —
+  // reuses the same showAdminRow/myDepartments this component already
+  // computes for the admin and department widget rows, no new queries.
+  const departmentPhrase = showAdminRow
+    ? "You have full access across every department."
+    : myDepartments.length > 0
+      ? `You manage ${myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}${category ? ` (${category})` : ""}.`
+      : null;
 
   // Portfolio-health counts via count() rather than fetching every project
   // row and filtering in JS — this is the default post-login landing page,
@@ -384,6 +406,32 @@ async function InternalDashboard({
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="py-5">
+          <GreetingBanner name={name} />
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your role is <span className="font-medium text-foreground">{ROLE_LABELS[role]}</span>
+            {departmentPhrase ? ` — ${departmentPhrase}` : "."}
+          </p>
+        </CardContent>
+      </Card>
+
+      {myDeptWidgets && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            My Department — {myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Open Tasks"
+              value={myDeptWidgets.openTasks}
+              caption="Across all projects"
+            />
+            <StatCard label="Documents" value={myDeptWidgets.documents} caption="Across all projects" />
+          </div>
+        </div>
+      )}
+
       <PageHeader
         title="Management Command Centre"
         subtitle="Portfolio-wide pulse across all franchises"
@@ -481,22 +529,6 @@ async function InternalDashboard({
               value={adminWidgets.kycQueueSize + adminWidgets.paymentQueueSize}
               caption={`${adminWidgets.kycQueueSize} KYC · ${adminWidgets.paymentQueueSize} payment`}
             />
-          </div>
-        </div>
-      )}
-
-      {myDeptWidgets && (
-        <div>
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            My Department — {myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Open Tasks"
-              value={myDeptWidgets.openTasks}
-              caption="Across all projects"
-            />
-            <StatCard label="Documents" value={myDeptWidgets.documents} caption="Across all projects" />
           </div>
         </div>
       )}
