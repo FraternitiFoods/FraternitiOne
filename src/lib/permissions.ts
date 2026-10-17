@@ -111,19 +111,33 @@ export function canViewProject(
 }
 
 /**
+ * Every role granted to this user — the primary `role` plus whatever extra
+ * roles an admin granted via `User.additionalRoles`. `role` alone still
+ * drives every single-role branch elsewhere (dashboard selection, nav
+ * baseline); this is only for the department-ownership checks below, which
+ * should honor every role a user has, not just their primary one.
+ */
+function allRoles(user: Pick<CurrentUser, "role" | "additionalRoles">): Role[] {
+  return [user.role, ...(user.additionalRoles ?? [])];
+}
+
+/**
  * Shared by `canManageTaskModule` and `canManageDocumentCategory` — both
  * Task.module and Document.category are the same `Department` enum (see
  * schema.prisma), and plan.md section 5's "role-based, module-level" Phase 1
  * decision applies identically to both, so there's one matrix, not two.
  */
-function ownsDepartment(user: Pick<CurrentUser, "role">, department: Department): boolean {
+function ownsDepartment(
+  user: Pick<CurrentUser, "role" | "additionalRoles">,
+  department: Department
+): boolean {
   if (hasFullOverride(user)) return true;
-  return DEPARTMENT_OWNERS[user.role]?.includes(department) ?? false;
+  return allRoles(user).some((r) => DEPARTMENT_OWNERS[r]?.includes(department));
 }
 
 /** Can this user create/edit tasks whose module is `department`? */
 export function canManageTaskModule(
-  user: Pick<CurrentUser, "role">,
+  user: Pick<CurrentUser, "role" | "additionalRoles">,
   department: Department
 ): boolean {
   return ownsDepartment(user, department);
@@ -131,10 +145,27 @@ export function canManageTaskModule(
 
 /** Can this user upload/manage documents in this category (FR-005)? */
 export function canManageDocumentCategory(
-  user: Pick<CurrentUser, "role">,
+  user: Pick<CurrentUser, "role" | "additionalRoles">,
   category: Department
 ): boolean {
   return ownsDepartment(user, category);
+}
+
+/**
+ * Admin-only: task creation and renaming are the two mutations that define
+ * what a task *is* — deliberately narrower than `canManageTaskModule`
+ * (department ownership isn't enough here). Status changes/comments/reorder
+ * stay governed by `canActOnTask` below, unchanged — this doesn't touch
+ * that function, non-admins still act on their tasks, they just can't
+ * create new ones or rename existing ones.
+ */
+export function canCreateTask(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/** See `canCreateTask` above — same admin-only rule, for renaming instead of creating. */
+export function canEditTaskTitle(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
 }
 
 /**
@@ -159,9 +190,11 @@ const ALL_DEPARTMENTS: Department[] = [
   "GENERAL",
 ];
 
-export function getManageableModules(user: Pick<CurrentUser, "role">): Department[] {
+export function getManageableModules(
+  user: Pick<CurrentUser, "role" | "additionalRoles">
+): Department[] {
   if (hasFullOverride(user)) return ALL_DEPARTMENTS;
-  return DEPARTMENT_OWNERS[user.role] ?? [];
+  return Array.from(new Set(allRoles(user).flatMap((r) => DEPARTMENT_OWNERS[r] ?? [])));
 }
 
 /**
@@ -171,7 +204,7 @@ export function getManageableModules(user: Pick<CurrentUser, "role">): Departmen
  * in a module generally.
  */
 export function canActOnTask(
-  user: Pick<CurrentUser, "role" | "id">,
+  user: Pick<CurrentUser, "role" | "id" | "additionalRoles">,
   task: { ownerId: string; createdById: string; module: Department },
   project: { franchiseeId: string }
 ): boolean {
@@ -191,7 +224,7 @@ export function canActOnTask(
  * role" for the vault (section 5), not per-category read walls.
  */
 export function canActOnDocument(
-  user: Pick<CurrentUser, "role" | "id">,
+  user: Pick<CurrentUser, "role" | "id" | "additionalRoles">,
   document: { ownerId: string; category: Department },
   project: { franchiseeId: string }
 ): boolean {
@@ -209,7 +242,7 @@ export function canActOnDocument(
 
 /** Can this user create/manage complaints in this category (i.e. handle them as staff)? */
 export function canManageComplaintCategory(
-  user: Pick<CurrentUser, "role">,
+  user: Pick<CurrentUser, "role" | "additionalRoles">,
   category: ComplaintCategory
 ): boolean {
   return ownsDepartment(user, COMPLAINT_CATEGORY_DEPARTMENT[category]);
@@ -233,7 +266,7 @@ export function canCreateComplaint(
  * mirrors canActOnTask's exact shape, gating status updates/comments.
  */
 export function canActOnComplaint(
-  user: Pick<CurrentUser, "role" | "id">,
+  user: Pick<CurrentUser, "role" | "id" | "additionalRoles">,
   complaint: { raisedById: string; assignedToId: string | null; category: ComplaintCategory },
   project: { franchiseeId: string }
 ): boolean {

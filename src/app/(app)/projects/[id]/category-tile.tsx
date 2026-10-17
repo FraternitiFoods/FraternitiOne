@@ -3,7 +3,15 @@ import { ProgressTile } from "./progress-tile";
 
 /** Tapping a tile navigates to its own page (/projects/[id]/categories/[category])
  * with the trade/department's task list — mirrors StageTile's drill-down. */
-export function CategoryTile({ category, total, completed, state, projectId, backHref }: {
+export function CategoryTile({
+  category,
+  total,
+  completed,
+  state,
+  projectId,
+  backHref,
+  clickable = true,
+}: {
   category: string;
   total: number;
   completed: number;
@@ -14,6 +22,7 @@ export function CategoryTile({ category, total, completed, state, projectId, bac
    * this tile elsewhere (e.g. /progress) pass their own URL through so the
    * user lands back where they actually came from. */
   backHref?: string;
+  clickable?: boolean;
 }) {
   const href = `/projects/${projectId}/categories/${encodeURIComponent(category)}${
     backHref ? `?back=${encodeURIComponent(backHref)}` : ""
@@ -25,6 +34,7 @@ export function CategoryTile({ category, total, completed, state, projectId, bac
       status={state}
       total={total}
       completed={completed}
+      clickable={clickable}
     />
   );
 }

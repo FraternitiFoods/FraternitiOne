@@ -8,8 +8,9 @@ import { writeAuditEvent } from "@/lib/audit";
 import { applyTaskStatusChange } from "@/lib/task-status";
 import {
   canActOnTask,
+  canCreateTask as canCreateTaskPermission,
+  canEditTaskTitle,
   canForceCompleteStage,
-  canManageTaskModule,
   canViewProject,
 } from "@/lib/permissions";
 import { Department, LifecycleStage, TaskPriority, TaskStatus } from "@prisma/client";
@@ -63,8 +64,8 @@ export async function createTask(
 
   const data = parsed.data;
 
-  if (!canManageTaskModule(user, data.module)) {
-    return { error: "You don't have permission to create tasks in that module." };
+  if (!canCreateTaskPermission(user)) {
+    return { error: "Only an admin can create tasks." };
   }
 
   const dueDate = data.dueDate ? new Date(data.dueDate) : null;
@@ -244,8 +245,8 @@ export async function updateTaskTitle(
   if (!task || task.projectId !== projectId || !canViewProject(user, project)) {
     return { error: "Task not found." };
   }
-  if (!canActOnTask(user, task, project)) {
-    return { error: "You don't have permission to update this task." };
+  if (!canEditTaskTitle(user)) {
+    return { error: "Only an admin can rename a task." };
   }
 
   const parsed = UpdateTaskTitleSchema.safeParse({ title: formData.get("title") });

@@ -16,6 +16,7 @@ export function ProgressTile({
   statusSuffix,
   total,
   completed,
+  clickable = true,
 }: {
   href: string;
   eyebrow?: string;
@@ -24,20 +25,18 @@ export function ProgressTile({
   statusSuffix?: string;
   total: number;
   completed: number;
+  /** False for a viewer with no stake in this department — same card,
+   * rendered as a plain `<div>` instead of a `<Link>` (read-only glance,
+   * not a dead/misleading click target). Defaults true. */
+  clickable?: boolean;
 }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "group relative block rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:shadow-sm",
-        status === "completed" && "border-emerald-200 bg-emerald-50",
-        status === "in_progress" && "border-primary/30 bg-primary/5",
-        status === "upcoming" && "border-border bg-background"
+  const content = (
+    <>
+      {clickable && (
+        <span className="absolute right-2 top-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+          →
+        </span>
       )}
-    >
-      <span className="absolute right-2 top-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-        →
-      </span>
       {eyebrow && <div className="text-xs font-medium text-muted-foreground">{eyebrow}</div>}
       <div className={cn("text-sm font-medium", eyebrow && "mt-1")}>{label}</div>
       <div
@@ -56,6 +55,24 @@ export function ProgressTile({
           {completed}/{total} tasks
         </div>
       )}
+    </>
+  );
+
+  const className = cn(
+    "group relative block rounded-lg border p-3 text-left transition-colors",
+    clickable ? "hover:border-primary/40 hover:shadow-sm" : "opacity-60",
+    status === "completed" && "border-emerald-200 bg-emerald-50",
+    status === "in_progress" && "border-primary/30 bg-primary/5",
+    status === "upcoming" && "border-border bg-background"
+  );
+
+  if (!clickable) {
+    return <div className={className}>{content}</div>;
+  }
+
+  return (
+    <Link href={href} className={className}>
+      {content}
     </Link>
   );
 }

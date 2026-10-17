@@ -6,11 +6,15 @@ import {
   canActOnComplaint,
   canActOnDocument,
   canActOnTask,
+  canCreateTask,
   canDeleteProject,
   canEditProjectHeader,
+  canEditTaskTitle,
   canManageComplaintCategory,
+  canManageTaskModule,
   canViewProject,
   getManageableModules,
+  hasFullOverride,
 } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +30,8 @@ import {
 } from "@/lib/format";
 import { computeStageStatus } from "@/lib/lifecycle-stage-status";
 import { computeCategoryProgress } from "@/lib/category-progress";
+import { STAGE_DEFAULT_DEPARTMENT } from "@/lib/lifecycle-stage-tasks";
+import { CATEGORY_DEPARTMENTS } from "@/lib/ops-progress-tasks";
 import { HEALTH_BADGE_CLASS } from "@/lib/badge-colors";
 import { getTaskTiming, formatTaskTimingBadge, summarizeDelays } from "@/lib/task-timing";
 import { DelaySummaryCard } from "./delay-summary-card";
@@ -103,6 +109,32 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   ]);
 
   const manageableModules = getManageableModules(user);
+  const canEditTitle = canEditTaskTitle(user);
+  // ADMIN/MANAGEMENT (hasFullOverride) and a franchisee on their own project
+  // see this page exactly as before — full tile grid tappable, full Tasks
+  // list. Every other internal role (department-scoped) gets a read-only
+  // "live feed" of the project's overall progress (stats/tile counts below
+  // stay computed from the FULL project.tasks, unfiltered — only tile
+  // tappability and the Tasks (FR-003) list narrow to their own
+  // department(s) + category).
+  const canSeeEverything = hasFullOverride(user) || (user.role === "FRANCHISEE" && project.franchiseeId === user.id);
+  // A BOQ/Ops category can draw from more than one Department (see
+  // CATEGORY_DEPARTMENTS' own comment) — clickable if the viewer owns any
+  // one of them.
+  const canSeeCategory = (category: string) =>
+    canSeeEverything || (CATEGORY_DEPARTMENTS[category] ?? []).some((d) => canManageTaskModule(user, d));
+  // Scopes only the Tasks (FR-003) list below — every stat/tile count above
+  // stays computed from the full, unfiltered project.tasks (the "live feed"
+  // read-only glance a department-scoped role keeps). A task with no
+  // category (the generic lifecycle checklist) is never hidden by a
+  // category scope — only the BOQ/Ops trade-tagged subset narrows.
+  const visibleTasks = canSeeEverything
+    ? project.tasks
+    : project.tasks.filter(
+        (t) =>
+          manageableModules.includes(t.module) &&
+          (!user.category || t.category === null || t.category === user.category)
+      );
 
   const total = project.tasks.length;
   const completed = project.tasks.filter((t) => t.status === "COMPLETED").length;
@@ -241,6 +273,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   projectId={project.id}
                   total={stageTasks.length}
                   completed={stageCompleted}
+                  clickable={canSeeEverything || canManageTaskModule(user, STAGE_DEFAULT_DEPARTMENT[stage])}
                 />
               );
             })}
@@ -268,6 +301,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   completed={c.completed}
                   state={c.state}
                   projectId={project.id}
+                  clickable={canSeeCategory(c.category)}
                 />
               ))}
             </div>
@@ -293,6 +327,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
                   completed={c.completed}
                   state={c.state}
                   projectId={project.id}
+                  clickable={canSeeCategory(c.category)}
                 />
               ))}
             </div>
@@ -335,7 +370,8 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
 
         <TaskList
           projectId={project.id}
-          tasks={project.tasks.map((task) => ({
+          canEditTitle={canEditTitle}
+          tasks={visibleTasks.map((task) => ({
             id: task.id,
             title: task.title,
             description: task.description,
@@ -361,7 +397,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           }))}
         />
 
-        {manageableModules.length > 0 && (
+        {canCreateTask(user) && (
           <>
             <Separator />
             <Card>

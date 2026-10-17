@@ -76,12 +76,17 @@ export function TaskCard({
   task,
   projectId,
   canAct,
+  canEditTitle,
   reorder,
   returnPath,
 }: {
   task: TaskCardData;
   projectId: string;
   canAct: boolean;
+  /** Admin-only (canEditTaskTitle, permissions.ts) — separate from `canAct`,
+   * which still governs status/comment/reorder. Non-admins can act on a
+   * task without being able to rename it. */
+  canEditTitle: boolean;
   /** Only passed by the stage detail page, which shows one stage's tasks in
    * order — the flat project-wide list has no single "stage order" to
    * swap within, so it omits this and the buttons don't render. */
@@ -198,7 +203,7 @@ export function TaskCard({
             ) : (
               <>
                 <span className="font-medium">{task.title}</span>
-                {canAct && (
+                {canEditTitle && (
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"

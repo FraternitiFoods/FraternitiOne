@@ -14,6 +14,7 @@ export function StageTile({
   total,
   completed,
   projectId,
+  clickable = true,
 }: {
   stage: LifecycleStage;
   index: number;
@@ -22,6 +23,7 @@ export function StageTile({
   total: number;
   completed: number;
   projectId: string;
+  clickable?: boolean;
 }) {
   return (
     <ProgressTile
@@ -32,6 +34,7 @@ export function StageTile({
       statusSuffix={isOverridden ? " (override)" : undefined}
       total={total}
       completed={completed}
+      clickable={clickable}
     />
   );
 }

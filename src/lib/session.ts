@@ -60,6 +60,13 @@ export type CurrentUser = {
   /// SITE_SUPERVISOR login may have no email on file.
   email: string | null;
   role: Role;
+  /// Extra roles granted on top of `role` — see User.additionalRoles'
+  /// schema comment. `role` itself still drives every single-role branch
+  /// (dashboard selection, nav baseline); this only widens department
+  /// ownership checks (ownsDepartment/getManageableModules, permissions.ts).
+  additionalRoles: Role[];
+  /// Optional trade-category scope — see User.category's schema comment.
+  category: string | null;
   department: Department | null;
   /// Only meaningful for FRANCHISEE accounts — folded in here so the (app)
   /// layout's stale-bookmark onboarding-gate check doesn't need its own DB
@@ -111,6 +118,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     name: session.user.name,
     email: session.user.email,
     role: session.user.role,
+    additionalRoles: session.user.additionalRoles,
+    category: session.user.category,
     department: session.user.department,
     onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
   };

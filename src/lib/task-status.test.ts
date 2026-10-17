@@ -12,6 +12,8 @@ const actor: CurrentUser = {
   name: "Test User",
   email: "test@example.com",
   role: "ADMIN",
+  additionalRoles: [],
+  category: null,
   department: null,
 };
 

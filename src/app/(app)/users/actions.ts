@@ -27,6 +27,14 @@ const CreateUserSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required."),
     role: z.nativeEnum(Role),
+    /// Extra roles granted beyond the primary `role` (User.additionalRoles)
+    /// — not offered for SITE_SUPERVISOR, whose access is ProjectMember-
+    /// scoped rather than department-scoped (see createSupervisor).
+    additionalRoles: z.array(z.nativeEnum(Role)).optional().default([]),
+    /// Optional trade-category scope (User.category) — narrows task
+    /// delegation within whichever department(s) `role`/`additionalRoles`
+    /// own. Freeform text, same as Task.category (no master list exists).
+    category: z.string().trim().optional(),
     department: z.nativeEnum(Department).optional(),
     email: z.string().trim().toLowerCase().optional(),
     phone: z.string().trim().optional(),
@@ -86,6 +94,8 @@ export async function createUser(
     name: formData.get("name"),
     email: formData.get("email") || undefined,
     role: formData.get("role"),
+    additionalRoles: formData.getAll("additionalRoles"),
+    category: formData.get("category") || undefined,
     department: formData.get("department") || undefined,
     phone: formData.get("phone") || undefined,
     pin: formData.get("pin") || undefined,
@@ -99,6 +109,8 @@ export async function createUser(
   }
 
   const data = parsed.data;
+  // Dedupe: the primary role can't also appear as an "additional" one.
+  data.additionalRoles = data.additionalRoles.filter((r) => r !== data.role);
 
   if (data.role === "SITE_SUPERVISOR") {
     return createSupervisor(admin, data);
@@ -129,6 +141,8 @@ export async function createUser(
         name: data.name,
         email: data.email,
         role: data.role,
+        additionalRoles: data.additionalRoles,
+        category: data.category || null,
         department: data.department,
         phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
         isPreExistingFranchisee: data.role === "FRANCHISEE" ? data.isPreExistingFranchisee : undefined,
@@ -145,6 +159,8 @@ export async function createUser(
         name: created.name,
         email: created.email,
         role: created.role,
+        additionalRoles: created.additionalRoles,
+        category: created.category,
         department: created.department,
       },
       reference: "Created via admin user management",
@@ -380,6 +396,8 @@ const UpdateUserSchema = z
     role: z.nativeEnum(Role).refine((r) => r !== "SITE_SUPERVISOR", {
       message: "Site supervisors can't be edited from this form yet.",
     }),
+    additionalRoles: z.array(z.nativeEnum(Role)).optional().default([]),
+    category: z.string().trim().optional(),
     department: z.nativeEnum(Department).optional(),
     phone: z.string().trim().optional(),
   })
@@ -407,6 +425,8 @@ export async function updateUser(
     name: formData.get("name"),
     email: formData.get("email"),
     role: formData.get("role"),
+    additionalRoles: formData.getAll("additionalRoles"),
+    category: formData.get("category") || undefined,
     department: formData.get("department") || undefined,
     phone: formData.get("phone") || undefined,
   });
@@ -416,6 +436,8 @@ export async function updateUser(
   }
 
   const data = parsed.data;
+  // Dedupe: the primary role can't also appear as an "additional" one.
+  data.additionalRoles = data.additionalRoles.filter((r) => r !== data.role);
 
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) {
@@ -458,6 +480,8 @@ export async function updateUser(
         name: data.name,
         email: data.email,
         role: data.role,
+        additionalRoles: data.additionalRoles,
+        category: data.category || null,
         department: data.department ?? null,
         phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
       },
@@ -468,12 +492,22 @@ export async function updateUser(
       entityType: "User",
       entityId: updated.id,
       action: "UPDATE",
-      oldValue: { name: user.name, email: user.email, role: user.role, department: user.department, phone: user.phone },
+      oldValue: {
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        additionalRoles: user.additionalRoles,
+        category: user.category,
+        department: user.department,
+        phone: user.phone,
+      },
       newValue: {
         name: updated.name,
         email: updated.email,
         phone: updated.phone,
         role: updated.role,
+        additionalRoles: updated.additionalRoles,
+        category: updated.category,
         department: updated.department,
       },
       reference: "Updated via admin user management",

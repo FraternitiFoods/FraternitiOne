@@ -64,6 +64,8 @@ export async function setPassword(
       name: updatedUser.name,
       email: updatedUser.email,
       role: updatedUser.role,
+      additionalRoles: updatedUser.additionalRoles,
+      category: updatedUser.category,
       department: updatedUser.department,
     },
     entityType: "User",

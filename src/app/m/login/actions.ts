@@ -88,6 +88,8 @@ export async function loginSupervisor(
       name: user.name,
       email: user.email,
       role: user.role,
+      additionalRoles: user.additionalRoles,
+      category: user.category,
       department: user.department,
     },
     entityType: "User",

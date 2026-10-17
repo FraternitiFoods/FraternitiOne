@@ -21,9 +21,13 @@ const NO_CATEGORY = "__none__";
 export function TaskList({
   projectId,
   tasks,
+  canEditTitle,
 }: {
   projectId: string;
   tasks: (TaskCardData & { canAct: boolean; category: string | null })[];
+  /** Admin-only (canEditTaskTitle, permissions.ts) — same for every task on
+   * this list, unlike `canAct` which is computed per-task. */
+  canEditTitle: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(FILTER_ALL);
@@ -144,7 +148,13 @@ export function TaskList({
           </p>
           <div className="space-y-3">
             {visible.map((task) => (
-              <TaskCard key={task.id} projectId={projectId} canAct={task.canAct} task={task} />
+              <TaskCard
+                key={task.id}
+                projectId={projectId}
+                canAct={task.canAct}
+                canEditTitle={canEditTitle}
+                task={task}
+              />
             ))}
           </div>
           {hasMore && (

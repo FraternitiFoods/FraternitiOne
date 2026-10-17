@@ -179,6 +179,34 @@ export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
 
       {!isSupervisor && (
         <div className="space-y-2">
+          <Label>Additional roles (optional)</Label>
+          <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border p-3">
+            {ROLES.filter((r) => r !== "SITE_SUPERVISOR" && r !== role).map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="additionalRoles" value={r} className="size-4" />
+                {ROLE_LABELS[r]}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Grants every department the checked roles manage, on top of the primary role above.
+          </p>
+        </div>
+      )}
+
+      {!isSupervisor && (
+        <div className="space-y-2">
+          <Label htmlFor="category">Category (optional)</Label>
+          <Input id="category" name="category" placeholder="e.g. Tiling, Electrical" />
+          <p className="text-xs text-muted-foreground">
+            Narrows task delegation to just this trade within their department(s). Leave blank to
+            delegate every task in their department(s).
+          </p>
+        </div>
+      )}
+
+      {!isSupervisor && (
+        <div className="space-y-2">
           <Label htmlFor="department">Department label (optional)</Label>
           <Select name="department">
             <SelectTrigger id="department" className="w-full">

@@ -28,6 +28,8 @@ export default async function UsersPage() {
       email: true,
       phone: true,
       role: true,
+      additionalRoles: true,
+      category: true,
       department: true,
       isActive: true,
       passwordHash: true,
@@ -87,7 +89,21 @@ export default async function UsersPage() {
                   <TableCell className="text-muted-foreground">
                     {u.email ?? u.phone ?? "—"}
                   </TableCell>
-                  <TableCell>{ROLE_LABELS[u.role]}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span>{ROLE_LABELS[u.role]}</span>
+                      {u.additionalRoles.map((r) => (
+                        <Badge key={r} variant="secondary" className="text-[10px]">
+                          {ROLE_LABELS[r]}
+                        </Badge>
+                      ))}
+                      {u.category && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {u.category}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {isSupervisor ? (
                       u.projectMemberships.length > 0 ? (

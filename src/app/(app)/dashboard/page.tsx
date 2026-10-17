@@ -27,7 +27,7 @@ import {
   OPEN_COMPLAINT_STATUS_FILTER,
 } from "@/lib/dashboard/widgets";
 import { RecentEmailsCard } from "@/components/recent-emails-card";
-import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
+import { getManageableModules } from "@/lib/permissions";
 import { SEED_TASK_AUDIT_REFERENCE } from "@/lib/project-seed";
 import { LegacyFranchiseeHome } from "./legacy-franchisee-home";
 import type { Department, Role, TaskStatus } from "@prisma/client";
@@ -50,7 +50,7 @@ export default async function DashboardPage() {
   if (user.role === "SALES") {
     return <SalesDashboard userId={user.id} />;
   }
-  return <InternalDashboard role={user.role} />;
+  return <InternalDashboard role={user.role} additionalRoles={user.additionalRoles} />;
 }
 
 async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
@@ -336,7 +336,13 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
   );
 }
 
-async function InternalDashboard({ role }: { role: Role }) {
+async function InternalDashboard({
+  role,
+  additionalRoles,
+}: {
+  role: Role;
+  additionalRoles: Role[];
+}) {
   // plan.md section 20B — ADMIN/MANAGEMENT widget row, added alongside the
   // existing portfolio-health stat row above (not replacing it). Every
   // other internal role (LEGAL, HR, ACCOUNTS, KYC_REVIEWER, ...) keeps
@@ -344,11 +350,14 @@ async function InternalDashboard({ role }: { role: Role }) {
   const showAdminRow = role === "ADMIN" || role === "MANAGEMENT";
 
   // Internal roles that own a department (LEGAL, INTERIORS, PROJECT_MANAGER,
-  // ACCOUNTS, HR, CULINARY, MARKETING, OPERATIONS) but have no dashboard of
-  // their own — ADMIN/MANAGEMENT own none (empty in DEPARTMENT_OWNERS, they
-  // get adminWidgets above instead), and KYC_REVIEWER/LOI_PREPARER/
-  // COMPANY_SIGNATORY are onboarding-step-scoped, not department-scoped.
-  const myDepartments = DEPARTMENT_OWNERS[role];
+  // ACCOUNTS, HR, CULINARY, MARKETING, OPERATIONS, plus whatever
+  // additionalRoles add on top) but have no dashboard of their own —
+  // ADMIN/MANAGEMENT stay [] here on purpose (they get adminWidgets above
+  // instead; getManageableModules would otherwise return every department
+  // for them via hasFullOverride, duplicating that row), and
+  // KYC_REVIEWER/LOI_PREPARER/COMPANY_SIGNATORY are onboarding-step-scoped,
+  // not department-scoped.
+  const myDepartments = showAdminRow ? [] : getManageableModules({ role, additionalRoles });
 
   // Portfolio-health counts via count() rather than fetching every project
   // row and filtering in JS — this is the default post-login landing page,

@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   canActOnTask,
+  canCreateTask,
+  canEditTaskTitle,
   canForceCompleteStage,
   canViewProject,
   getManageableModules,
@@ -109,6 +111,7 @@ export default async function StageDetailPage(
               key={task.id}
               projectId={project.id}
               canAct={canActOnTask(user, task, project)}
+              canEditTitle={canEditTaskTitle(user)}
               reorder={{ canMoveUp: i > 0, canMoveDown: i < project.tasks.length - 1 }}
               returnPath={returnPath}
               task={{
@@ -138,7 +141,7 @@ export default async function StageDetailPage(
         )}
       </div>
 
-      {manageableModules.length > 0 && (
+      {canCreateTask(user) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Add a task to this stage</CardTitle>

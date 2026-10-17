@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canActOnTask, canViewProject } from "@/lib/permissions";
+import { canActOnTask, canEditTaskTitle, canViewProject } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { formatProjectCode } from "@/lib/format";
@@ -88,6 +88,7 @@ export default async function CategoryDetailPage(
             key={task.id}
             projectId={project.id}
             canAct={canActOnTask(user, task, project)}
+            canEditTitle={canEditTaskTitle(user)}
             returnPath={selfHref}
             task={{
               id: task.id,

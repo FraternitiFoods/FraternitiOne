@@ -824,3 +824,22 @@ export const OPS_PROGRESS_TASK_TEMPLATES: OpsProgressTaskTemplate[] = [
   { category: "HR", title: "Performance Evalution", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "HR", title: "Company Asset Maintenance", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
 ];
+
+/**
+ * Every Department a category's templates are drawn from — most categories
+ * map to exactly one (the master checklist is mostly organized that way),
+ * but a handful of the pseudo-department-named ones (OPERATION, CULINARY,
+ * MARKETING, HR — see ops-route.ts's OPS_ONLY_CATEGORIES) bundle templates
+ * owned by several different modules. Used by the project detail page to
+ * gate a CategoryTile's tappability by department ownership: clickable if
+ * the viewer owns *any* department this category draws from, since
+ * Task.category itself carries no Department directly.
+ */
+export const CATEGORY_DEPARTMENTS: Record<string, Department[]> = (() => {
+  const map = new Map<string, Set<Department>>();
+  for (const t of OPS_PROGRESS_TASK_TEMPLATES) {
+    if (!map.has(t.category)) map.set(t.category, new Set());
+    map.get(t.category)!.add(t.module);
+  }
+  return Object.fromEntries(Array.from(map, ([category, modules]) => [category, Array.from(modules)]));
+})();
