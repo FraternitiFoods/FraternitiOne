@@ -424,7 +424,7 @@ export const OPS_PROGRESS_TASK_TEMPLATES: OpsProgressTaskTemplate[] = [
   { category: "CULINARY", title: "Training Calander", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "CULINARY", title: "Recipies S.O.Ps", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "CULINARY", title: "Vendor Management (Kitchen & Food)", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
-  { category: "CULINARY", title: "Marketing Promotion Offers", lifecycleStage: "PRE_LAUNCH_MARKETING", module: "MARKETING" },
+  { category: "CULINARY", title: "Marketing Promotion Offers", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "CULINARY", title: "Training Recorde Maintainence", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "CULINARY", title: "WORK TABLE WITH UNDER AND MIDDLE SHELF", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
   { category: "CULINARY", title: "4 BURNER CONTI RANGE", lifecycleStage: "OPERATIONS_PREPARATION", module: "OPERATIONS" },
