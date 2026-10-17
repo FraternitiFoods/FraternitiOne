@@ -8,7 +8,8 @@ export const APPROVED_EMAIL_DOMAINS = ["tulsi.world", "fraterniti.co.in", "zoca.
 export const INVALID_EMAIL_DOMAIN_MESSAGE =
   "Invalid Email Domain. Please use an authorized Fraterniti Group email address.";
 
-export function isApprovedEmailDomain(email: string): boolean {
-  const domain = email.trim().toLowerCase().split("@")[1];
-  return domain !== undefined && (APPROVED_EMAIL_DOMAINS as readonly string[]).includes(domain);
+export function isApprovedEmailDomain(_email: string): boolean {
+  // Temporarily disabled per Apoorv (2026-10-17) — whitelist/message kept
+  // in place so re-enabling is a one-line revert. See plan.md section 18a.
+  return true;
 }

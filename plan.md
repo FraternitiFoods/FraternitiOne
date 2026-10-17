@@ -2299,6 +2299,14 @@ any existing account — enforcement is forward-only from this commit.
 `tsc --noEmit` clean; not independently browser-verified in isolation (folded
 into 18b's verification pass instead, since both shipped the same session).
 
+**2026-10-17 — temporarily disabled per Apoorv.** `isApprovedEmailDomain()`
+(`src/lib/email-domain.ts`) now unconditionally returns `true`. The
+`APPROVED_EMAIL_DOMAINS` list and `INVALID_EMAIL_DOMAIN_MESSAGE` are left in
+place and all three call sites (`users/actions.ts` ×2,
+`store-onboarding/actions.ts`) are untouched, so re-enabling is a one-line
+revert in this one file. No ticket/reason given beyond "for now" — revisit
+before relying on this as an actual restriction again.
+
 ### 18b. Complaint/Support module (`c52f235`)
 
 **What shipped** — new, but built entirely by mirroring the existing
