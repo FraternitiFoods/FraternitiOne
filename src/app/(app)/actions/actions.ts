@@ -49,12 +49,16 @@ export async function updateTaskStatusFromActions(
   }
   const { status, completionEvidence } = parsed.data;
 
-  await db.$transaction(async (tx) => {
-    await applyTaskStatusChange(tx, task, status, user, {
-      completionEvidence,
-      projectId: task.projectId,
+  try {
+    await db.$transaction(async (tx) => {
+      await applyTaskStatusChange(tx, task, status, user, {
+        completionEvidence,
+        projectId: task.projectId,
+      });
     });
-  });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not update task." };
+  }
 
   revalidatePath("/actions");
   return undefined;

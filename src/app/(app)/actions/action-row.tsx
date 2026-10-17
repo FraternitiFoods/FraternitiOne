@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -65,7 +66,7 @@ export function ActionRow({ task }: { task: ActionItem }) {
         <Badge variant="outline" className={TASK_PRIORITY_BADGE_CLASS[task.priority]}>
           {TASK_PRIORITY_LABELS[task.priority]}
         </Badge>
-        <form action={formAction} className="flex items-center gap-1.5">
+        <form action={formAction} className="flex flex-wrap items-center gap-1.5">
           <Select name="status" defaultValue={task.status}>
             <SelectTrigger className={`h-7 w-[150px] text-xs ${TASK_STATUS_BADGE_CLASS[task.status]}`}>
               <SelectValue>
@@ -80,6 +81,12 @@ export function ActionRow({ task }: { task: ActionItem }) {
               ))}
             </SelectContent>
           </Select>
+          <Input
+            name="completionEvidence"
+            defaultValue={task.completionEvidence ?? ""}
+            placeholder="Evidence (required to complete)"
+            className="h-7 w-[180px] text-xs"
+          />
           <Button type="submit" size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={pending}>
             {pending ? "…" : "Update"}
           </Button>

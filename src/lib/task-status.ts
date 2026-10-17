@@ -16,6 +16,13 @@ import { writeAuditEvent } from "@/lib/audit";
  * src/app/(app)/projects/[id]/actions.ts and finalizeUpload in
  * src/app/m/[id]/actions.ts), plus the one new fact section 24 needs:
  * `startedAt`, set once, the first time a task leaves NOT_STARTED.
+ *
+ * Evidence-on-completion rule (2026-10-17): completing a task requires some
+ * form of proof — new/existing `completionEvidence` text (a note or a pasted
+ * link), or at least one `Document` already attached to the task (the `/m`
+ * upload flow always creates that Document in the same transaction right
+ * before calling this, so it's never actually blocked). Throws if neither is
+ * present; callers should catch and surface it as a normal `{ error }`.
  */
 export async function applyTaskStatusChange(
   tx: Prisma.TransactionClient,
@@ -32,6 +39,18 @@ export async function applyTaskStatusChange(
 ): Promise<Task> {
   const isCompleting = newStatus === "COMPLETED";
   const startsNow = task.status === "NOT_STARTED" && newStatus !== "NOT_STARTED" && !task.startedAt;
+
+  if (isCompleting) {
+    const hasTextEvidence = Boolean(opts?.completionEvidence?.trim() || task.completionEvidence?.trim());
+    if (!hasTextEvidence) {
+      const attachedDocs = await tx.document.count({ where: { taskId: task.id } });
+      if (attachedDocs === 0) {
+        throw new Error(
+          "Add completion evidence (a note, link, or attached document) before marking this task completed."
+        );
+      }
+    }
+  }
 
   const updated = await tx.task.update({
     where: { id: task.id },

@@ -302,7 +302,7 @@ export function TaskCard({
               </div>
               <Input
                 name="completionEvidence"
-                placeholder="Completion evidence (if completing)"
+                placeholder="Completion evidence (required to mark complete)"
                 defaultValue={task.completionEvidence ?? ""}
                 className="h-8 flex-1 min-w-[200px]"
               />

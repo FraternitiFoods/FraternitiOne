@@ -32,6 +32,7 @@ export type ActionItem = {
   timingBadge: { label: string; className: string } | null;
   priority: TaskPriority;
   status: TaskStatus;
+  completionEvidence: string | null;
 };
 
 /**

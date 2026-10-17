@@ -147,6 +147,7 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
     timingBadge: formatTaskTimingBadge(timingByTaskId.get(task.id)!),
     priority: task.priority,
     status: task.status,
+    completionEvidence: task.completionEvidence,
   }));
 
   return (

@@ -26,9 +26,11 @@ function makeTx(updatedOverrides: Record<string, unknown> = {}) {
     })
   );
   const auditCreate = vi.fn().mockResolvedValue({ id: "audit-1" });
+  const documentCount = vi.fn().mockResolvedValue(0);
   return {
     task: { update },
     auditEvent: { create: auditCreate },
+    document: { count: documentCount },
   } as unknown as Parameters<typeof applyTaskStatusChange>[0];
 }
 
@@ -133,5 +135,49 @@ describe("applyTaskStatusChange", () => {
     expect(data.reference).toBe("test reference");
     expect(data.source).toBe("mobile");
     expect(data.projectId).toBe("project-1");
+  });
+
+  it("rejects completing a task with no evidence text and no attached documents", async () => {
+    const tx = makeTx();
+    const task = { id: "task-1", status: "IN_PROGRESS" as const, startedAt: new Date(), completionEvidence: null };
+
+    await expect(applyTaskStatusChange(tx, task, "COMPLETED", actor)).rejects.toThrow(/evidence/i);
+    expect(tx.document.count).toHaveBeenCalledWith({ where: { taskId: "task-1" } });
+    expect(tx.task.update).not.toHaveBeenCalled();
+  });
+
+  it("allows completing a task when fresh evidence text is provided", async () => {
+    const tx = makeTx();
+    const task = { id: "task-1", status: "IN_PROGRESS" as const, startedAt: new Date(), completionEvidence: null };
+
+    await applyTaskStatusChange(tx, task, "COMPLETED", actor, { completionEvidence: "Signed-off note" });
+
+    expect(tx.task.update).toHaveBeenCalledTimes(1);
+    // Text evidence was enough — no need to also check for attached documents.
+    expect(tx.document.count).not.toHaveBeenCalled();
+  });
+
+  it("allows completing a task that already carries prior completionEvidence", async () => {
+    const tx = makeTx();
+    const task = {
+      id: "task-1",
+      status: "IN_PROGRESS" as const,
+      startedAt: new Date(),
+      completionEvidence: "Already noted earlier",
+    };
+
+    await applyTaskStatusChange(tx, task, "COMPLETED", actor);
+
+    expect(tx.task.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows completing a task with no evidence text when a document is already attached", async () => {
+    const tx = makeTx();
+    (tx.document.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
+    const task = { id: "task-1", status: "IN_PROGRESS" as const, startedAt: new Date(), completionEvidence: null };
+
+    await applyTaskStatusChange(tx, task, "COMPLETED", actor);
+
+    expect(tx.task.update).toHaveBeenCalledTimes(1);
   });
 });

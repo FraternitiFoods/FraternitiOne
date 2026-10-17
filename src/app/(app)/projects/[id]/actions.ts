@@ -151,9 +151,13 @@ export async function updateTaskStatus(
 
   const { status, completionEvidence } = parsed.data;
 
-  await db.$transaction(async (tx) => {
-    await applyTaskStatusChange(tx, task, status, user, { completionEvidence, projectId });
-  });
+  try {
+    await db.$transaction(async (tx) => {
+      await applyTaskStatusChange(tx, task, status, user, { completionEvidence, projectId });
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not update task." };
+  }
 
   redirect(redirectTo);
 }
