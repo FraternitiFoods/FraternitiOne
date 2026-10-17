@@ -15,6 +15,16 @@ import { TASK_SLA_DEFAULTS, normalizeTaskTitle } from "@/lib/task-sla-defaults";
  * `createProject` itself now calls this too, so there is exactly one place
  * that knows how a project gets seeded.
  */
+/**
+ * Marks the bulk per-task AuditEvent rows written below as seed noise, not a
+ * human/system action — the dashboard's "recent activity" glance widgets
+ * (InternalDashboard, FranchiseeDashboard, dashboard/page.tsx) filter these
+ * out so creating a project (~963 seeded tasks) doesn't drown the feed in
+ * near-identical rows. /audit (the full FR-010 compliance log) does NOT
+ * filter on this — it must keep showing every seeded task.
+ */
+export const SEED_TASK_AUDIT_REFERENCE = "Auto-seeded from lifecycle checklist";
+
 export async function createProjectWithSeedTasks(
   tx: Prisma.TransactionClient,
   params: {
@@ -164,7 +174,7 @@ export async function createProjectWithSeedTasks(
           ownerId: task.ownerId,
           status: task.status,
         },
-        reference: "Auto-seeded from lifecycle checklist",
+        reference: SEED_TASK_AUDIT_REFERENCE,
         source: "web",
       })),
     });

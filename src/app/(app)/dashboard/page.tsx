@@ -28,6 +28,7 @@ import {
 } from "@/lib/dashboard/widgets";
 import { RecentEmailsCard } from "@/components/recent-emails-card";
 import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
+import { SEED_TASK_AUDIT_REFERENCE } from "@/lib/project-seed";
 import { LegacyFranchiseeHome } from "./legacy-franchisee-home";
 import type { Department, Role, TaskStatus } from "@prisma/client";
 
@@ -118,7 +119,14 @@ async function FranchiseeDashboard({ franchiseeId }: { franchiseeId: string }) {
   const moduleProgress = computeModuleProgress(project.tasks);
 
   const recentEvents = await db.auditEvent.findMany({
-    where: { projectId: project.id },
+    where: {
+      projectId: project.id,
+      // Prisma's `not` on a nullable column excludes NULL rows outright (it
+      // does not compile to a NULL-safe IS DISTINCT FROM) — the explicit OR
+      // keeps every event whose reference is unset, like the project's own
+      // CREATE event, visible alongside everything that isn't seed noise.
+      OR: [{ reference: null }, { reference: { not: SEED_TASK_AUDIT_REFERENCE } }],
+    },
     orderBy: { createdAt: "desc" },
     take: 6,
   });
@@ -352,6 +360,9 @@ async function InternalDashboard({ role }: { role: Role }) {
     db.franchiseProject.count({ where: { health: "AMBER" } }),
     db.franchiseProject.count({ where: { health: { in: ["RED", "CRITICAL"] } } }),
     db.auditEvent.findMany({
+      // Prisma's `not` on a nullable column excludes NULL rows outright —
+      // see the comment on the matching query in FranchiseeDashboard above.
+      where: { OR: [{ reference: null }, { reference: { not: SEED_TASK_AUDIT_REFERENCE } }] },
       orderBy: { createdAt: "desc" },
       take: 8,
       include: { project: { select: { seq: true, brand: true, location: true } } },
