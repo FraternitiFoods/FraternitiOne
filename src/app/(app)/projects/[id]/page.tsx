@@ -133,7 +133,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
     : project.tasks.filter(
         (t) =>
           manageableModules.includes(t.module) &&
-          (!user.category || t.category === null || t.category === user.category)
+          (user.category.length === 0 || t.category === null || user.category.includes(t.category))
       );
 
   const total = project.tasks.length;

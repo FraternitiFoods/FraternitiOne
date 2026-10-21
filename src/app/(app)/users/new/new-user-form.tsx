@@ -6,6 +6,7 @@ import { createUser, type ActionState } from "../actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MultiCombobox } from "@/components/ui/multi-combobox";
 import {
   Select,
   SelectContent,
@@ -22,7 +23,13 @@ const DEPARTMENTS = Object.keys(DEPARTMENT_LABELS) as Department[];
 
 type ProjectOption = { id: string; brand: string; location: string };
 
-export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
+export function NewUserForm({
+  projects,
+  categoryOptions,
+}: {
+  projects: ProjectOption[];
+  categoryOptions: string[];
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createUser, undefined);
   const [role, setRole] = useState<Role | undefined>(undefined);
 
@@ -197,10 +204,16 @@ export function NewUserForm({ projects }: { projects: ProjectOption[] }) {
       {!isSupervisor && (
         <div className="space-y-2">
           <Label htmlFor="category">Category (optional)</Label>
-          <Input id="category" name="category" placeholder="e.g. Tiling, Electrical" />
+          <MultiCombobox
+            id="category"
+            name="category"
+            items={categoryOptions}
+            placeholder="e.g. Tiling, Electrical"
+            emptyText="No categories in use yet."
+          />
           <p className="text-xs text-muted-foreground">
-            Narrows task delegation to just this trade within their department(s). Leave blank to
-            delegate every task in their department(s).
+            Narrows task delegation to just these trades within their department(s). Leave blank
+            to delegate every task in their department(s).
           </p>
         </div>
       )}

@@ -6,6 +6,7 @@ import { updateUser, type UpdateUserState } from "../../actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MultiCombobox } from "@/components/ui/multi-combobox";
 import {
   Select,
   SelectContent,
@@ -28,12 +29,18 @@ type EditableUser = {
   email: string | null;
   role: Role;
   additionalRoles: Role[];
-  category: string | null;
+  category: string[];
   department: Department | null;
   phone: string | null;
 };
 
-export function EditUserForm({ user }: { user: EditableUser }) {
+export function EditUserForm({
+  user,
+  categoryOptions,
+}: {
+  user: EditableUser;
+  categoryOptions: string[];
+}) {
   const boundAction = updateUser.bind(null, user.id);
   const [state, action, pending] = useActionState<UpdateUserState, FormData>(boundAction, undefined);
   const [role, setRole] = useState<Role>(user.role);
@@ -129,14 +136,16 @@ export function EditUserForm({ user }: { user: EditableUser }) {
 
       <div className="space-y-2">
         <Label htmlFor="category">Category (optional)</Label>
-        <Input
+        <MultiCombobox
           id="category"
           name="category"
-          defaultValue={user.category ?? ""}
+          items={categoryOptions}
+          defaultValue={user.category}
           placeholder="e.g. Tiling, Electrical"
+          emptyText="No categories in use yet."
         />
         <p className="text-xs text-muted-foreground">
-          Narrows task delegation to just this trade within their department(s). Leave blank to
+          Narrows task delegation to just these trades within their department(s). Leave blank to
           delegate every task in their department(s).
         </p>
       </div>

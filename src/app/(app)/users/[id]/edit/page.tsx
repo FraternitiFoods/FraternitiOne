@@ -31,6 +31,18 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
     notFound();
   }
 
+  // Category has no fixed master list (Task.category's own schema comment —
+  // the real BOQ/Ops checklist carries ~28 freeform trade categories). The
+  // dropdown's options are the distinct values already in use across every
+  // project's tasks, which is the de-facto list in practice.
+  const categoryRows = await db.task.findMany({
+    where: { category: { not: null } },
+    distinct: ["category"],
+    select: { category: true },
+    orderBy: { category: "asc" },
+  });
+  const categoryOptions = categoryRows.map((t) => t.category as string);
+
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
@@ -52,7 +64,7 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
               users list for now.
             </p>
           ) : (
-            <EditUserForm user={user} />
+            <EditUserForm user={user} categoryOptions={categoryOptions} />
           )}
         </CardContent>
       </Card>

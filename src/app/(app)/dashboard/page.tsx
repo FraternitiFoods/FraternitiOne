@@ -354,7 +354,7 @@ async function InternalDashboard({
   role: Role;
   additionalRoles: Role[];
   name: string;
-  category: string | null;
+  category: string[];
 }) {
   // plan.md section 20B — ADMIN/MANAGEMENT widget row, added alongside the
   // existing portfolio-health stat row above (not replacing it). Every
@@ -378,7 +378,7 @@ async function InternalDashboard({
   const departmentPhrase = showAdminRow
     ? "You have full access across every department."
     : myDepartments.length > 0
-      ? `You manage ${myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}${category ? ` (${category})` : ""}.`
+      ? `You manage ${myDepartments.map((d) => DEPARTMENT_LABELS[d]).join(" & ")}${category.length > 0 ? ` (${category.join(", ")})` : ""}.`
       : null;
 
   // Portfolio-health counts via count() rather than fetching every project

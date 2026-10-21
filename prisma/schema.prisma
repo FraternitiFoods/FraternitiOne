@@ -351,13 +351,14 @@ model User {
   additionalRoles     Role[]      @default([])
   /// Optional trade-category scope (matches Task.category, which is
   /// freeform text — see Task.category's own comment, no fixed master
-  /// list exists). When set, narrows which of this user's department-owned
-  /// tasks get delegated to them to just this category (plus every
-  /// uncategorized task in that department, since most lifecycle checklist
-  /// tasks carry no category at all). Null means no narrowing — every task
-  /// in their department(s). Applies uniformly across `role` and every
-  /// entry in `additionalRoles`, not per-role.
-  category            String?
+  /// list exists; dropdown options are sourced dynamically from distinct
+  /// Task.category values in use). When non-empty, narrows which of this
+  /// user's department-owned tasks get delegated to them to just these
+  /// categories (plus every uncategorized task in that department, since
+  /// most lifecycle checklist tasks carry no category at all). Empty means
+  /// no narrowing — every task in their department(s). Applies uniformly
+  /// across `role` and every entry in `additionalRoles`, not per-role.
+  category            String[]    @default([])
   department          Department?
   isActive            Boolean     @default(true)
   /// Only meaningful for role === FRANCHISEE. Set by an admin at account

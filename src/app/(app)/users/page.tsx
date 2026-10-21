@@ -97,11 +97,11 @@ export default async function UsersPage() {
                           {ROLE_LABELS[r]}
                         </Badge>
                       ))}
-                      {u.category && (
-                        <Badge variant="outline" className="text-[10px]">
-                          {u.category}
+                      {u.category.map((c) => (
+                        <Badge key={c} variant="outline" className="text-[10px]">
+                          {c}
                         </Badge>
-                      )}
+                      ))}
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">

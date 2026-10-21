@@ -34,7 +34,7 @@ const CreateUserSchema = z
     /// Optional trade-category scope (User.category) — narrows task
     /// delegation within whichever department(s) `role`/`additionalRoles`
     /// own. Freeform text, same as Task.category (no master list exists).
-    category: z.string().trim().optional(),
+    category: z.array(z.string().trim().min(1)).optional().default([]),
     department: z.nativeEnum(Department).optional(),
     email: z.string().trim().toLowerCase().optional(),
     phone: z.string().trim().optional(),
@@ -95,7 +95,7 @@ export async function createUser(
     email: formData.get("email") || undefined,
     role: formData.get("role"),
     additionalRoles: formData.getAll("additionalRoles"),
-    category: formData.get("category") || undefined,
+    category: formData.getAll("category"),
     department: formData.get("department") || undefined,
     phone: formData.get("phone") || undefined,
     pin: formData.get("pin") || undefined,
@@ -142,7 +142,7 @@ export async function createUser(
         email: data.email,
         role: data.role,
         additionalRoles: data.additionalRoles,
-        category: data.category || null,
+        category: data.category,
         department: data.department,
         phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
         isPreExistingFranchisee: data.role === "FRANCHISEE" ? data.isPreExistingFranchisee : undefined,
@@ -397,7 +397,7 @@ const UpdateUserSchema = z
       message: "Site supervisors can't be edited from this form yet.",
     }),
     additionalRoles: z.array(z.nativeEnum(Role)).optional().default([]),
-    category: z.string().trim().optional(),
+    category: z.array(z.string().trim().min(1)).optional().default([]),
     department: z.nativeEnum(Department).optional(),
     phone: z.string().trim().optional(),
   })
@@ -426,7 +426,7 @@ export async function updateUser(
     email: formData.get("email"),
     role: formData.get("role"),
     additionalRoles: formData.getAll("additionalRoles"),
-    category: formData.get("category") || undefined,
+    category: formData.getAll("category"),
     department: formData.get("department") || undefined,
     phone: formData.get("phone") || undefined,
   });
@@ -481,7 +481,7 @@ export async function updateUser(
         email: data.email,
         role: data.role,
         additionalRoles: data.additionalRoles,
-        category: data.category || null,
+        category: data.category,
         department: data.department ?? null,
         phone: data.role === "COMPANY_SIGNATORY" || data.role === "ADMIN" ? data.phone : undefined,
       },

@@ -13,7 +13,7 @@ const actor: CurrentUser = {
   email: "test@example.com",
   role: "ADMIN",
   additionalRoles: [],
-  category: null,
+  category: [],
   department: null,
 };
 

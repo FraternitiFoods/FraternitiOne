@@ -66,7 +66,7 @@ export type CurrentUser = {
   /// ownership checks (ownsDepartment/getManageableModules, permissions.ts).
   additionalRoles: Role[];
   /// Optional trade-category scope — see User.category's schema comment.
-  category: string | null;
+  category: string[];
   department: Department | null;
   /// Only meaningful for FRANCHISEE accounts — folded in here so the (app)
   /// layout's stale-bookmark onboarding-gate check doesn't need its own DB
