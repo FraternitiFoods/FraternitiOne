@@ -77,7 +77,7 @@ export default async function StoreOnboardingListPage() {
         <div>
           <h1 className="text-2xl font-semibold">Store Onboarding</h1>
           <p className="text-sm text-muted-foreground">
-            Franchise onboarding, KYC, payment proof and LOI e-sign (plan.md section 17).
+            Franchise onboarding, KYC, payment proof and LOI e-sign.
           </p>
         </div>
         {canCreateOnboarding(user) && (
