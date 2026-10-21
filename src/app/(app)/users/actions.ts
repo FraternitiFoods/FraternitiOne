@@ -740,7 +740,17 @@ export async function deleteUser(
       await tx.user.delete({ where: { id: userId } });
     });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+    // Postgres reports an explicit `ON DELETE RESTRICT` violation as SQLSTATE
+    // 23001 ("restrict_violation"), which Prisma does NOT map to the typed
+    // P2003 ("Foreign key constraint failed") error — it falls through as a
+    // generic PrismaClientUnknownRequestError instead. Only plain FK checks
+    // (SQLSTATE 23503) get the P2003 treatment. Every ownership FK on User is
+    // declared RESTRICT (see this function's own doc comment above), so the
+    // common case actually needs both checks, not just P2003.
+    const isForeignKeyViolation =
+      (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") ||
+      (err instanceof Prisma.PrismaClientUnknownRequestError && err.message.includes("foreign key constraint"));
+    if (isForeignKeyViolation) {
       const { blockers, note } = await findDeletionBlockers(userId);
       return {
         error:
