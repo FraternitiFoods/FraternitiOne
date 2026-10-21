@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -87,6 +88,13 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
   const projectCards = Array.from(projectCardMap.values()).sort((a, b) =>
     a.brand === b.brand ? a.location.localeCompare(b.location) : a.brand.localeCompare(b.brand)
   );
+
+  // No "All Franchises" aggregate view — when more than one franchise is in
+  // play and none is selected yet, default to the first one instead.
+  if (!selectedProjectId && projectCards.length > 1) {
+    redirect(`/actions?project=${projectCards[0].id}`);
+  }
+
   const selectedProject = selectedProjectId
     ? projectCards.find((p) => p.id === selectedProjectId)
     : undefined;
@@ -166,18 +174,6 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
         <div className="space-y-2">
           <h2 className="text-sm font-medium text-muted-foreground">Franchise</h2>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/actions"
-              className={cn(
-                "rounded-lg border px-3 py-2 text-sm transition-colors",
-                !selectedProjectId
-                  ? "border-primary bg-primary/5 font-medium"
-                  : "border-border hover:bg-muted/40"
-              )}
-            >
-              All Franchises
-              <span className="ml-1.5 text-xs text-muted-foreground">({myOpenTasksAll.length})</span>
-            </Link>
             {projectCards.map((p) => (
               <Link
                 key={p.id}
