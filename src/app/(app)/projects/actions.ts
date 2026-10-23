@@ -5,9 +5,15 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
-import { canCreateProject, canDeleteProject, canEditProjectHeader, canViewProject } from "@/lib/permissions";
+import {
+  canCreateProject,
+  canDeleteProject,
+  canEditProjectHeader,
+  canReclassifyProject,
+  canViewProject,
+} from "@/lib/permissions";
 import { ProjectHealth } from "@prisma/client";
-import { createProjectWithSeedTasks } from "@/lib/project-seed";
+import { createProjectWithSeedTasks, seedLifecycleAndOpsTasks } from "@/lib/project-seed";
 
 const CreateProjectSchema = z.object({
   brand: z.string().trim().min(1).default("Tulsi"),
@@ -198,4 +204,78 @@ export async function deleteProject(
   });
 
   redirect("/dashboard");
+}
+
+export type ReclassifyProjectState = { error?: string } | undefined;
+
+/**
+ * Flips `FranchiseProject.isPreExisting` — plan.md section 23 left this
+ * settable only at creation time; this closes that gap. Toggles whatever the
+ * current value is (no form field needed beyond the project id), so the UI
+ * is a single button whose label/dialog copy already tells the admin which
+ * direction they're about to flip.
+ *
+ * Marking a build-out project "already operational" never touches its
+ * existing Task rows — deleting them isn't this action's call to make (plan.md
+ * section 23's own NOT DECIDED #2); the project just stops showing them to the
+ * franchisee. Marking a pre-existing project back to a normal build-out seeds
+ * the standard checklist, but only if it currently has zero tasks — a project
+ * that already picked up tasks some other way (e.g. an ad-hoc admin add)
+ * never gets double-seeded.
+ */
+export async function reclassifyProject(
+  projectId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _prevState: ReclassifyProjectState,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _formData: FormData
+): Promise<ReclassifyProjectState> {
+  const user = await requireUser();
+
+  if (!canReclassifyProject(user)) {
+    return { error: "You don't have permission to reclassify this project." };
+  }
+
+  const project = await db.franchiseProject.findUnique({
+    where: { id: projectId },
+    select: { id: true, ownerId: true, isPreExisting: true, _count: { select: { tasks: true } } },
+  });
+  if (!project) {
+    return { error: "Project not found." };
+  }
+
+  const nextIsPreExisting = !project.isPreExisting;
+  const willSeedTasks = !nextIsPreExisting && project._count.tasks === 0;
+
+  await db.$transaction(
+    async (tx) => {
+      await tx.franchiseProject.update({
+        where: { id: projectId },
+        data: { isPreExisting: nextIsPreExisting },
+      });
+
+      await writeAuditEvent(tx, {
+        actor: user,
+        projectId,
+        entityType: "FranchiseProject",
+        entityId: projectId,
+        action: "UPDATE",
+        oldValue: { isPreExisting: project.isPreExisting },
+        newValue: { isPreExisting: nextIsPreExisting },
+        reference: willSeedTasks
+          ? "Reclassified via project admin controls; build-out checklist seeded"
+          : "Reclassified via project admin controls",
+      });
+
+      if (willSeedTasks) {
+        await seedLifecycleAndOpsTasks(tx, { id: project.id, ownerId: project.ownerId }, user);
+      }
+    },
+    // Seeding ~963 tasks measured 5.2-5.5s against production (section 27A) —
+    // over Prisma's default 5s timeout. Only needed when willSeedTasks, but a
+    // fixed timeout is simpler than branching the $transaction call shape.
+    { timeout: 20000 }
+  );
+
+  redirect(`/projects/${projectId}`);
 }

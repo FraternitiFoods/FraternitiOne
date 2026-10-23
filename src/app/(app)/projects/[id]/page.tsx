@@ -9,6 +9,7 @@ import {
   canCreateTask,
   canDeleteProject,
   canEditProjectHeader,
+  canReclassifyProject,
   canEditTaskTitle,
   canManageComplaintCategory,
   canManageTaskModule,
@@ -43,6 +44,7 @@ import { CategoryTile } from "./category-tile";
 import { DocumentUploadForm } from "./document-upload-form";
 import { DocumentList } from "./document-list";
 import { DeleteProjectButton } from "./delete-project-button";
+import { ReclassifyProjectButton } from "./reclassify-project-button";
 import { ComplaintList } from "@/app/(app)/complaints/complaint-list";
 import { NewComplaintForm } from "@/app/(app)/complaints/new-complaint-form";
 
@@ -184,6 +186,13 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
             <Link href={`/audit?project=${project.id}`} className="text-sm underline underline-offset-4">
               Audit trail →
             </Link>
+            {canReclassifyProject(user) && (
+              <ReclassifyProjectButton
+                projectId={project.id}
+                isPreExisting={project.isPreExisting}
+                taskCount={total}
+              />
+            )}
             {canDeleteProject(user) && (
               <DeleteProjectButton projectId={project.id} brand={project.brand} location={project.location} />
             )}

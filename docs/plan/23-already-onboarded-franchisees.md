@@ -111,6 +111,80 @@ listed above — not from a live build session. No fresh Playwright/browser
 verification was run as part of writing this entry; the "NOT DECIDED YET"
 backfill question above is a real open gap, not a hedge.
 
+### Reclassify-after-creation (closes NOT DECIDED #2, 2026-10-23)
+
+NOT DECIDED #2 above asked what happens when an Admin picks the wrong
+checkbox at project-creation time. This adds the small "edit" UI that #1
+also flagged as missing — for the **project**-level flag only; #1's
+user-creation-time backfill question is still open.
+
+**`src/lib/permissions.ts`**: `canReclassifyProject` — flat `user.role ===
+"ADMIN"` check, same narrow shape as `canDeleteProject` (a system-
+classification change, not a cross-department content override).
+
+**`src/lib/project-seed.ts`**: the ~963-task lifecycle+BOQ/Ops seed block
+was extracted out of `createProjectWithSeedTasks` into a standalone exported
+`seedLifecycleAndOpsTasks(tx, project, actor)`, so the same real seeding
+logic (not a second copy of it) can run again later against an *existing*
+project row, not only at creation time.
+
+**`src/app/(app)/projects/actions.ts`**: `reclassifyProject(projectId, ...)`
+— toggles `FranchiseProject.isPreExisting` to whatever it currently isn't
+(no form field needed beyond the id). One `$transaction` (20s timeout, same
+reasoning as the creation path: the seed alone measures 5.2-5.5s against
+production): flips the column, writes an `AuditEvent` (old/new value), and —
+only on the build-out direction, and only `if (project._count.tasks === 0)`
+— calls `seedLifecycleAndOpsTasks`. Marking a project "already operational"
+never touches its existing `Task` rows either way; deleting them isn't this
+action's call (still "delete and recreate the project" per #2's own
+presumption).
+
+**`src/app/(app)/projects/[id]/reclassify-project-button.tsx`** +
+`projects/[id]/page.tsx`: one `Button` + confirmation `Dialog`, gated by
+`canReclassifyProject(user)`, next to the existing Delete button. Label and
+dialog copy flip with the current `isPreExisting` value, so the UI never
+shows an ambiguous "toggle" control — an Admin always reads "Mark as already
+operational" or "Mark as build-out project", whichever direction they're
+about to cause, and the dialog explicitly says whether tasks will be seeded
+or left alone.
+
+**Verified**: `tsc --noEmit`, `eslint .` (9 pre-existing warnings, 0 new, 0
+errors), `vitest run` (274/274, no regressions — no new unit tests added;
+this is a server action with no existing dedicated test file to extend, same
+precedent as section 26 P4/P5) all clean.
+
+Real-browser pass (`scripts/tmp-e2e-reclassify-project.ts`, kept per the
+`tmp-e2e-*` precedent, real Chromium against the local dev DB, cleanup in a
+`finally`): one throwaway build-out project created through the real UI
+(~963 tasks seeded), then through the actual button — flip to "already
+operational" (task rows survive, audit event's old/new values captured,
+admin dashboard unaffected), flip back to build-out (no double-seed, since
+tasks never left), tasks deleted directly and flipped operational-then-
+build-out again (this time correctly re-seeds ~963 tasks from zero), and a
+non-Admin (`SALES`) confirmed not to see the button at all. **15/15 checks
+passed.** One real bug caught and fixed while writing the script itself, not
+in the app: `page.waitForURL` resolves immediately when the target path
+equals the page's *current* path (true here — the server action redirects
+back to the same `/projects/[id]` URL) — an early version of the script read
+the DB right after that no-op wait and saw stale state, scrambling the
+flip order across the three steps. Fixed by waiting for the button's own
+label to flip to the opposite text instead (proof the RSC re-render landed),
+not for a URL change. A second, unrelated flakiness — reusing one Playwright
+page across a long run occasionally left it hung on a later `goto("/login")`
+— hit the exact same symptom `tmp-e2e-sales.ts` already documented; fixed
+the same way, a fresh `page` for that one step.
+
+Also found while preparing to run this: the local dev DB's seeded-user
+passwords no longer matched the current `.env`'s `SEED_DEV_PASSWORD` (login
+failed with "Incorrect email or password" before any app code was touched).
+`prisma/seed.ts` only ever upserts the 5 fixed dev users and re-applies
+whatever `SEED_DEV_PASSWORD` currently is — no projects/tasks touched — so
+re-running it was safe. Re-run via `npx tsx prisma/seed.ts` directly, not
+`pnpm run db:seed`: the latter triggers pnpm's own dependency-status check
+first, which tried to rewrite the Prisma query-engine `.dll` while `next
+dev` still had it open, failing with `EPERM` on Windows. Unrelated to this
+feature; noting it here so a future session recognizes the symptom instead
+of chasing it as a real bug.
 
 ---
 

@@ -100,85 +100,104 @@ export async function createProjectWithSeedTasks(
   // Skipped entirely for an already-operational franchise (isPreExisting) —
   // there is no build-out to track, so no lifecycle Task rows get created.
   if (seedTasks) {
-    type SeedTaskInput = {
-      module: Department;
-      category: string | null;
-      lifecycleStage: LifecycleStage;
-      order: number;
-      title: string;
-      slaDays: number | null;
-    };
-
-    const seedTaskInputs: SeedTaskInput[] = [];
-    const nextOrderByStage = new Map<LifecycleStage, number>();
-    for (const stage of LIFECYCLE_STAGE_ORDER) {
-      STAGE_TASK_TEMPLATES[stage].forEach((title, order) => {
-        seedTaskInputs.push({
-          module: STAGE_DEFAULT_DEPARTMENT[stage],
-          category: null,
-          lifecycleStage: stage,
-          order,
-          title,
-          slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(title)] ?? null,
-        });
-      });
-      nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
-    }
-    for (const item of OPS_PROGRESS_TASK_TEMPLATES) {
-      const order = nextOrderByStage.get(item.lifecycleStage) ?? 0;
-      nextOrderByStage.set(item.lifecycleStage, order + 1);
-      seedTaskInputs.push({
-        module: item.module,
-        category: item.category,
-        lifecycleStage: item.lifecycleStage,
-        order,
-        title: item.title,
-        slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(item.title)] ?? null,
-      });
-    }
-
-    // createManyAndReturn + createMany keeps this to 2 round trips instead of
-    // ~1,450 sequential ones. Still measured 5.2-5.5s against the production
-    // DB — over Prisma's default 5s interactive-transaction timeout — so both
-    // callers (projects/actions.ts, esign/webhook-processor.ts) now pass an
-    // explicit longer `timeout` to their `$transaction` call.
-    const createdTasks = await tx.task.createManyAndReturn({
-      data: seedTaskInputs.map((t) => ({
-        projectId: created.id,
-        module: t.module,
-        category: t.category,
-        lifecycleStage: t.lifecycleStage,
-        order: t.order,
-        title: t.title,
-        slaDays: t.slaDays,
-        ownerId: created.ownerId,
-        createdById: params.actor.id,
-      })),
-    });
-
-    await tx.auditEvent.createMany({
-      data: createdTasks.map((task) => ({
-        projectId: created.id,
-        actorId: params.actor.id,
-        actorEmail: params.actor.email ?? "(no email on file)",
-        actorName: params.actor.name,
-        actorRole: params.actor.role,
-        entityType: "Task",
-        entityId: task.id,
-        action: "CREATE" as const,
-        newValue: {
-          module: task.module,
-          category: task.category,
-          lifecycleStage: task.lifecycleStage,
-          title: task.title,
-          ownerId: task.ownerId,
-          status: task.status,
-        },
-        reference: SEED_TASK_AUDIT_REFERENCE,
-        source: "web",
-      })),
-    });
+    await seedLifecycleAndOpsTasks(tx, created, params.actor);
   }
 
   return created;
+}
+
+/**
+ * The ~963-task lifecycle + BOQ/Ops seed, extracted out of
+ * `createProjectWithSeedTasks` so a project that was marked `isPreExisting`
+ * by mistake and gets reclassified back to a normal build-out later (see
+ * `reclassifyProject`, src/app/(app)/projects/actions.ts) can seed the exact
+ * same checklist against its *existing* row, instead of only new projects
+ * ever getting it.
+ */
+export async function seedLifecycleAndOpsTasks(
+  tx: Prisma.TransactionClient,
+  project: { id: string; ownerId: string },
+  actor: { id: string; name: string; email: string | null; role: Role }
+) {
+  type SeedTaskInput = {
+    module: Department;
+    category: string | null;
+    lifecycleStage: LifecycleStage;
+    order: number;
+    title: string;
+    slaDays: number | null;
+  };
+
+  const seedTaskInputs: SeedTaskInput[] = [];
+  const nextOrderByStage = new Map<LifecycleStage, number>();
+  for (const stage of LIFECYCLE_STAGE_ORDER) {
+    STAGE_TASK_TEMPLATES[stage].forEach((title, order) => {
+      seedTaskInputs.push({
+        module: STAGE_DEFAULT_DEPARTMENT[stage],
+        category: null,
+        lifecycleStage: stage,
+        order,
+        title,
+        slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(title)] ?? null,
+      });
+    });
+    nextOrderByStage.set(stage, STAGE_TASK_TEMPLATES[stage].length);
+  }
+  for (const item of OPS_PROGRESS_TASK_TEMPLATES) {
+    const order = nextOrderByStage.get(item.lifecycleStage) ?? 0;
+    nextOrderByStage.set(item.lifecycleStage, order + 1);
+    seedTaskInputs.push({
+      module: item.module,
+      category: item.category,
+      lifecycleStage: item.lifecycleStage,
+      order,
+      title: item.title,
+      slaDays: TASK_SLA_DEFAULTS[normalizeTaskTitle(item.title)] ?? null,
+    });
+  }
+
+  // createManyAndReturn + createMany keeps this to 2 round trips instead of
+  // ~1,450 sequential ones. Still measured 5.2-5.5s against the production
+  // DB — over Prisma's default 5s interactive-transaction timeout — so every
+  // caller (projects/actions.ts, esign/webhook-processor.ts, and now
+  // reclassifyProject) passes an explicit longer `timeout` to its own
+  // `$transaction` call.
+  const createdTasks = await tx.task.createManyAndReturn({
+    data: seedTaskInputs.map((t) => ({
+      projectId: project.id,
+      module: t.module,
+      category: t.category,
+      lifecycleStage: t.lifecycleStage,
+      order: t.order,
+      title: t.title,
+      slaDays: t.slaDays,
+      ownerId: project.ownerId,
+      createdById: actor.id,
+    })),
+  });
+
+  await tx.auditEvent.createMany({
+    data: createdTasks.map((task) => ({
+      projectId: project.id,
+      actorId: actor.id,
+      actorEmail: actor.email ?? "(no email on file)",
+      actorName: actor.name,
+      actorRole: actor.role,
+      entityType: "Task",
+      entityId: task.id,
+      action: "CREATE" as const,
+      newValue: {
+        module: task.module,
+        category: task.category,
+        lifecycleStage: task.lifecycleStage,
+        title: task.title,
+        ownerId: task.ownerId,
+        status: task.status,
+      },
+      reference: SEED_TASK_AUDIT_REFERENCE,
+      source: "web",
+    })),
+  });
+
+  return createdTasks;
 }

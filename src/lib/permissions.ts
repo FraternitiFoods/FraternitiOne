@@ -94,6 +94,16 @@ export function canDeleteProject(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
+ * Flips `FranchiseProject.isPreExisting` after creation (plan.md section 23
+ * left this as an explicit gap — only settable at creation time). Same
+ * narrow admin-only shape as `canDeleteProject`: a system-classification
+ * change, not a cross-department content override.
+ */
+export function canReclassifyProject(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
  * Franchisees only see their own project(s) (NFR-04: "project-level data
  * isolation"); every internal role sees the full project list so they can
  * work their department's queue across active sites — this matches the
