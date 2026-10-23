@@ -317,3 +317,13 @@ Plan third.
 Code last.
 
 @AGENTS.md
+
+### Verification standard (every session, no exceptions)
+
+Before reporting any change as done, run `pnpm run typecheck && pnpm run lint && pnpm run test`. CI (`.github/workflows/ci.yml`) runs the same three on every push/PR to `dev`/`main` — treat a red CI run as a blocker, not a nice-to-know.
+
+CI also runs an `e2e` job: a real Chromium Playwright pass (`scripts/ci-smoke.ts`) against a throwaway Postgres service container + `pnpm dev`, covering login, task creation, the status choke point's evidence-required rule, the audit trail, sales CSV import (idempotent re-import), and franchisee project/sales isolation. Deliberately scoped to flows that need no B2/Resend/Leegality/Cloudmersive secrets — LOI/KYC/mobile-upload/Petpooja/document-vault flows are NOT covered here; extend `ci-smoke.ts` if those ever need a CI-safe path, or keep using the manual `tmp-e2e-*.ts` scripts for them. A PR that touches `src/`, `prisma/`, or `scripts/` without touching `docs/plan/` also gets a non-blocking warning annotation (`docs-reminder` job) — it's a nudge, not a gate; use judgment for genuinely trivial fixes.
+
+For anything touching a route, page, Server Action, or UI component: that is not covered by the three commands above and needs an actual browser pass, not just a type-check. This repo's convention (see `docs/plan/`, every section 9 onward) is a real Playwright session against the local dev DB — reuse or extend one of `scripts/tmp-e2e-*.ts` (run with `npx tsx scripts/<name>.ts` against a running `pnpm dev`) rather than inventing a new one-off script per feature. Delete throwaway test data/B2 objects afterward; the `tmp-e2e-*.ts` scripts themselves are kept (not throwaway) and follow the one-command-per-file pattern already in `scripts/`.
+
+Log what was actually verified — and what wasn't — in the matching `docs/plan/NN-*.md` section in the same session as the change, not after the fact. This project's own history (sections 13, 17, 21, 22, 23, 27) shows this slips repeatedly when deferred; don't defer it.

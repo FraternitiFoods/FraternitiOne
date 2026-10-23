@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+jobs:
+  docs-reminder:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Warn if src/prisma/scripts changed without a docs/plan/ update
+        run: |
+          CHANGED=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(src/|prisma/|scripts/)' \
+             && ! echo "$CHANGED" | grep -qE '^(docs/plan/|plan\.md$)'; then
+            echo "::warning::This PR changes src/, prisma/, or scripts/ but no docs/plan/*.md (or plan.md) file. Non-blocking — skip this for a genuinely trivial fix, but if this is a real feature or behavior change, log it in docs/plan/ in this same PR (see CLAUDE.md's Verification standard). This exact gap has recurred 5+ times in this repo's history."
+          else
+            echo "No reminder needed."
+          fi
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fraterniti
+          POSTGRES_PASSWORD: fraterniti_ci
+          POSTGRES_DB: fraterniti_one
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: "postgresql://fraterniti:fraterniti_ci@localhost:5432/fraterniti_one?schema=public"
+      SESSION_SECRET: "ci-only-session-secret-0000000000000000"
+      SEED_DEV_PASSWORD: "CiSeedPassword123!"
+      ESIGN_WEBHOOK_SECRET: "ci-only-not-a-real-secret"
+      PAN_ENCRYPTION_KEY: "ci-only-not-a-real-secret-32-bytes!!"
+      APP_URL: "http://localhost:3000"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed dev data
+        run: pnpm run db:seed
+
+      - name: Start app in background
+        run: nohup pnpm dev > dev-server.log 2>&1 &
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:3000/login > /dev/null; then
+              echo "App is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App did not start in time"
+          cat dev-server.log
+          exit 1
+
+      - name: Run smoke suite (scripts/ci-smoke.ts)
+        run: npx tsx scripts/ci-smoke.ts
+
+      - name: Dev server log (always, for debugging a failure)
+        if: always()
+        run: cat dev-server.log || true
