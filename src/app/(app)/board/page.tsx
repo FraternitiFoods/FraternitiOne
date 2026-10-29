@@ -121,7 +121,7 @@ async function BoardSummaryBody() {
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground">Generated at {formatDateTime(summary.generatedAt.toISOString())}</p>
+      <p className="text-xs text-muted-foreground">Generated at {formatDateTime(summary.generatedAt)}</p>
     </>
   );
 }

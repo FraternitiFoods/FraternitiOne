@@ -38,7 +38,7 @@ function extractDrawnText(page: PDFPage): string {
 }
 
 const BASE_SUMMARY: BoardSummary = {
-  generatedAt: new Date("2026-10-13T04:00:00.000Z"),
+  generatedAt: "2026-10-13T04:00:00.000Z",
   health: { total: 12, onTrack: 7, atRisk: 3, critical: 2 },
   onboarding: {
     totalOnboardings: 9,
@@ -65,13 +65,6 @@ const BASE_SUMMARY: BoardSummary = {
         id: "t1",
         title: "Pour foundation",
         module: "INTERIORS",
-        lifecycleStage: "CONSTRUCTION_EXECUTION",
-        status: "IN_PROGRESS",
-        dueDate: new Date("2026-10-01"),
-        startedAt: null,
-        completedAt: null,
-        slaDays: null,
-        ownerName: "Test Owner",
         daysOverdue: 9,
         storeLabel: "Tulsi, Indore",
       },

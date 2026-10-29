@@ -48,7 +48,7 @@ export async function generateBoardDigestPdf(summary: BoardSummary): Promise<Buf
   }
 
   drawHeading("Fraterniti One - Weekly Board Summary", 16);
-  drawLine(`Generated: ${summary.generatedAt.toISOString().slice(0, 10)}`, { size: 9 });
+  drawLine(`Generated: ${summary.generatedAt.slice(0, 10)}`, { size: 9 });
   y -= 10;
 
   drawHeading("Portfolio Health");

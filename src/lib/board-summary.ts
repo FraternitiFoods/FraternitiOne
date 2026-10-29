@@ -21,17 +21,27 @@ import { getTaskTiming, summarizeDelays, type DelaySummaryTask } from "@/lib/tas
  * compute correct totals (truncating it would silently corrupt the
  * founder's numbers), so caching the whole computation for ~20s is the
  * safe way to cut its real cost rather than limiting its row set.
+ *
+ * `unstable_cache` round-trips its return value through JSON, so a `Date`
+ * put in only ever comes back out as a string — `generatedAt` is typed and
+ * produced as a string (not `.toISOString()`'d by callers) for exactly
+ * this reason. `topLate` only carries the fields its two consumers
+ * (board/page.tsx, board-digest-pdf.ts) actually render — none of them are
+ * `Date`s, so this doesn't recur there.
  */
 
 export type BoardSummary = {
-  generatedAt: Date;
+  generatedAt: string;
   health: { total: number; onTrack: number; atRisk: number; critical: number };
   onboarding: Awaited<ReturnType<typeof getAdminWidgets>>;
   delays: Omit<ReturnType<typeof summarizeDelays>, "topLate"> & {
-    topLate: (DelaySummaryTask & {
+    topLate: {
+      id: string;
+      title: string;
+      module: DelaySummaryTask["module"];
       daysOverdue: number;
       storeLabel: string;
-    })[];
+    }[];
   };
 };
 
@@ -95,19 +105,12 @@ export const getBoardSummary = unstable_cache(
         id: t.id,
         title: t.title,
         module: t.module,
-        lifecycleStage: t.lifecycleStage,
-        status: t.status,
-        dueDate: t.dueDate,
-        startedAt: t.startedAt,
-        completedAt: t.completedAt,
-        slaDays: t.slaDays,
-        ownerName: t.owner.name,
         daysOverdue: t.timing.daysOverdue,
         storeLabel: `${t.project.brand}, ${t.project.location}`,
       }));
 
     return {
-      generatedAt: new Date(),
+      generatedAt: new Date().toISOString(),
       health: { total, onTrack, atRisk, critical },
       onboarding,
       delays: { ...delaySummary, topLate },
