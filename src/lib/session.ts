@@ -75,6 +75,11 @@ export type CurrentUser = {
   /// call sites (e.g. audit log actors) build a `CurrentUser`-shaped object
   /// from a plain `db.user` row that has no such relation loaded.
   onboardingStatus?: OnboardingStatus | null;
+  /// Same reasoning as `onboardingStatus` above, for the (app) layout's
+  /// sidebar BOQ/Operations filter (app-sidebar.tsx): folding this in avoids
+  /// a second sequential DB round trip on every navigation for a FRANCHISEE.
+  /// `false` for every other role and for a FRANCHISEE with no project yet.
+  isLegacyFranchisee?: boolean;
 };
 
 /**
@@ -98,6 +103,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       user: {
         include: {
           onboardingAsFranchisee: { select: { onboardingStatus: true } },
+          // Latest project only — same "isPreExisting" lookup the (app)
+          // layout used to run as its own second query on every navigation.
+          franchiseeProjects: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { isPreExisting: true },
+          },
         },
       },
     },
@@ -122,5 +134,6 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     category: session.user.category,
     department: session.user.department,
     onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
+    isLegacyFranchisee: session.user.franchiseeProjects[0]?.isPreExisting === true,
   };
 });

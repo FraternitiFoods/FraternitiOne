@@ -8,8 +8,15 @@ import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, formatProjectCode } from "@/lib/format";
-import { toUtcDateKey } from "@/lib/sales/parse-csv";
-import { computeDailyTrend, computeMonthlyBars, computePeriodCards, type SalesDayLike } from "@/lib/sales/aggregate";
+import { dateKeyToDate, toUtcDateKey } from "@/lib/sales/parse-csv";
+import { istTodayKey } from "@/lib/pos/petpooja-parse";
+import {
+  computeDailyTrend,
+  computeMonthlyBars,
+  computePeriodCards,
+  yearKeyOf,
+  type SalesDayLike,
+} from "@/lib/sales/aggregate";
 import { formatPaiseAsRupees, computeAovPaise } from "@/lib/sales/format";
 import { ManualSalesDayDialog } from "./manual-sales-day-dialog";
 import type { Prisma, Role } from "@prisma/client";
@@ -30,19 +37,17 @@ export default async function SalesPage(props: PageProps<"/sales">) {
 
   const searchParams = await props.searchParams;
   const projectParam = searchParams.project;
-  let activeProjectId = typeof projectParam === "string" ? projectParam : undefined;
+  const explicitProjectId = typeof projectParam === "string" ? projectParam : undefined;
 
-  // No explicit ?project= — a franchisee auto-picks their own (most recent)
-  // project; every other viewable role falls through to the role-scoped
-  // list/picker below when nothing's been chosen yet.
-  if (!activeProjectId && user.role === "FRANCHISEE") {
-    const own = await db.franchiseProject.findFirst({
-      where: { franchiseeId: user.id },
-      select: { id: true },
-      orderBy: { createdAt: "desc" },
-    });
-    activeProjectId = own?.id;
-  }
+  const projectSelect = {
+    id: true,
+    seq: true,
+    brand: true,
+    location: true,
+    franchiseeId: true,
+    petpoojaRestId: true,
+    onboarding: { select: { salesOwnerId: true } },
+  } as const;
 
   // Resolving a *specific* project (whether from ?project= or a franchisee's
   // own) happens before any "do I even have a store" list check — a SALES
@@ -51,18 +56,10 @@ export default async function SalesPage(props: PageProps<"/sales">) {
   // effect #3). Earlier code short-circuited to the empty state whenever the
   // role-scoped picker list was empty, which skipped this check entirely —
   // fixed during verification, see plan.md section 20A build log.
-  if (activeProjectId) {
+  if (explicitProjectId) {
     const project = await db.franchiseProject.findUnique({
-      where: { id: activeProjectId },
-      select: {
-        id: true,
-        seq: true,
-        brand: true,
-        location: true,
-        franchiseeId: true,
-        petpoojaRestId: true,
-        onboarding: { select: { salesOwnerId: true } },
-      },
+      where: { id: explicitProjectId },
+      select: projectSelect,
     });
 
     // Same notFound() convention as canViewProject — a franchisee or an
@@ -72,6 +69,27 @@ export default async function SalesPage(props: PageProps<"/sales">) {
       notFound();
     }
     return renderSalesPage(user, project);
+  }
+
+  // No explicit ?project= — a franchisee auto-picks their own (most recent)
+  // project, resolved and fetched in one query (previously a separate
+  // id-only lookup followed by a second findUnique for the full record);
+  // every other viewable role falls through to the role-scoped list/picker
+  // below when nothing's been chosen yet.
+  if (user.role === "FRANCHISEE") {
+    const project = await db.franchiseProject.findFirst({
+      where: { franchiseeId: user.id },
+      select: projectSelect,
+      orderBy: { createdAt: "desc" },
+    });
+    if (project) {
+      if (!canViewSales(user, project)) {
+        notFound();
+      }
+      return renderSalesPage(user, project);
+    }
+    // No project at all — falls through to the picker list below, which
+    // renders the "no store linked yet" empty state for this role.
   }
 
   // Nothing resolved yet: either a franchisee with no project at all, or an
@@ -140,23 +158,36 @@ type SalesProject = {
 async function renderSalesPage(user: Awaited<ReturnType<typeof requireUser>>, project: SalesProject) {
 
   const canManage = canManageSales(user);
+  const now = new Date();
 
-  const rows = await db.salesDay.findMany({
-    where: { projectId: project.id },
-    orderBy: { date: "desc" },
-  });
+  // Bounded to whichever is earlier: the start of the current calendar year,
+  // or ~35 days ago. Every card/trend below needs at most one of those two
+  // windows (computePeriodCards/computeMonthlyBars never read past the
+  // start of this year; computeDailyTrend needs the last 30 days, which can
+  // reach back into December when "today" is early January — hence the
+  // 35-day margin rather than just "this year"). Without this bound, an
+  // older store's entire sales history gets pulled on every page view just
+  // to show a 30-day trend and this year's totals.
+  const yearStart = dateKeyToDate(`${yearKeyOf(istTodayKey(now))}-01-01`);
+  const trendLookback = new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000);
+  const historySince = yearStart.getTime() < trendLookback.getTime() ? yearStart : trendLookback;
 
   // plan.md section 26 P5: "a 'Live from POS · last bill hh:mm' line" — only
   // worth a query at all once this store has been mapped to an outlet.
-  const lastBill = project.petpoojaRestId
-    ? await db.posOrder.findFirst({
-        where: { projectId: project.id },
-        orderBy: { receivedAt: "desc" },
-        select: { receivedAt: true },
-      })
-    : null;
+  const [rows, lastBill] = await Promise.all([
+    db.salesDay.findMany({
+      where: { projectId: project.id, date: { gte: historySince } },
+      orderBy: { date: "desc" },
+    }),
+    project.petpoojaRestId
+      ? db.posOrder.findFirst({
+          where: { projectId: project.id },
+          orderBy: { receivedAt: "desc" },
+          select: { receivedAt: true },
+        })
+      : Promise.resolve(null),
+  ]);
 
-  const now = new Date();
   const rowsLike: SalesDayLike[] = rows.map((r) => ({
     date: toUtcDateKey(r.date),
     grossSales: r.grossSales,

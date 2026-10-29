@@ -602,6 +602,10 @@ model Task {
   @@index([projectId, status])
   @@index([lifecycleStage])
   @@index([category])
+  @@index([module])
+  @@index([dueDate])
+  @@index([completedAt])
+  @@index([slaDays])
 }
 
 /// FR-003 acceptance criteria mentions comments as part of the task
@@ -886,6 +890,9 @@ model StoreOnboarding {
 
   @@index([franchiseeUserId])
   @@index([salesOwnerId])
+  @@index([kycStatus])
+  @@index([onboardingStatus])
+  @@index([paymentStatus])
 }
 
 /// KYC + payment-receipt files. Deliberately NOT the Document table (which
@@ -1334,6 +1341,7 @@ model PosOrder {
   @@unique([restId, orderId])
   @@index([projectId, businessDate, status])
   @@index([restId, receivedAt])
+  @@index([projectId, receivedAt])
 }
 
 /// An inbound webhook POST that did not become a clean `PosOrder` row:

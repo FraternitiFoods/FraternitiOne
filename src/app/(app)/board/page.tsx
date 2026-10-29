@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -22,9 +23,6 @@ export default async function BoardSummaryPage() {
     redirect("/dashboard");
   }
 
-  const summary = await getBoardSummary();
-  const { health, onboarding, delays } = summary;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -33,6 +31,19 @@ export default async function BoardSummaryPage() {
         isFranchisee={false}
       />
 
+      <Suspense fallback={<BoardSummaryBodySkeleton />}>
+        <BoardSummaryBody />
+      </Suspense>
+    </div>
+  );
+}
+
+async function BoardSummaryBody() {
+  const summary = await getBoardSummary();
+  const { health, onboarding, delays } = summary;
+
+  return (
+    <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Active Projects" value={health.total} caption="All lifecycle stages" />
         <StatCard label="On Track" value={health.onTrack} caption="Green health" captionClassName="text-emerald-600" />
@@ -111,6 +122,23 @@ export default async function BoardSummaryPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">Generated at {formatDateTime(summary.generatedAt.toISOString())}</p>
+    </>
+  );
+}
+
+/** Streamed in immediately while getBoardSummary()'s multi-query aggregate resolves. */
+function BoardSummaryBodySkeleton() {
+  return (
+    <div className="animate-pulse space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Active Projects" value="—" />
+        <StatCard label="On Track" value="—" />
+        <StatCard label="At Risk" value="—" />
+        <StatCard label="Critical" value="—" />
+      </div>
+      <div className="h-24 rounded-xl bg-card ring-1 ring-foreground/10" />
+      <div className="h-24 rounded-xl bg-card ring-1 ring-foreground/10" />
+      <div className="h-40 rounded-xl bg-card ring-1 ring-foreground/10" />
     </div>
   );
 }

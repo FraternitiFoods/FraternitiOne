@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import type { CurrentUser } from "@/lib/session";
 import {
   canActOnComplaint,
   canActOnDocument,
@@ -57,58 +59,153 @@ import { NewComplaintForm } from "@/app/(app)/complaints/new-complaint-form";
 // in actions.ts itself.
 export const maxDuration = 20;
 
+/**
+ * plan.md performance pass — this page's tasks/documents/complaints include
+ * (a project can carry ~963 seeded tasks) is the heaviest query in the app.
+ * Split into a fast header-only query (renders instantly: title, franchisee
+ * info, reclassify/delete buttons — all scalar fields, no nested includes)
+ * plus a `<Suspense>`-streamed body carrying the full nested query. This
+ * doesn't reduce the body's query cost — see board-summary.ts / Phase 1
+ * indexes for that — it changes *when* the already-fast header is allowed to
+ * reach the screen instead of waiting on the slowest piece alongside it.
+ */
 export default async function ProjectDetailPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
   const user = await requireUser();
 
-  const project = await db.franchiseProject.findUnique({
+  const header = await db.franchiseProject.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      seq: true,
+      brand: true,
+      location: true,
+      format: true,
+      franchiseeId: true,
+      isPreExisting: true,
       franchisee: { select: { id: true, name: true, email: true } },
-      owner: { select: { id: true, name: true } },
-      tasks: {
-        include: {
-          owner: { select: { name: true } },
-          createdBy: { select: { name: true } },
-          dependsOn: { select: { title: true } },
-          documents: {
-            select: { id: true, fileName: true, fileSize: true, createdAt: true },
-            orderBy: { createdAt: "desc" },
-          },
-          _count: { select: { comments: true } },
-        },
-        orderBy: [{ lifecycleStage: "asc" }, { order: "asc" }],
-      },
-      documents: {
-        include: { owner: { select: { name: true } } },
-        orderBy: [{ category: "asc" }, { createdAt: "desc" }],
-      },
-      complaints: {
-        include: {
-          raisedBy: { select: { name: true } },
-          assignedTo: { select: { id: true, name: true } },
-          comments: {
-            include: { author: { select: { name: true } } },
-            orderBy: { createdAt: "asc" },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      },
-      stageOverrides: true,
+      _count: { select: { tasks: true } },
     },
   });
 
-  if (!project || !canViewProject(user, project)) {
+  if (!header || !canViewProject(user, header)) {
     notFound();
   }
 
-  const [people] = await Promise.all([
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={`${header.brand} — ${header.location}`}
+        subtitle={
+          <>
+            {formatProjectCode(header.seq)} · {header.format} · Franchisee: {header.franchisee.name} (
+            {header.franchisee.email ?? "no email on file"})
+          </>
+        }
+        isFranchisee={user.role === "FRANCHISEE"}
+        action={
+          <>
+            <Link href={`/audit?project=${header.id}`} className="text-sm underline underline-offset-4">
+              Audit trail →
+            </Link>
+            {canReclassifyProject(user) && (
+              <ReclassifyProjectButton
+                projectId={header.id}
+                isPreExisting={header.isPreExisting}
+                taskCount={header._count.tasks}
+              />
+            )}
+            {canDeleteProject(user) && (
+              <DeleteProjectButton projectId={header.id} brand={header.brand} location={header.location} />
+            )}
+          </>
+        }
+      />
+
+      <nav className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-lg bg-card px-2 py-1.5 ring-1 ring-foreground/10">
+        <a
+          href="#overview"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Overview
+        </a>
+        <a
+          href="#tasks"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Tasks
+        </a>
+        <a
+          href="#documents"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Documents
+        </a>
+        <a
+          href="#complaints"
+          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          Complaints
+        </a>
+      </nav>
+
+      <Suspense fallback={<ProjectDetailBodySkeleton />}>
+        <ProjectDetailBody projectId={header.id} user={user} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function ProjectDetailBody({ projectId, user }: { projectId: string; user: CurrentUser }) {
+  const [project, people] = await Promise.all([
+    db.franchiseProject.findUnique({
+      where: { id: projectId },
+      include: {
+        franchisee: { select: { id: true, name: true, email: true } },
+        owner: { select: { id: true, name: true } },
+        tasks: {
+          include: {
+            owner: { select: { name: true } },
+            createdBy: { select: { name: true } },
+            dependsOn: { select: { title: true } },
+            documents: {
+              select: { id: true, fileName: true, fileSize: true, createdAt: true },
+              orderBy: { createdAt: "desc" },
+            },
+            _count: { select: { comments: true } },
+          },
+          orderBy: [{ lifecycleStage: "asc" }, { order: "asc" }],
+        },
+        documents: {
+          include: { owner: { select: { name: true } } },
+          orderBy: [{ category: "asc" }, { createdAt: "desc" }],
+        },
+        complaints: {
+          include: {
+            raisedBy: { select: { name: true } },
+            assignedTo: { select: { id: true, name: true } },
+            comments: {
+              include: { author: { select: { name: true } } },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        stageOverrides: true,
+      },
+    }),
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
   ]);
+
+  // The header query above already confirmed this project exists and is
+  // viewable a moment ago — this only guards a delete-between-queries race.
+  if (!project || !canViewProject(user, project)) {
+    notFound();
+  }
 
   const manageableModules = getManageableModules(user);
   const canEditTitle = canEditTaskTitle(user);
@@ -171,62 +268,7 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={`${project.brand} — ${project.location}`}
-        subtitle={
-          <>
-            {formatProjectCode(project.seq)} · {project.format} · Franchisee: {project.franchisee.name} (
-            {project.franchisee.email ?? "no email on file"})
-          </>
-        }
-        isFranchisee={user.role === "FRANCHISEE"}
-        action={
-          <>
-            <Link href={`/audit?project=${project.id}`} className="text-sm underline underline-offset-4">
-              Audit trail →
-            </Link>
-            {canReclassifyProject(user) && (
-              <ReclassifyProjectButton
-                projectId={project.id}
-                isPreExisting={project.isPreExisting}
-                taskCount={total}
-              />
-            )}
-            {canDeleteProject(user) && (
-              <DeleteProjectButton projectId={project.id} brand={project.brand} location={project.location} />
-            )}
-          </>
-        }
-      />
-
-      <nav className="sticky top-0 z-10 flex gap-1 overflow-x-auto rounded-lg bg-card px-2 py-1.5 ring-1 ring-foreground/10">
-        <a
-          href="#overview"
-          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-        >
-          Overview
-        </a>
-        <a
-          href="#tasks"
-          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-        >
-          Tasks
-        </a>
-        <a
-          href="#documents"
-          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-        >
-          Documents
-        </a>
-        <a
-          href="#complaints"
-          className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-        >
-          Complaints
-        </a>
-      </nav>
-
+    <>
       <div id="overview" className="grid scroll-mt-16 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Site Progress" value={`${progressPct}%`} caption={`${completed}/${total} tasks done`} />
         <StatCard
@@ -500,6 +542,24 @@ export default async function ProjectDetailPage(props: PageProps<"/projects/[id]
           </CardContent>
         </Card>
       </div>
+    </>
+  );
+}
+
+/** Streamed in immediately while the heavy tasks/documents/complaints query resolves. */
+function ProjectDetailBodySkeleton() {
+  return (
+    <div className="animate-pulse space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard label="Site Progress" value="—" />
+        <StatCard label="Open Tasks" value="—" />
+        <StatCard label="Days to Launch" value="—" />
+        <StatCard label="Health" value="—" />
+        <StatCard label="Open Complaints" value="—" />
+      </div>
+      <div className="h-40 rounded-xl bg-card ring-1 ring-foreground/10" />
+      <div className="h-24 rounded-xl bg-card ring-1 ring-foreground/10" />
+      <div className="h-64 rounded-xl bg-card ring-1 ring-foreground/10" />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canActOnTask } from "@/lib/permissions";
+import { getManageableModules } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { getTaskTiming, formatTaskTimingBadge, type TaskTiming } from "@/lib/task-timing";
@@ -32,35 +32,42 @@ export default async function ActionsPage(props: PageProps<"/actions">) {
   const projectParam = searchParams.project;
   const selectedProjectId = typeof projectParam === "string" ? projectParam : undefined;
 
-  // Same project-level isolation as everywhere else (NFR-04): a franchisee
-  // only ever sees their own project's tasks.
-  const projectScope: Prisma.TaskWhereInput =
-    user.role === "FRANCHISEE" ? { project: { franchiseeId: user.id } } : {};
+  // Same access rule as canActOnTask (permissions.ts), pushed into the query
+  // itself instead of fetched-everything-then-filtered-in-JS: a franchisee
+  // only ever sees their own project's tasks (every task there satisfies
+  // canActOnTask unconditionally); everyone else only sees tasks in a
+  // department they own, or tasks they own/created — never the whole
+  // portfolio's open tasks (see plan.md performance pass).
+  const taskScope: Prisma.TaskWhereInput =
+    user.role === "FRANCHISEE"
+      ? { project: { franchiseeId: user.id } }
+      : {
+          OR: [
+            { module: { in: getManageableModules(user) } },
+            { ownerId: user.id },
+            { createdById: user.id },
+          ],
+        };
 
   const projectInclude = {
-    select: { id: true, seq: true, brand: true, location: true, franchiseeId: true },
+    select: { id: true, seq: true, brand: true, location: true },
   } as const;
 
-  const [openTasks, completedThisWeek] = await Promise.all([
+  const [myOpenTasksAll, myCompletedThisWeekAll] = await Promise.all([
     db.task.findMany({
-      where: { ...projectScope, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+      where: { ...taskScope, status: { notIn: ["COMPLETED", "CANCELLED"] } },
       include: { project: projectInclude },
       orderBy: { dueDate: "asc" },
     }),
     db.task.findMany({
       where: {
-        ...projectScope,
+        ...taskScope,
         status: "COMPLETED",
         completedAt: { gte: sevenDaysAgo() },
       },
       include: { project: projectInclude },
     }),
   ]);
-
-  // Task/project shape from the queries above satisfies canActOnTask's
-  // (narrower) parameter types directly.
-  const myOpenTasksAll = openTasks.filter((t) => canActOnTask(user, t, t.project));
-  const myCompletedThisWeekAll = completedThisWeek.filter((t) => canActOnTask(user, t, t.project));
 
   // Franchise picker (2026-09-21, Apoorv's ask: "pehle choose krne ka option
   // ki konsi franchise ka dekhna hai") — built from every franchise that has

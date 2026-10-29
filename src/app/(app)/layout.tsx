@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { logout } from "@/app/(auth)/login/actions";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -34,16 +33,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     redirect("/onboarding");
   }
 
-  // Drives the sidebar's BOQ/Operations filter (app-sidebar.tsx) — only
-  // queried for FRANCHISEE, since isPreExisting is meaningless for every
-  // other role.
-  const isLegacyFranchisee =
-    user.role === "FRANCHISEE" &&
-    (await db.franchiseProject.findFirst({
-      where: { franchiseeId: user.id },
-      select: { isPreExisting: true },
-      orderBy: { createdAt: "desc" },
-    }))?.isPreExisting === true;
+  // Drives the sidebar's BOQ/Operations filter (app-sidebar.tsx) — folded
+  // into requireUser()'s own session query (session.ts) so this doesn't
+  // cost a second DB round trip on every navigation.
+  const isLegacyFranchisee = user.role === "FRANCHISEE" && user.isLegacyFranchisee === true;
 
   return (
     <div className="min-h-screen bg-muted/30">

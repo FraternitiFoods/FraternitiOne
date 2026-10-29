@@ -17,6 +17,13 @@ import { UnpinButton } from "./unpin-button";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const MISMATCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/// Bounds the "last bill per outlet" lookup so it doesn't scan PosOrder's
+/// entire history (per-bill ledger, "hundreds of bills a day" per store —
+/// see schema comment). Any outlet truly silent for 90 days is already
+/// flagged by the 24h badge below regardless of whether we can show its
+/// exact last-bill timestamp, so bounding this window changes no outcome
+/// that matters operationally.
+const LAST_BILL_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000;
 
 /**
  * plan.md section 26 `/admin/pos` — Admin-only (`canManagePosIntegration`):
@@ -32,13 +39,19 @@ export default async function AdminPosPage() {
   const todayDate = dateKeyToDate(istTodayKey(now));
   const mismatchSince = new Date(now.getTime() - MISMATCH_WINDOW_MS);
 
+  const lastBillLookbackSince = new Date(now.getTime() - LAST_BILL_LOOKBACK_MS);
+
   const [projects, billsTodayGroups, lastBillGroups, mismatchCount, pinnedDays, problemEvents] = await Promise.all([
     db.franchiseProject.findMany({
       select: { id: true, seq: true, brand: true, location: true, petpoojaRestId: true, posLiveFrom: true },
       orderBy: { seq: "asc" },
     }),
     db.posOrder.groupBy({ by: ["projectId"], where: { businessDate: todayDate }, _count: { _all: true } }),
-    db.posOrder.groupBy({ by: ["projectId"], _max: { receivedAt: true } }),
+    db.posOrder.groupBy({
+      by: ["projectId"],
+      where: { receivedAt: { gte: lastBillLookbackSince } },
+      _max: { receivedAt: true },
+    }),
     db.posOrder.count({ where: { flags: { has: "TOTAL_MISMATCH" }, receivedAt: { gte: mismatchSince } } }),
     db.salesDay.findMany({
       where: { isPinned: true },
@@ -57,15 +70,30 @@ export default async function AdminPosPage() {
     return !last || now.getTime() - last.getTime() > TWENTY_FOUR_HOURS_MS;
   });
 
-  const pinnedWithNewBills = await Promise.all(
-    pinnedDays.map(async (d) => {
-      const project = projects.find((p) => p.id === d.projectId);
-      const newBillCount = await db.posOrder.count({
-        where: { projectId: d.projectId, businessDate: d.date, receivedAt: { gt: d.updatedAt } },
-      });
-      return { ...d, project, newBillCount };
-    })
+  // Each pinned day has its own cutoff (`updatedAt`), so this can't be a
+  // single flat `where` — but it's still one aggregate query instead of one
+  // `count()` per pinned day (was a real N+1; see plan.md performance pass).
+  const newBillGroups = pinnedDays.length
+    ? await db.posOrder.groupBy({
+        by: ["projectId", "businessDate"],
+        where: {
+          OR: pinnedDays.map((d) => ({
+            projectId: d.projectId,
+            businessDate: d.date,
+            receivedAt: { gt: d.updatedAt },
+          })),
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const newBillCountByKey = new Map(
+    newBillGroups.map((g) => [`${g.projectId}:${g.businessDate.toISOString()}`, g._count._all])
   );
+  const pinnedWithNewBills = pinnedDays.map((d) => ({
+    ...d,
+    project: projects.find((p) => p.id === d.projectId),
+    newBillCount: newBillCountByKey.get(`${d.projectId}:${d.date.toISOString()}`) ?? 0,
+  }));
   const pinnedToShow = pinnedWithNewBills.filter((d) => d.newBillCount > 0);
 
   const appUrl = process.env.APP_URL || "http://localhost:3000";
