@@ -1,0 +1,138 @@
+{
+  "sites": [
+    { "siteKey": "S-FIX-001", "name": "Fixture Site A", "shortCode": "FXA", "openingDate": "2026-12-01" },
+    { "siteKey": "S-FIX-002", "name": "Fixture Site B", "shortCode": "FXB", "openingDate": null },
+    { "siteKey": "S-FIX-003", "name": "Fixture Site C", "shortCode": "FXC", "openingDate": "2027-01-15" }
+  ],
+  "vendors": [
+    { "name": "Gogia", "categories": ["Kitchen Smallware"] },
+    { "name": "Crystal House", "categories": ["Glassware"] },
+    { "name": "Wood Works", "categories": ["Furniture"] }
+  ],
+  "categories": [
+    {
+      "category": "Kitchen Smallware",
+      "group": "operating",
+      "vendors": ["Gogia"],
+      "items": [
+        {
+          "itemKey": "ITM-FIX-001",
+          "name": "GN Pan 1x2x6 with Lid",
+          "note": "",
+          "finalVendor": "Gogia",
+          "rates": { "Gogia": 605 },
+          "sites": [
+            { "siteKey": "S-FIX-001", "qty": 8, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" },
+            { "siteKey": "S-FIX-002", "qty": 4, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-002",
+          "name": "Ladle Steel",
+          "note": "",
+          "finalVendor": "Gogia",
+          "rates": { "Gogia": 0 },
+          "sites": [
+            { "siteKey": "S-FIX-001", "qty": 10, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "",
+          "name": "Measuring Cup",
+          "note": "",
+          "finalVendor": "Gogia",
+          "rates": { "Gogia": 150 },
+          "sites": [
+            { "siteKey": "S-FIX-003", "qty": 2, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-004",
+          "name": "Tongs",
+          "note": "",
+          "finalVendor": "Gogia",
+          "rates": { "Gogia": 80 },
+          "sites": [
+            { "siteKey": "S-FIX-001", "qty": 6, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" },
+            { "siteKey": "S-FIX-002", "qty": 6, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" },
+            { "siteKey": "S-FIX-003", "qty": 6, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Glassware",
+      "group": "operating",
+      "vendors": ["Crystal House"],
+      "items": [
+        {
+          "itemKey": "ITM-FIX-005",
+          "name": "Japanese Cocktail Glass",
+          "note": "",
+          "finalVendor": "Crystal House",
+          "rates": { "Crystal House": 220 },
+          "sites": [
+            { "siteKey": "S-FIX-001", "qty": 24, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-006",
+          "name": "Japanese Cocktail Glass",
+          "note": "",
+          "finalVendor": "Crystal House",
+          "rates": { "Crystal House": 220 },
+          "sites": [
+            { "siteKey": "S-FIX-002", "qty": 24, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-007",
+          "name": "Highball Glass",
+          "note": "",
+          "finalVendor": "Crystal House",
+          "rates": { "Crystal House": 180 },
+          "sites": [
+            { "siteKey": "S-FIX-003", "qty": 18, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Furniture",
+      "group": "interior",
+      "vendors": ["Wood Works"],
+      "items": [
+        {
+          "itemKey": "ITM-FIX-008",
+          "name": "Dining Chair",
+          "note": "",
+          "finalVendor": "Wood Works",
+          "rates": { "Wood Works": 4500 },
+          "sites": [
+            { "siteKey": "S-FIX-001", "qty": 40, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-009",
+          "name": "Dining Table",
+          "note": "",
+          "finalVendor": "Wood Works",
+          "rates": { "Wood Works": 18000 },
+          "sites": [
+            { "siteKey": "S-FIX-002", "qty": 10, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        },
+        {
+          "itemKey": "ITM-FIX-010",
+          "name": "Bar Stool",
+          "note": "",
+          "finalVendor": "Wood Works",
+          "rates": { "Wood Works": 3200 },
+          "sites": [
+            { "siteKey": "S-FIX-003", "qty": 15, "remarkSize": "", "poAmount": null, "boqLink": "", "poLink": "", "approvedVia": "", "link": "", "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
+          ]
+        }
+      ]
+    }
+  ]
+}

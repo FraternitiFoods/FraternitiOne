@@ -75,6 +75,7 @@ jobs:
       DATABASE_URL: "postgresql://fraterniti:fraterniti_ci@localhost:5432/fraterniti_one_boq?schema=public"
       SESSION_SECRET: "ci-only-session-secret-0000000000000000"
       SEED_DEV_PASSWORD: "CiSeedPassword123!"
+      IMPORT_SECRET: "ci-only-import-secret-0000000000000000"
       APP_URL: "http://localhost:3000"
       NEXT_TELEMETRY_DISABLED: "1"
     steps:

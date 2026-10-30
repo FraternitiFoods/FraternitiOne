@@ -1,10 +1,13 @@
 /**
- * Dev-only seed data: just enough to log in as an admin on the `new` branch
- * baseline (see plan.md milestone M0). Extend this once Site BOQ's own
- * seed data (categories, app_settings) lands in M1.
+ * Dev-only user seed (just enough to log in as an admin, plan.md milestone
+ * M0) plus the Site BOQ baseline seed data that every environment needs
+ * regardless of real import data: the 21 categories and app_settings
+ * defaults (plan.md milestone M1).
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { SEED_CATEGORIES } from "@/lib/boq-categories";
+import { APP_SETTING_KEYS, DEFAULT_APP_SETTINGS } from "@/lib/app-settings";
 
 const db = new PrismaClient();
 
@@ -45,6 +48,32 @@ async function upsertUser(input: {
   });
 }
 
+async function seedCategories() {
+  for (const category of SEED_CATEGORIES) {
+    await db.category.upsert({
+      where: { name: category.name },
+      // Seeding never overwrites a category already touched by a real
+      // import — only fills in categories that don't exist yet.
+      update: {},
+      create: category,
+    });
+  }
+  console.log(`Seeded ${SEED_CATEGORIES.length} categories.`);
+}
+
+async function seedAppSettings() {
+  for (const key of APP_SETTING_KEYS) {
+    await db.appSetting.upsert({
+      where: { key },
+      // Never overwrite a value an Admin may have already changed from
+      // Settings — seeding only fills in keys that don't exist yet.
+      update: {},
+      create: { key, value: DEFAULT_APP_SETTINGS[key] },
+    });
+  }
+  console.log(`Seeded app_settings (mode = ${DEFAULT_APP_SETTINGS.mode}).`);
+}
+
 async function main() {
   const admin = await upsertUser({
     email: "tech@fraterniti.co.in",
@@ -56,6 +85,9 @@ async function main() {
   for (const u of [admin]) {
     console.log(`  - ${u.email}  (${u.role})`);
   }
+
+  await seedCategories();
+  await seedAppSettings();
 }
 
 main()

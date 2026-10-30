@@ -93,6 +93,7 @@ model User {
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   auditEvents         AuditEvent[]
+  purchaseOrders      PurchaseOrder[]
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password".
@@ -130,9 +131,9 @@ model Session {
 /// "lightweight audit log for edits in WEBSITE_LIVE" (plan.md section 5,
 /// milestone M5) can reuse this same table instead of inventing a second one.
 model AuditEvent {
-  id         String      @id @default(cuid())
+  id         String  @id @default(cuid())
   actorId    String?
-  actor      User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actor      User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
   /// Denormalized actor snapshot, in addition to the actorId FK — needed for
   /// an immutable event history that survives the actor's User row changing
   /// or being deleted.
@@ -154,4 +155,256 @@ model AuditEvent {
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Site BOQ (plan.md section 3). SHEET_LIVE import (milestone M2) is the only
+// writer of Site/Category/Vendor/Item/VendorRate/SiteItem data until
+// WEBSITE_LIVE edit mode (M5). PurchaseOrder/PoLine are schema-only until M6.
+// ---------------------------------------------------------------------------
+
+enum CategoryGroup {
+  OPERATING
+  INTERIOR
+}
+
+enum ImportRunStatus {
+  IN_PROGRESS
+  COMMITTED
+  FAILED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+}
+
+model Site {
+  id            String    @id @default(cuid())
+  /// Stable "Site ID" column added to the sheet by Abhishek — the import's
+  /// upsert key (plan.md section 7), independent of the display name.
+  sourceKey     String    @unique
+  name          String    @unique
+  shortCode     String?
+  openingDate   DateTime?
+  note          String?
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  /// Set to the current ImportRun.id on every chunk that touches this row;
+  /// finish() soft-deactivates any active Site whose lastSeenRunId doesn't
+  /// match the run that just completed (plan.md section 7, "finish").
+  lastSeenRunId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  siteItems      SiteItem[]
+  purchaseOrders PurchaseOrder[]
+}
+
+model Category {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  displayName String
+  group       CategoryGroup
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  items           Item[]
+  categoryVendors CategoryVendor[]
+  purchaseOrders  PurchaseOrder[]
+}
+
+/// Vendor contact details (address/gstin/phone/email) are never populated by
+/// the sheet import — plan.md section 7 is explicit that import must never
+/// overwrite them, since they're filled in later via the UI and feed POs.
+model Vendor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  address   String?
+  gstin     String?
+  phone     String?
+  email     String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  categoryVendors CategoryVendor[]
+  vendorRates     VendorRate[]
+  finalForItems   Item[]           @relation("ItemFinalVendor")
+  purchaseOrders  PurchaseOrder[]
+}
+
+model CategoryVendor {
+  categoryId String
+  vendorId   String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([categoryId, vendorId])
+  @@index([vendorId])
+}
+
+model Item {
+  id            String   @id @default(cuid())
+  /// Stable "Item ID" column added to the sheet by Abhishek — the import's
+  /// upsert key. Falls back to category+name+occurrence index with a warning
+  /// when absent (plan.md section 7).
+  sourceKey     String   @unique
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  name          String
+  sizeNote      String?
+  finalVendorId String?
+  finalVendor   Vendor?  @relation("ItemFinalVendor", fields: [finalVendorId], references: [id], onDelete: SetNull)
+  note          String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  /// See Site.lastSeenRunId.
+  lastSeenRunId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  photos      ItemPhoto[]
+  vendorRates VendorRate[]
+  siteItems   SiteItem[]
+  poLines     PoLine[]
+
+  @@index([categoryId])
+}
+
+model ItemPhoto {
+  id         String   @id @default(cuid())
+  itemId     String
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  storageKey String
+  /// Also the import's idempotency key (plan.md section 7: "idempotent by
+  /// itemKey + index") — slot 0-2 of that item's photos, re-push replaces
+  /// whatever already occupies this slot rather than appending.
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([itemId, sortOrder])
+}
+
+/// rate nullable + 0 both mean "missing" (plan.md section 3, Rate rules) —
+/// 0/empty incoming values are normalized to null before being stored here,
+/// never stored as 0.
+model VendorRate {
+  id        String   @id @default(cuid())
+  itemId    String
+  vendorId  String
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  rate      Decimal? @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([itemId, vendorId])
+  @@index([vendorId])
+}
+
+/// One row per (site, item) that has at least one non-empty field — import
+/// never creates an all-empty row (plan.md section 3). rateOverride is never
+/// written by import (the sheet has one rate for all sites); it exists for
+/// the future per-site override the UI will support.
+model SiteItem {
+  id           String   @id @default(cuid())
+  siteId       String
+  itemId       String
+  site         Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  item         Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  qty          Decimal  @default(0) @db.Decimal(12, 2)
+  remarkSize   String?
+  rateOverride Decimal? @db.Decimal(14, 2)
+  poAmount     Decimal? @db.Decimal(14, 2)
+  boqLink      String?
+  poLink       String?
+  approvedVia  String?
+  link         String?
+  advanceGiven Decimal? @db.Decimal(14, 2)
+  stage        String?
+  followUp     String?
+  remarks      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([siteId, itemId])
+  @@index([itemId])
+}
+
+model PurchaseOrder {
+  id              String              @id @default(cuid())
+  poNumber        String              @unique
+  siteId          String
+  categoryId      String
+  vendorId        String
+  site            Site                @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  category        Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  vendor          Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  poDate          DateTime
+  deliveryBy      DateTime?
+  deliveryDays    Int
+  paymentTerms    String
+  gstPercent      Decimal             @db.Decimal(5, 2)
+  subtotal        Decimal             @db.Decimal(14, 2)
+  gstAmount       Decimal             @db.Decimal(14, 2)
+  total           Decimal             @db.Decimal(14, 2)
+  status          PurchaseOrderStatus @default(DRAFT)
+  createdById     String
+  createdBy       User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  /// Snapshots of company/vendor/site details as they were at PO creation
+  /// time (plan.md section 3) — the PDF must not change retroactively if the
+  /// live Vendor/Site/settings rows are edited later.
+  companySnapshot Json
+  vendorSnapshot  Json
+  siteSnapshot    Json
+  termsSnapshot   Json
+  createdAt       DateTime            @default(now())
+
+  lines PoLine[]
+
+  @@index([siteId])
+  @@index([vendorId])
+  @@index([categoryId])
+}
+
+model PoLine {
+  id              String        @id @default(cuid())
+  poId            String
+  po              PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  itemId          String?
+  item            Item?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  nameSnapshot    String
+  remarkSize      String?
+  qty             Decimal       @db.Decimal(12, 2)
+  rate            Decimal       @db.Decimal(14, 2)
+  amount          Decimal       @db.Decimal(14, 2)
+  photoStorageKey String?
+
+  @@index([poId])
+}
+
+/// Generic key/value settings store (plan.md section 3) so new settings can
+/// be added without a migration. Known keys are seeded in M1 (see
+/// prisma/seed.ts) and read through src/lib/app-settings.ts, not accessed
+/// directly — that module is the single place that knows the key names and
+/// value shapes.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/// One row per import push (plan.md section 7's begin/chunk/photo/finish
+/// sequence). counts/warnings are only populated once finish() commits.
+model ImportRun {
+  id         String          @id @default(cuid())
+  status     ImportRunStatus @default(IN_PROGRESS)
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  counts     Json?
+  warnings   Json?
+  dryRun     Boolean         @default(false)
 }

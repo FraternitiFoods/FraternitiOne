@@ -150,6 +150,24 @@ export function buildDocumentKey(params: {
   return `${params.projectId}/${params.category}/${randomUUID()}-${safeName}`;
 }
 
+const PHOTO_MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/**
+ * Site BOQ item photo key (plan.md section 7's import photo endpoint,
+ * milestone M2; the Admin-upload UI path lands in M4). Own `boq-items/...`
+ * prefix, not the Document Vault's `{projectId}/...` taxonomy — items
+ * aren't scoped to a project.
+ */
+export function buildItemPhotoKey(params: { itemId: string; index: number; mimeType: string }): string {
+  const extension = PHOTO_MIME_EXTENSIONS[params.mimeType] ?? "bin";
+  return `boq-items/${params.itemId}/${params.index}-${randomUUID()}.${extension}`;
+}
+
 /**
  * Complaint attachment key — same `{projectId}/...` prefix convention as
  * `buildDocumentKey`, own subfolder since a complaint attachment isn't part
