@@ -94,6 +94,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   auditEvents         AuditEvent[]
   purchaseOrders      PurchaseOrder[]
+  lockedSites         Site[]               @relation("SiteLockedBy")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password".
@@ -194,6 +195,15 @@ model Site {
   /// finish() soft-deactivates any active Site whose lastSeenRunId doesn't
   /// match the run that just completed (plan.md section 7, "finish").
   lastSeenRunId String?
+  /// Site lock (plan.md section 3 "Site lock", milestone M5). Website-native
+  /// data — the import must never write these fields. While isLocked, every
+  /// SiteItem.qty/remarkSize/rateOverride/tracking-field edit is rejected for
+  /// every role, and the sheet import skips this site's qty/tracking fields
+  /// instead of overwriting them (with a warning).
+  isLocked      Boolean   @default(false)
+  lockedAt      DateTime?
+  lockedById    String?
+  lockedBy      User?     @relation("SiteLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -318,6 +328,11 @@ model SiteItem {
   qty          Decimal  @default(0) @db.Decimal(12, 2)
   remarkSize   String?
   rateOverride Decimal? @db.Decimal(14, 2)
+  /// Snapshot of effective_rate taken when the parent Site was locked (plan.md
+  /// section 3 "Site lock"). While the site is locked, amount = qty ×
+  /// lockedRate, so later changes to the item's rate don't move a locked
+  /// site's numbers. Cleared back to null on unlock. Never written by import.
+  lockedRate   Decimal? @db.Decimal(14, 2)
   poAmount     Decimal? @db.Decimal(14, 2)
   boqLink      String?
   poLink       String?

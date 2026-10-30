@@ -62,6 +62,25 @@ export function splitPascalCase(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
+/** Dashboards use 0 decimals, item tables use 2 (plan.md section 6.4). */
+export function formatCurrency(value: number | null | undefined, decimals = 0): string {
+  if (value === null || value === undefined) return "—";
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals,
+  }).format(value);
+}
+
+export function formatNumber(value: number | null | undefined, decimals = 2): string {
+  if (value === null || value === undefined) return "—";
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  }).format(value);
+}
+
 export const ROLE_LABELS: Record<Role, string> = {
   FRANCHISEE: "Franchisee",
   SALES: "Sales",

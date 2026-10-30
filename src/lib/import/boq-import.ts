@@ -156,6 +156,10 @@ export async function createImportRun(dryRun: boolean) {
   return db.importRun.create({ data: { dryRun, counts: ZERO_COUNTS, warnings: [] } });
 }
 
+// Site lock (plan.md section 3 "Site lock") is website-native data: the
+// upsert `update`/`create` payloads below never mention isLocked/lockedAt/
+// lockedById, so Prisma never touches them here regardless of what the sheet
+// sends.
 export function runSitesChunk(runId: string, data: SiteInput[]) {
   return runChunk(runId, async (tx) => {
     const warnings: string[] = [];
@@ -258,6 +262,7 @@ export function runCategoryChunk(runId: string, payload: CategoryChunkInput) {
     }
     const warnedDuplicates = new Set<string>();
     const warnedCrossCategory = new Set<string>();
+    const warnedLockedSites = new Set<string>();
     const occurrenceCounters = new Map<string, number>();
 
     let vendorRateCount = 0;
@@ -343,6 +348,21 @@ export function runCategoryChunk(runId: string, payload: CategoryChunkInput) {
           warnings.push(
             `Item "${trimmedName}" references unknown siteKey "${siteEntry.siteKey}" — site_item skipped.`
           );
+          continue;
+        }
+
+        // Site lock (plan.md section 3 "Site lock"): locking is website-
+        // native, not a BOQ data edit, so the push is still accepted — but a
+        // locked site's qty/tracking fields (and lockedRate) must never be
+        // overwritten by the sheet. Skip this site_item entirely and warn
+        // once per locked site per chunk, rather than once per item.
+        if (site.isLocked) {
+          if (!warnedLockedSites.has(site.id)) {
+            warnedLockedSites.add(site.id);
+            warnings.push(
+              `Site "${site.name}" is locked — qty/tracking updates from the sheet for this site in category "${payload.category}" were skipped. Unlock the site to resync.`
+            );
+          }
           continue;
         }
 

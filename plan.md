@@ -79,7 +79,7 @@ Dashboard, Site Tracker and Operations BOQ pages; sending POs by email/WhatsApp 
 
 Use the repo's ORM conventions. Money in `numeric(14,2)`. Quantities in `numeric(12,2)`. Soft-delete via `is_active`, never hard-delete imported rows.
 
-**sites**: id, `source_key` (unique, from sheet Site ID), name (unique), short_code, opening_date (nullable), note, is_active, sort_order.
+**sites**: id, `source_key` (unique, from sheet Site ID), name (unique), short_code, opening_date (nullable), note, is_active, sort_order, `is_locked` (default false), `locked_at` (nullable), `locked_by` (nullable, the Admin user who locked it — see Site lock below).
 
 **categories**: id, name (unique, e.g. "Kitchen Smallware"), display_name, `group` (`operating` | `interior`), sort_order. Seed the 21 in section 8.
 
@@ -93,7 +93,7 @@ Use the repo's ORM conventions. Money in `numeric(14,2)`. Quantities in `numeric
 
 **vendor_rates**: item_id, vendor_id, rate (nullable), unique(item_id, vendor_id).
 
-**site_items**: site_id, item_id (unique pair), qty, remark_size, `rate_override` (nullable, see below), and the order-tracking fields from the sheet: `po_amount`, `boq_link`, `po_link`, `approved_via`, `link`, `advance_given`, `stage`, `follow_up`, `remarks`. Create rows only when something is non-empty.
+**site_items**: site_id, item_id (unique pair), qty, remark_size, `rate_override` (nullable, see below), `locked_rate` (nullable, see Site lock below), and the order-tracking fields from the sheet: `po_amount`, `boq_link`, `po_link`, `approved_via`, `link`, `advance_given`, `stage`, `follow_up`, `remarks`. Create rows only when something is non-empty.
 
 **purchase_orders**: id, po_number (unique), site_id, category_id, vendor_id, po_date, delivery_by, delivery_days, payment_terms, gst_percent, subtotal, gst_amount, total, status (`draft` | `issued`), created_by, created_at, and a snapshot of company/vendor/site details used on the PDF.
 
@@ -108,6 +108,14 @@ Use the repo's ORM conventions. Money in `numeric(14,2)`. Quantities in `numeric
 - `effective_rate(site, item)` = `site_items.rate_override` if set, else `final_rate`. The sheet has one rate for all sites, so imports leave overrides null, but the UI/data model must support a site-specific override later.
 - `amount(site, item)` = `qty × effective_rate` (0 if either missing).
 - Order-tracking "pending" = `po_amount − advance_given` (verify with the sheet owner, see section 9).
+
+### Site lock
+- Only Admin can lock or unlock a site (enforced on the server, section 5).
+- On lock: copy every one of that site's `site_items.effective_rate` into `site_items.locked_rate`, and stamp `is_locked = true`, `locked_at`, `locked_by`. While locked, `amount(site, item) = qty × locked_rate` instead of `qty × effective_rate` — later changes to an item's final vendor/rate never change a locked site's numbers.
+- While locked, the server rejects every edit to that site's `qty`, `remark_size`, `rate_override` and the order-tracking fields, for every role including Admin. Admin must unlock first.
+- Unlock requires a confirmation dialog, then clears every `locked_rate` back to null on that site's `site_items` and writes an audit log entry (who, when, which site).
+- Locked sites show a lock badge everywhere the site appears (Overview, Site view, Items & Qty, Sites). For now, locked sites are still included in "rates missing / not ordered" nagging counts unchanged — excluding them is deferred until the plan owner confirms that's wanted.
+- Lock state is website-native data, not sheet data: the import (section 7) must never overwrite `is_locked`, `locked_at`, `locked_by` or `locked_rate`. Locking/unlocking is allowed in `SHEET_LIVE` mode (it is not a BOQ data edit), but while a site is locked, the sheet push skips that site's quantity/tracking fields and adds an import warning instead of overwriting them.
 
 ---
 
@@ -162,10 +170,13 @@ Company details for PO header, PO defaults and terms, urgency thresholds, **mode
 | Edit items, vendor rates, final vendor, add items | yes | **no** | no |
 | Edit vendors, sites, settings, flip mode | yes | no | no |
 | Create/download POs | yes | yes | no |
+| Lock / unlock a site | yes | **no** | no |
 
 All edits are blocked when `mode = SHEET_LIVE` (except vendor contact details, PO creation, settings), enforced on the server, not just hidden in the UI.
 
-Add a lightweight audit log for edits in `WEBSITE_LIVE` (who, when, what field, old → new).
+Site lock is a second, independent gate on top of the table above: while a site `is_locked`, nobody — not even Admin — can edit that site's qty, remark/size, rate_override or order-tracking fields in either mode; Admin must unlock the site first. Locking/unlocking itself is Admin-only in both modes.
+
+Add a lightweight audit log for edits in `WEBSITE_LIVE` (who, when, what field, old → new). Unlocking a site always writes an audit log entry, in either mode.
 
 ---
 
@@ -242,7 +253,7 @@ Operating: Uniforms · Probes (display "Probes & Table Decor") · POS & Printers
 
 Interior: Planters (display "Artificial Plants & Tree") · Lighting · Furniture · Wallpaper & Decor · Photo Frames.
 
-Added later: Equipments · Gas · Ducting · Tiles · AC.
+Added later (group: operating): Equipments · Gas · Ducting · Tiles · AC.
 
 Note: the sheet also has hidden helper tabs ("MUM - FOH&Bar Gogia Rates", "IND - FOH&Bar Gogia Rates"). Ignore them.
 
@@ -285,7 +296,7 @@ For the build: values for `DATABASE_URL`, `IMPORT_SECRET`, photo storage.
 
 **M4 — Photos.** Spike on reading in-cell images from Apps Script with the sheet owner; photo endpoint, storage, thumbnails in tables; Admin upload in UI. *Check:* items show photos; re-push does not duplicate.
 
-**M5 — Edit mode.** Roles from section 5, edits for qty/tracking/rates/vendors/items, audit log, mode switch with confirmation. *Check:* server rejects every write in `SHEET_LIVE`; after switching, the right roles can edit and the import returns 403.
+**M5 — Edit mode.** Roles from section 5, edits for qty/tracking/rates/vendors/items, audit log, mode switch with confirmation. Site lock: Admin-only lock/unlock UI with a confirmation dialog on unlock, lock badge on Overview/Site view/Items & Qty/Sites, server-side rejection of qty/remark_size/rate_override/tracking edits on a locked site for every role (Admin included), snapshot of `locked_rate` on lock and clearing it on unlock, audit log entry on unlock. *Check:* server rejects every write in `SHEET_LIVE`; after switching, the right roles can edit and the import returns 403; locking a site freezes its amounts even after its items' rates change; editing a locked site's qty/rate/tracking fields is rejected for every role, including Admin, until it is unlocked; unlocking requires confirmation and writes an audit log entry.
 
 **M6 — Purchase Orders.** Create, preview, PDF, list. *Check:* PO for Cuttack + Furniture + one vendor sums correctly with 18% GST; PDF has header, photos, terms, signatory line.
 
@@ -351,4 +362,25 @@ Throughout: after every milestone, run lint/typecheck/build and report what a hu
 - B2/photo-storage credentials (`B2_ENDPOINT`, `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET_NAME` in `.env`) — needed to actually exercise the photo endpoint; it's implemented but untested without them.
 - The `group` guess for Equipments/Gas/Ducting/Tiles/AC above — confirm or correct if it matters before M3's category-grouped screens ship.
 - Sheet-owner answers (section 9) still open: Ordered/Not-ordered rule, Pending Amount formula, Urgent/This-month thresholds, Stage's allowed values, whether Apps Script can read in-cell images (the last one directly affects whether M4's photo flow even needs the endpoint built here).
+
+### 2026-10-30 — Category group fix + Site lock (schema/import only) + M3 — Read-only screens
+
+**Verified:**
+- `pnpm run typecheck`, `pnpm run lint` and `pnpm run test` all pass clean (lint's one warning is pre-existing in `src/lib/email-domain.ts`, unrelated to this session). `pnpm run build` passes clean and lists all 6 new routes (`/site-boq`, `/site-boq/site-view`, `/site-boq/items`, `/site-boq/vendors`, `/site-boq/sites`, `/site-boq/settings`) as server-rendered.
+- New migration `20261030103541_site_lock_fields` applied cleanly to the dev DB (and exercised by `prisma migrate deploy` during the build above).
+- A real Playwright pass against `pnpm dev` (`scripts/tmp-e2e-m3-site-boq.ts` — the first `scripts/tmp-e2e-*.ts` file on this branch, kept per CLAUDE.md's convention, run with `npx tsx scripts/tmp-e2e-m3-site-boq.ts`) against `scripts/fixtures/boq-import-fixture.json`, hand-computed to a grand total of ₹4,30,800 (Site A ₹1,90,600, Site B ₹1,88,180, Site C ₹52,020; highest category Furniture ₹4,08,000; "Ladle Steel" correctly shows "No rate" from its explicit-zero rate). All 25 checks passed: Overview's totals/insight cards match those hand-computed numbers exactly; Site view's banner counts, opening-reminder table and "what's pending" list render correctly for the selected site; Items & Qty shows the right vendor-rate columns and the "No rate" highlight; Vendors/Sites/Settings render their respective data; every one of the 6 new `/site-boq/*` routes still 403s a FRANCHISEE user via the existing shared `forbidden.tsx` (confirming a segment-level `forbidden.tsx` covers newly-added nested routes without needing its own copy per route).
+- A separate one-off script (not kept — backend-logic check, not a UI screen) verified the Site lock import protection directly: locked `Site` A, set a distinctive `qty`/`lockedRate` on one of its `SiteItem` rows, then re-pushed the fixture (which sends a different `qty` for that row). Confirmed: the import emits a warning naming the locked site instead of silently skipping it, `Site.isLocked`/`lockedById` are untouched by the push, and the locked `SiteItem`'s `qty`/`lockedRate` are **not** overwritten. Site A was then unlocked and the fixture re-pushed once more to leave the dev DB back in its normal (unlocked) state.
+- Found and fixed a side effect of that same verification: the dev DB's `Site` rows had all gone `isActive = false` — a leftover from earlier M2 sessions' `ci-smoke.ts` runs, each of which starts its own fresh import run and (correctly, per `finish`'s own contract) soft-deactivates any site not touched by that run, including the fixture's sites. Re-pushed `scripts/fixtures/boq-import-fixture.json` via `scripts/push-boq-fixture.ts` to make it the latest run again. Not a bug in the import logic — a fixture freshness note for whoever runs `ci-smoke.ts` and the fixture push in the same dev DB: re-push the fixture last if you need it active for manual testing afterward.
+
+**What changed:**
+- **Category group fix** (plan.md section 8): "Equipments", "Gas", "Ducting", "Tiles", "AC" changed from the M1/M2 session's `INTERIOR` placeholder guess to `OPERATING`, per explicit instruction this session. Fixed in three places: `src/lib/boq-categories.ts` (the seed source), a direct `UPDATE` on the 5 already-seeded `Category` rows in the dev DB (seeding alone wouldn't have touched them — `prisma/seed.ts`'s `seedCategories()` intentionally never overwrites an existing row), and plan.md section 8's "Added later" line now says `(group: operating)` explicitly so this isn't an open guess for the next session.
+- **Site lock — schema and import protection only** (plan.md sections 3, 5, and milestone M5; UI and enforcement are explicitly deferred to M5, per this session's instruction): `Site.isLocked`/`lockedAt`/`lockedById`(+`lockedBy` relation to `User`) and `SiteItem.lockedRate` added via migration `20261030103541_site_lock_fields`. `src/lib/import/boq-import.ts`'s `runCategoryChunk` now skips a locked site's `SiteItem` upsert entirely (qty/tracking fields) and emits one warning per locked site per chunk, rather than overwriting it; `runSitesChunk`'s site upsert already never mentioned the lock fields, so it needed no code change, just a comment recording the invariant. Documented in plan.md: a new "Site lock" subsection under section 3 (the rules), a new table row + paragraph in section 5 (Admin-only, overrides the mode-based permission table), and an expanded M5 bullet/check in section 10.
+- **M3 — Read-only screens** (plan.md section 4 and milestone M3): built all 6 screens — Overview (`/site-boq`), Site view (`/site-boq/site-view`), Items & Qty (`/site-boq/items`), Vendors (`/site-boq/vendors`), Sites (`/site-boq/sites`), Settings read-only parts (`/site-boq/settings`) — against `scripts/fixtures/boq-import-fixture.json` (the real sheet push isn't ready yet; see "still pending" below). Shared plumbing added rather than duplicated per page: `src/lib/boq-calc.ts` (pure `finalRateOf`/`rateForAmount`/`amountOf`/`isOrdered`/`pendingAmount` functions — the single place the rate/amount/lock/ordered rules from sections 3 and 6.2 live), `src/lib/boq-data.ts` (`getComputedItems()` — one query that every screen derives its numbers from, so a rule can't drift between pages), `src/lib/site-boq-access.ts` (`requireSiteBoqUser()`, replacing the inline `requireUser()` + FRANCHISEE check that was only in `page.tsx` before — now shared across all 6 pages), `src/lib/permissions.ts`'s new `canViewSiteBoq()`, and `formatCurrency`/`formatNumber` added to `src/lib/format.ts` (en-IN, 0 decimals on dashboards / 2 on item tables per section 6.4 — this repo's first currency formatter). Three small reusable pieces under `src/app/(app)/site-boq/_components/`: `SiteBoqSubNav` (real links, replacing the M0 placeholder tab strip), `QuerySelect` (a plain native `<select>` that navigates via a query param — used for the site/category pickers), `SearchBox` (a zero-JS GET-form search input that preserves other query params). Overview's site-vs-category matrix table has sticky headers (`sticky top-0`/`sticky left-0`) and a search box filtering sites by name; Items & Qty and Vendors also got search boxes. The "Items & Qty" per-row tracking-field drawer and "Sites" add/rename UI from sections 4.3/4.6 were intentionally **not** built — both are edit-mode UI, explicitly milestone M5, not M3's "read-only screens."
+- Order-tracking "pending" (section 3: `po_amount − advance_given`) implemented as the isolated `pendingAmount()` function per the same pattern section 6.2 already asked for `isOrdered()`, since it's equally unverified with the sheet owner (section 9).
+
+**Still pending / needs a human:**
+- Real sheet data: everything above was verified against the fixture (3 sites, 3 categories, 10 items), not the real sheet — section 8's actual reference numbers (grand total ₹1,43,14,647 etc.) can only be checked once the real Apps Script push (section 7) is live and `IMPORT_SECRET` is wired to it. The fixture numbers above are a correctness check on the calculation code, not a substitute for that real-data check plan.md's own M3 acceptance line asks for.
+- Site lock's **UI and enforcement** (lock/unlock button + confirmation dialog, lock badge on every screen, server-side rejection of edits to a locked site, audit log entry on unlock) — all explicitly deferred to M5, as instructed. Only the schema fields and the import's "never overwrite, warn and skip instead" protection exist right now; there is no way to lock a site from the UI yet (the verification above set `isLocked` directly in the DB to simulate it).
+- Same open items as every prior entry: DB location (docker-compose Postgres, port 5433), B2/photo-storage credentials, sheet-owner answers (section 9), real PO number format/company details (M6).
+- `scripts/tmp-e2e-m3-site-boq.ts` depends on the fixture's 3 sites being the *latest* import run in whichever DB it's run against (see the "found and fixed" note above) — if `ci-smoke.ts` or another import test has run more recently against the same DB, re-run `npx tsx scripts/push-boq-fixture.ts` first.
 - Real values still needed: PO number format, company GSTIN/address/signatory, vendor GSTIN/addresses (M6) — nothing in M1/M2 depended on these, so still open, not newly blocking.
