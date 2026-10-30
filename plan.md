@@ -292,3 +292,35 @@ For the build: values for `DATABASE_URL`, `IMPORT_SECRET`, photo storage.
 **M7 — Polish.** Empty states, loading states, error pages, Indian formatting everywhere, the "No rate" highlighting, responsive check, README for env vars and the push flow.
 
 Throughout: after every milestone, run lint/typecheck/build and report what a human must do next (secrets, Abhishek's script, decisions).
+
+---
+
+## Progress log
+
+### 2026-10-30 — M0 — Clean slate
+
+**Verified:**
+- `pnpm run lint`, `pnpm run typecheck`, `pnpm run build` all pass clean.
+- `pnpm run test` passes (no test files — every old `*.test.ts` was removed along with the module it covered; `vitest.config.ts` now sets `passWithNoTests` so this isn't a false green).
+- Real Playwright pass against `pnpm dev` (`scripts/ci-smoke.ts`, also wired into CI's `e2e` job): anonymous request to `/site-boq` redirects to `/login`; admin login lands on `/site-boq` with the Site BOQ shell rendered; a FRANCHISEE test user hitting `/site-boq` gets a real 403; sidebar renders exactly the 4 specified items with "Coming soon" styling on the 3 disabled ones.
+- Production build's route list matches the M0 scope exactly: `/`, `/login`, `/forgot-password`, `/reset-password/[token]`, `/site-boq`, `/users`, `/users/new`, `/users/[id]/edit`, `/api/auth/clear-session`.
+- Fresh baseline migration (`20261030070747_init`) applied cleanly to a brand-new, separate database — `User`/`Session`/`PasswordResetToken`/`AuditEvent` only, `Role` enum trimmed to roles with no tie to a removed module.
+
+**Still pending / needs a human:**
+- DB location: the native Postgres role (`fraterniti`, port 5432) has no `CREATEDB`, so the new `fraterniti_one_boq` + shadow DB were created on the docker-compose Postgres (port 5433) instead, using the superuser already in `.env`. Running this branch locally now requires `docker compose up -d` / Docker Desktop running. Flag if you'd rather this live on native Postgres under a different role, or elsewhere entirely.
+- `/users` (admin user management) has no sidebar entry per the literal "exactly 4 items" spec — reachable only by direct URL as of M0 (now addressed via the account menu, see the 2026-10-30 cleanup entry below).
+- Real values still needed from you: `IMPORT_SECRET` (M2), B2/photo-storage credentials if different from what's already in `.env` (M4), real PO number format, company GSTIN/address/signatory, vendor GSTIN/addresses (M6).
+- Sheet-owner answers still open (section 9): Ordered/Not-ordered rule, Pending Amount formula, Urgent/This-month thresholds, Stage's allowed values, whether Apps Script can read in-cell images.
+
+### 2026-10-30 — Post-M0 cleanup
+
+**Verified:**
+- `pnpm run lint`, `pnpm run typecheck`, `pnpm run build` all pass clean after the changes below.
+- Real Playwright pass against `pnpm dev`: admin opens the new account menu, clicks "Manage users", lands on `/users`; reopens the menu and "Sign out" correctly ends the session and lands on `/login`. The admin-only conditional around "Manage users" is a plain `role === "ADMIN"` check (same pattern already covering the FRANCHISEE sidebar filter) — not separately re-tested per role.
+- Mid-session, `DATABASE_URL` was briefly pointed at `localhost:5432/fraterniti_one_boq` (native Postgres) by hand — that database doesn't exist there and the `fraterniti` role still has no `CREATEDB` on that server, so `prisma migrate deploy` failed with "permission denied to create database". Reverted to port 5433 (the docker-compose Postgres set up in the M0 entry above) and the build went green again. Native-5432 is not an option without either creating the DB there first or granting `fraterniti` `CREATEDB` — see the M0 entry's DB-location note, still unresolved.
+
+**What changed:**
+- CLAUDE.md's verification-standard section: every `docs/plan/NN-*.md` reference replaced with `plan.md`; the "log what was verified" convention now points at this Progress log instead of the (deleted) `docs/plan/` folder.
+- `/users` is reachable for Admins only via a "Manage users" item in a new account dropdown menu (desktop sidebar footer and mobile header, where sign-out already lived) — not the 4-item sidebar. Added `DropdownMenuLinkItem` to `src/components/ui/dropdown-menu.tsx` (wraps Base UI's `Menu.LinkItem`) since the existing `dropdown-menu.tsx` had no nav-item variant yet.
+
+**Still pending / needs a human:** same open items as the M0 entry above (DB location, env values, sheet-owner answers) — nothing in this cleanup pass resolved any of those.

@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import Link from "next/link";
 import { deleteUser, type DeleteUserState } from "./actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +13,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-export function DeleteUserButton({ userId, name, email }: { userId: string; name: string; email: string | null }) {
+export function DeleteUserButton({ userId, name, email }: { userId: string; name: string; email: string }) {
   const [open, setOpen] = useState(false);
   const boundAction = deleteUser.bind(null, userId);
   const [state, action, pending] = useActionState<DeleteUserState, FormData>(boundAction, undefined);
@@ -45,28 +44,9 @@ export function DeleteUserButton({ userId, name, email }: { userId: string; name
         </DialogHeader>
 
         {state?.error && (
-          <div className="space-y-2" role="alert">
-            <p className="text-sm text-destructive">{state.error}</p>
-            {state.blockers && state.blockers.length > 0 && (
-              <ul className="space-y-1 rounded-md bg-destructive/5 p-2 text-sm">
-                {state.blockers.map((b) => (
-                  <li key={b.href + b.label}>
-                    <Link
-                      href={b.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline underline-offset-2 hover:text-foreground"
-                    >
-                      {b.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {state.blockersNote && (
-              <p className="text-xs text-muted-foreground">{state.blockersNote}</p>
-            )}
-          </div>
+          <p className="text-sm text-destructive" role="alert">
+            {state.error}
+          </p>
         )}
 
         <DialogFooter>

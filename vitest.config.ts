@@ -11,4 +11,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  test: {
+    // This branch's M0 cleanup removed every *.test.ts file along with the
+    // modules they covered — pure-function tests return once Site BOQ logic
+    // (rate rules, amount calc, order-status derivation) lands in M1+.
+    // Without this, vitest exits 1 on an empty suite and would make CI's
+    // "Unit tests" step permanently red until then.
+    passWithNoTests: true,
+  },
 });

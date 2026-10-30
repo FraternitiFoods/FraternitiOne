@@ -63,7 +63,7 @@ jobs:
         env:
           POSTGRES_USER: fraterniti
           POSTGRES_PASSWORD: fraterniti_ci
-          POSTGRES_DB: fraterniti_one
+          POSTGRES_DB: fraterniti_one_boq
         ports:
           - 5432:5432
         options: >-
@@ -72,11 +72,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: "postgresql://fraterniti:fraterniti_ci@localhost:5432/fraterniti_one?schema=public"
+      DATABASE_URL: "postgresql://fraterniti:fraterniti_ci@localhost:5432/fraterniti_one_boq?schema=public"
       SESSION_SECRET: "ci-only-session-secret-0000000000000000"
       SEED_DEV_PASSWORD: "CiSeedPassword123!"
-      ESIGN_WEBHOOK_SECRET: "ci-only-not-a-real-secret"
-      PAN_ENCRYPTION_KEY: "ci-only-not-a-real-secret-32-bytes!!"
       APP_URL: "http://localhost:3000"
       NEXT_TELEMETRY_DISABLED: "1"
     steps:

@@ -1,24 +1,4 @@
-import type {
-  Role,
-  Department,
-  LifecycleStage,
-  ProjectHealth,
-  TaskStatus,
-  TaskPriority,
-  DocumentStatus,
-  ComplaintCategory,
-  ComplaintStatus,
-} from "@prisma/client";
-
-/** "FR-00001" style human-readable code from FranchiseProject.seq. */
-export function formatProjectCode(seq: number): string {
-  return `FR-${String(seq).padStart(5, "0")}`;
-}
-
-/** "CMP-00001" style human-readable code from Complaint.seq. */
-export function formatComplaintCode(seq: number): string {
-  return `CMP-${String(seq).padStart(5, "0")}`;
-}
+import type { Role } from "@prisma/client";
 
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
@@ -42,7 +22,7 @@ export function daysUntil(date: Date | string): number {
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-/** 1536000 -> "1.5 MB". Used for Document.fileSize. */
+/** 1536000 -> "1.5 MB". */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
@@ -75,11 +55,9 @@ export function humanize(value: string): string {
     .join(" ");
 }
 
-/**
- * "FranchiseProject" -> "Franchise Project" — for AuditEvent.entityType,
- * which is stored as a PascalCase model name (see writeAuditEvent call
- * sites), not a SCREAMING_SNAKE_CASE enum value like `humanize` expects.
- */
+/** "FranchiseProject" -> "Franchise Project" — for AuditEvent.entityType, which is
+ * stored as a PascalCase model name (see writeAuditEvent call sites), not a
+ * SCREAMING_SNAKE_CASE enum value like `humanize` expects. */
 export function splitPascalCase(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
@@ -97,114 +75,4 @@ export const ROLE_LABELS: Record<Role, string> = {
   OPERATIONS: "Operations",
   MANAGEMENT: "Management",
   ADMIN: "System Admin",
-  SITE_SUPERVISOR: "Site Supervisor",
-  KYC_REVIEWER: "KYC Reviewer",
-  LOI_PREPARER: "LOI Preparer",
-  COMPANY_SIGNATORY: "Company Signatory",
-};
-
-export const DEPARTMENT_LABELS: Record<Department, string> = {
-  SALES: "Sales",
-  LEGAL: "Legal",
-  PROPERTY: "Property / Site",
-  INTERIORS: "Interiors & Design",
-  PROJECTS: "Project Execution",
-  ACCOUNTS: "Accounts",
-  HR: "HR",
-  CULINARY: "Culinary",
-  PROCUREMENT: "Procurement",
-  MARKETING: "Marketing",
-  OPERATIONS: "Operations",
-  FRANCHISEE: "Franchisee",
-  GENERAL: "General",
-};
-
-export const LIFECYCLE_STAGE_LABELS: Record<LifecycleStage, string> = {
-  SALES_FRANCHISE_ACQUISITION: "Sales & Franchise Acquisition",
-  LOCATION_ACQUISITION: "Location Acquisition",
-  LEGAL_COMPLIANCE: "Legal & Compliance",
-  PROJECT_HANDOVER: "Project Handover",
-  DESIGN: "Design",
-  BOQ_PROCUREMENT: "BOQ & Procurement",
-  CONSTRUCTION_EXECUTION: "Construction Execution",
-  LICENSING: "Licensing",
-  OPERATIONS_PREPARATION: "Operations Preparation",
-  TECHNOLOGY_DEPLOYMENT: "Technology Deployment",
-  PRE_LAUNCH_MARKETING: "Pre-Launch Marketing",
-  GRAND_LAUNCH: "Grand Launch",
-  POST_OPENING: "Post Opening",
-};
-
-/** Ordered main path — each stage's status is independent (see
- * lifecycle-stage-status.ts), this order only drives the "01"-"13" numbering
- * and the projects-list "earliest incomplete stage" summary. */
-export const LIFECYCLE_STAGE_ORDER: LifecycleStage[] = [
-  "SALES_FRANCHISE_ACQUISITION",
-  "LOCATION_ACQUISITION",
-  "LEGAL_COMPLIANCE",
-  "PROJECT_HANDOVER",
-  "DESIGN",
-  "BOQ_PROCUREMENT",
-  "CONSTRUCTION_EXECUTION",
-  "LICENSING",
-  "OPERATIONS_PREPARATION",
-  "TECHNOLOGY_DEPLOYMENT",
-  "PRE_LAUNCH_MARKETING",
-  "GRAND_LAUNCH",
-  "POST_OPENING",
-];
-
-export const PROJECT_HEALTH_LABELS: Record<ProjectHealth, string> = {
-  GREEN: "Green",
-  AMBER: "Amber",
-  RED: "Red",
-  CRITICAL: "Critical",
-};
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  AWAITING_FRANCHISEE: "Awaiting Franchisee",
-  AWAITING_INTERNAL: "Awaiting Internal",
-  BLOCKED: "Blocked",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-
-export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
-  LOW: "Low",
-  MEDIUM: "Medium",
-  HIGH: "High",
-  CRITICAL: "Critical",
-};
-
-export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
-  DRAFT: "Draft",
-  UNDER_REVIEW: "Under Review",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-  EXPIRED: "Expired",
-  SUPERSEDED: "Superseded",
-};
-
-export const COMPLAINT_CATEGORY_LABELS: Record<ComplaintCategory, string> = {
-  PROJECT: "Project",
-  CONSTRUCTION: "Construction",
-  INTERIOR: "Interior",
-  EQUIPMENT: "Equipment",
-  SALES: "Sales",
-  BILLING: "Billing",
-  DOCUMENTATION: "Documentation",
-  SUPPORT: "Support",
-  OTHER: "Other",
-};
-
-export const COMPLAINT_STATUS_LABELS: Record<ComplaintStatus, string> = {
-  OPEN: "Open",
-  ASSIGNED: "Assigned",
-  IN_PROGRESS: "In Progress",
-  AWAITING_FRANCHISEE: "Awaiting Franchisee",
-  RESOLVED: "Resolved",
-  CLOSED: "Closed",
-  REOPENED: "Reopened",
 };

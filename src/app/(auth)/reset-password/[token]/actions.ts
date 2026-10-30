@@ -59,15 +59,7 @@ export async function setPassword(
   });
 
   await writeAuditEvent(db, {
-    actor: {
-      id: updatedUser.id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      role: updatedUser.role,
-      additionalRoles: updatedUser.additionalRoles,
-      category: updatedUser.category,
-      department: updatedUser.department,
-    },
+    actor: { id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, role: updatedUser.role },
     entityType: "User",
     entityId: updatedUser.id,
     action: "UPDATE",
@@ -79,5 +71,5 @@ export async function setPassword(
   // to /login to type the password they just chose.
   await createSession(updatedUser.id);
 
-  redirect("/dashboard");
+  redirect("/site-boq");
 }

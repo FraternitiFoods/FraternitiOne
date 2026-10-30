@@ -3,160 +3,63 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
+import { ChevronsUpDown } from "lucide-react";
 import { logout } from "@/app/(auth)/login/actions";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLinkItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { ROLE_LABELS } from "@/lib/format";
 import type { Role } from "@prisma/client";
 
 type NavItem = { label: string; href: string | null };
 
 /**
- * Fixed nav list, in the exact order shown in every SRD wireframe's left
- * sidebar (wireframes 01-24). Phase 1 only has real pages for a handful of
- * these (Overview, Actions, Projects, Documents, Reports) — the rest are
- * Phase 2/3/4 modules per plan.md section 2, so they render disabled/"Soon"
- * rather than linking to pages that don't exist yet. This keeps the nav
- * visually identical to the wireframe pack without faking screens with no
- * data behind them.
+ * Exactly 4 items (plan.md section 2): Dashboard, Site Tracker and
+ * Operations BOQ are "Coming soon" placeholders with no route yet — only
+ * Site BOQ is live. Site BOQ is internal-only (plan.md section 2): an
+ * external/franchisee-type role must not see it in the sidebar at all (it
+ * still 403s server-side if reached directly — see
+ * src/app/(app)/site-boq/page.tsx).
  */
-const BASE_NAV_ITEMS: NavItem[] = [
-  { label: "Overview", href: "/dashboard" },
-  { label: "Lifecycle", href: null },
-  { label: "Actions", href: "/actions" },
-  { label: "Documents", href: "/documents" },
-  // Not part of the original SRD wireframe pack — added the same way
-  // BOQ/Operations were (see the comment below): a Complaint/Support module
-  // adapted from a separate investor-onboarding SRD (see schema.prisma's
-  // ComplaintCategory comment).
-  { label: "Complaints", href: "/complaints" },
-  // plan.md section 20A — visible to every role canViewSales(permissions.ts)
-  // grants anything to (Franchisee/Sales/Admin/Management/Accounts); the
-  // page itself re-checks with the real permission function, same reasoning
-  // as "Store Onboarding" below (permissions.ts is server-only).
-  { label: "Sales", href: "/sales" },
-  { label: "Payments", href: null },
-  { label: "Projects", href: "/projects" },
-  // plan.md section 24 S3 — mirrors canViewDelaysDashboard(permissions.ts)
-  // exactly (ADMIN/MANAGEMENT only, flat check). Hidden entirely for every
-  // other role, same reasoning as "Sales" above.
-  { label: "Delays", href: "/delays" },
-  // Founder/board summary screen — mirrors canViewBoardSummary(permissions.ts),
-  // same ADMIN/MANAGEMENT-only gate as "Delays" above.
-  { label: "Board Summary", href: "/board" },
-  // Not part of the original SRD wireframe pack — added alongside the BOQ/Ops
-  // category rollup itself (plan.md section 9) so it's reachable without
-  // drilling into a specific project's Overview section first. Split into two
-  // screens (2026-09-23): BOQ (Excel-sourced trade line items) and
-  // Construction & Ops Progress (process checklists never in that Excel) —
-  // see ops-route.ts.
-  { label: "BOQ", href: "/boq" },
-  { label: "Operations", href: "/construction-ops" },
-  // plan.md section 17 — visible to every onboarding-touching role (Sales,
-  // Admin, KYC Reviewer, Accounts, LOI Preparer, Company Signatory); the page
-  // itself re-checks with the real permission functions (permissions.ts is
-  // server-only, so this sidebar — a Client Component — can't import it
-  // directly, same reasoning as the People/Admin-only link below).
-  { label: "Store Onboarding", href: "/store-onboarding" },
-  { label: "Signing", href: "/signing" },
-  { label: "People", href: null },
-  { label: "Culinary", href: null },
-  { label: "Marketing", href: null },
-  { label: "Reports", href: "/audit" },
+const NAV_ITEMS: NavItem[] = [
+  { label: "Dashboard", href: null },
+  { label: "Site Tracker", href: null },
+  { label: "Site BOQ", href: "/site-boq" },
+  { label: "Operations BOQ", href: null },
 ];
 
-export function AppSidebar({
-  name,
-  role,
-  isLegacyFranchisee = false,
-}: {
-  name: string;
-  role: Role;
-  /** True for a FRANCHISEE whose FranchiseProject.isPreExisting is true — their store
-   * was already built and operating before joining the platform, so the construction-only
-   * modules below (BOQ, Operations) have nothing relevant to show them. */
-  isLegacyFranchisee?: boolean;
-}) {
+const EXTERNAL_ROLES: Role[] = ["FRANCHISEE"];
+
+/**
+ * "Manage users" lives here (not the 4-item sidebar — plan.md section 2 is
+ * exact about that list) and is Admin-only; everyone else only ever sees
+ * "Sign out".
+ */
+function AccountMenuItems({ role }: { role: Role }) {
+  return (
+    <>
+      {role === "ADMIN" && (
+        <>
+          <DropdownMenuLinkItem render={<Link href="/users" />}>Manage users</DropdownMenuLinkItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuItem variant="destructive" onClick={() => void logout()}>
+        Sign out
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+export function AppSidebar({ name, role }: { name: string; role: Role }) {
   const pathname = usePathname();
-  // plan.md section 17 — every role with an onboarding-related permission
-  // function in permissions.ts (mirrored here since that file is
-  // server-only and can't be imported into a Client Component).
-  const ONBOARDING_ROLES: Role[] = [
-    "SALES",
-    "ADMIN",
-    "KYC_REVIEWER",
-    "ACCOUNTS",
-    "LOI_PREPARER",
-    "COMPANY_SIGNATORY",
-  ];
-
-  // "People" only has a real page for Admin (canManageUsers, permissions.ts)
-  // — every other role keeps seeing it as the "Soon" placeholder like the
-  // rest of the not-yet-built Phase 2/3/4 modules. "Store Onboarding" is
-  // hidden entirely (not "Soon") for roles with no stake in it — Franchisee
-  // uses their own /onboarding portal instead (different sidebar).
-  const ONBOARDING_NAV_LABELS = ["Store Onboarding"];
-
-  // "Signing" is its own, narrower queue (company countersignature only,
-  // wireframe 07) — mirrors canCompanySign(permissions.ts) exactly, not the
-  // broader ONBOARDING_ROLES list above. Previously bundled with "Store
-  // Onboarding"'s visibility, which showed Sales/KYC Reviewer/Accounts/LOI
-  // Preparer a link that immediately redirects them to /dashboard.
-  const SIGNING_VISIBLE_ROLES: Role[] = ["ADMIN", "COMPANY_SIGNATORY"];
-
-  // plan.md section 20A — mirrors canViewSales(permissions.ts) exactly
-  // (FRANCHISEE/SALES always have *a* store to check; ADMIN/MANAGEMENT/
-  // ACCOUNTS always pass). SITE_SUPERVISOR and the department-specific
-  // internal roles (LEGAL, INTERIORS, ...) have no stake in sales, so "Sales"
-  // is hidden entirely for them rather than shown as a disabled "Soon" link.
-  const SALES_VISIBLE_ROLES: Role[] = ["FRANCHISEE", "SALES", "ADMIN", "MANAGEMENT", "ACCOUNTS"];
-
-  // plan.md section 24 S3 — mirrors canViewDelaysDashboard(permissions.ts).
-  const DELAYS_VISIBLE_ROLES: Role[] = ["ADMIN", "MANAGEMENT"];
-
-  // Mirrors canViewBoardSummary(permissions.ts).
-  const BOARD_VISIBLE_ROLES: Role[] = ["ADMIN", "MANAGEMENT"];
-
-  // Construction-only modules — nothing relevant to show a franchisee whose
-  // store was already operating before joining the platform (isLegacyFranchisee).
-  const CONSTRUCTION_NAV_LABELS = ["BOQ", "Operations"];
-
-  // BOQ/Operations are construction-trade rollups (Task.category, see
-  // ops-route.ts), not generic tools — only relevant to roles that own a
-  // build-out-adjacent department, track their own store's construction
-  // (Franchisee), or manage the sales pipeline feeding into it (Sales).
-  // Hidden entirely for every other role, same reasoning as "Sales"/"Delays"
-  // above — they can still see the same read-only progress by opening a
-  // project from Projects (the same CategoryTile grid is embedded there).
-  const CONSTRUCTION_VISIBLE_ROLES: Role[] = [
-    "ADMIN",
-    "MANAGEMENT",
-    "FRANCHISEE",
-    "SALES",
-    "PROJECT_MANAGER",
-    "INTERIORS",
-    "OPERATIONS",
-    "CULINARY",
-  ];
-
-  const navItems = BASE_NAV_ITEMS.filter(
-    (item) => !ONBOARDING_NAV_LABELS.includes(item.label) || ONBOARDING_ROLES.includes(role)
-  )
-    .filter((item) => item.label !== "Signing" || SIGNING_VISIBLE_ROLES.includes(role))
-    .filter((item) => item.label !== "Sales" || SALES_VISIBLE_ROLES.includes(role))
-    .filter((item) => item.label !== "Delays" || DELAYS_VISIBLE_ROLES.includes(role))
-    .filter((item) => item.label !== "Board Summary" || BOARD_VISIBLE_ROLES.includes(role))
-    .filter((item) => !CONSTRUCTION_NAV_LABELS.includes(item.label) || CONSTRUCTION_VISIBLE_ROLES.includes(role))
-    .filter((item) => !isLegacyFranchisee || !CONSTRUCTION_NAV_LABELS.includes(item.label))
-    .map((item) => (item.label === "People" && role === "ADMIN" ? { ...item, href: "/users" } : item))
-    .concat(
-      role === "ADMIN"
-        ? [
-            { label: "POS", href: "/admin/pos" },
-            { label: "E-sign Events", href: "/admin/esign-events" },
-            { label: "Email Templates", href: "/admin/email-templates" },
-          ]
-        : []
-    );
+  const isExternal = EXTERNAL_ROLES.includes(role);
+  const navItems = NAV_ITEMS.filter((item) => item.label !== "Site BOQ" || !isExternal);
 
   return (
     <>
@@ -175,11 +78,14 @@ export function AppSidebar({
               return (
                 <div
                   key={item.label}
+                  aria-disabled="true"
                   className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-600"
-                  title="Coming in a later phase"
+                  title="Coming soon"
                 >
                   <span>{item.label}</span>
-                  <span className="text-[10px] tracking-wide text-slate-700 uppercase">Soon</span>
+                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] tracking-wide text-slate-500 uppercase">
+                    Coming soon
+                  </span>
                 </div>
               );
             }
@@ -203,19 +109,21 @@ export function AppSidebar({
           })}
         </nav>
 
-        <div className="shrink-0 border-t border-white/10 px-6 py-4">
-          <div className="truncate text-sm font-medium text-white">{name}</div>
-          <div className="text-xs text-slate-500">{ROLE_LABELS[role]}</div>
-          <form action={logout} className="mt-2">
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="h-7 w-full justify-start px-0 text-slate-400 hover:bg-white/5 hover:text-white"
+        <div className="shrink-0 border-t border-white/10 p-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/5"
             >
-              Sign out
-            </Button>
-          </form>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-white">{name}</span>
+                <span className="block text-xs text-slate-500">{ROLE_LABELS[role]}</span>
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-slate-500" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-56">
+              <AccountMenuItems role={role} />
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </aside>
 
@@ -224,20 +132,19 @@ export function AppSidebar({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-bold tracking-tight text-white">FRATERNITI ONE</div>
-            <div className="truncate text-xs text-slate-500">
-              {name} · {ROLE_LABELS[role]}
-            </div>
           </div>
-          <form action={logout} className="shrink-0">
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-slate-400 hover:bg-white/5 hover:text-white"
-            >
-              Sign out
-            </Button>
-          </form>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-right hover:bg-white/5">
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium text-white">{name}</span>
+                <span className="block text-[10px] text-slate-500">{ROLE_LABELS[role]}</span>
+              </span>
+              <ChevronsUpDown className="size-3.5 shrink-0 text-slate-500" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end" className="w-56">
+              <AccountMenuItems role={role} />
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <nav className="flex min-w-0 gap-1 overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
           {navItems.map((item) => {
@@ -245,8 +152,9 @@ export function AppSidebar({
               return (
                 <div
                   key={item.label}
+                  aria-disabled="true"
                   className="shrink-0 rounded-lg px-3 py-1.5 text-xs whitespace-nowrap text-slate-600"
-                  title="Coming in a later phase"
+                  title="Coming soon"
                 >
                   {item.label} <span className="text-[9px] text-slate-700 uppercase">Soon</span>
                 </div>

@@ -10,38 +10,17 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
   const admin = await requireUser();
 
   if (!canManageUsers(admin)) {
-    redirect("/dashboard");
+    redirect("/site-boq");
   }
 
   const user = await db.user.findUnique({
     where: { id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      additionalRoles: true,
-      category: true,
-      department: true,
-      phone: true,
-    },
+    select: { id: true, name: true, email: true, role: true },
   });
 
   if (!user) {
     notFound();
   }
-
-  // Category has no fixed master list (Task.category's own schema comment —
-  // the real BOQ/Ops checklist carries ~28 freeform trade categories). The
-  // dropdown's options are the distinct values already in use across every
-  // project's tasks, which is the de-facto list in practice.
-  const categoryRows = await db.task.findMany({
-    where: { category: { not: null } },
-    distinct: ["category"],
-    select: { category: true },
-    orderBy: { category: "asc" },
-  });
-  const categoryOptions = categoryRows.map((t) => t.category as string);
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
@@ -57,15 +36,7 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
           <CardTitle className="text-base">User details</CardTitle>
         </CardHeader>
         <CardContent>
-          {user.role === "SITE_SUPERVISOR" ? (
-            <p className="text-sm text-muted-foreground">
-              Editing site supervisors isn&apos;t built yet (plan.md section 16, build order
-              step 2 only covers creation). Use &quot;Reset PIN&quot; or &quot;Delete&quot; from the
-              users list for now.
-            </p>
-          ) : (
-            <EditUserForm user={user} categoryOptions={categoryOptions} />
-          )}
+          <EditUserForm user={user} />
         </CardContent>
       </Card>
     </div>

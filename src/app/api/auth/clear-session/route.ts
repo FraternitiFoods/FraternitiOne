@@ -32,11 +32,7 @@ export async function GET(request: NextRequest) {
   await deleteSession();
 
   const next = request.nextUrl.searchParams.get("next");
-  // A stale supervisor session (plan.md section 16) belongs back at
-  // /m/login, not the desktop /login — same pathname-prefix convention
-  // proxy.ts already uses for this split.
-  const loginPath = next?.startsWith("/m") ? "/m/login" : "/login";
-  const loginUrl = new URL(loginPath, request.url);
+  const loginUrl = new URL("/login", request.url);
   if (next) loginUrl.searchParams.set("next", next);
 
   return NextResponse.redirect(loginUrl);

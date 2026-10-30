@@ -19,19 +19,6 @@ export async function verifyPassword(
 }
 
 /**
- * Same bcrypt mechanism as password hashing, kept as its own named function
- * (not a reused alias) so call sites read as what they are — a supervisor's
- * PIN (plan.md section 16), not a password.
- */
-export async function hashPin(pin: string): Promise<string> {
-  return bcrypt.hash(pin, SALT_ROUNDS);
-}
-
-export async function verifyPin(pin: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(pin, hash);
-}
-
-/**
  * Use in Server Components, Server Actions, and Route Handlers that require
  * an authenticated user. Redirects rather than returning null — callers that
  * need to branch on "logged in or not" should use `getCurrentUser()`
@@ -48,9 +35,8 @@ export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) {
     // x-pathname is set by proxy.ts on every request — forwarded here so
-    // clear-session knows whether to land back on /login or /m/login
-    // (plan.md section 16): this function has no other way to see which
-    // "side" of the app called it.
+    // clear-session can send the browser back to this same page after
+    // re-login.
     const pathname = (await headers()).get("x-pathname");
     const clearSessionUrl = pathname
       ? `/api/auth/clear-session?next=${encodeURIComponent(pathname)}`

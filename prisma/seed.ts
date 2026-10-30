@@ -1,8 +1,7 @@
 /**
- * Dev-only seed data: just enough users to exercise the Phase 1 vertical
- * slice (create a project -> see it on the dashboard -> add a task -> mark
- * it complete -> see it in the audit log) end to end, across a few
- * representative roles. Not meant to model a real org chart.
+ * Dev-only seed data: just enough to log in as an admin on the `new` branch
+ * baseline (see plan.md milestone M0). Extend this once Site BOQ's own
+ * seed data (categories, app_settings) lands in M1.
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -29,7 +28,6 @@ async function upsertUser(input: {
   email: string;
   name: string;
   role: Parameters<typeof db.user.upsert>[0]["create"]["role"];
-  department?: Parameters<typeof db.user.upsert>[0]["create"]["department"];
 }) {
   const passwordHash = await bcrypt.hash(DEV_PASSWORD, 12);
   return db.user.upsert({
@@ -42,7 +40,6 @@ async function upsertUser(input: {
       email: input.email,
       name: input.name,
       role: input.role,
-      department: input.department,
       passwordHash,
     },
   });
@@ -55,36 +52,8 @@ async function main() {
     role: "ADMIN",
   });
 
-  const sales = await upsertUser({
-    email: "sales.demo@fraterniti.co.in",
-    name: "Sales Demo",
-    role: "SALES",
-    department: "SALES",
-  });
-
-  const pm = await upsertUser({
-    email: "pm.demo@fraterniti.co.in",
-    name: "Project Manager Demo",
-    role: "PROJECT_MANAGER",
-    department: "PROJECTS",
-  });
-
-  const legal = await upsertUser({
-    email: "legal.demo@fraterniti.co.in",
-    name: "Legal Demo",
-    role: "LEGAL",
-    department: "LEGAL",
-  });
-
-  const franchisee = await upsertUser({
-    email: "franchisee.demo@fraterniti.co.in",
-    name: "Franchisee Demo",
-    role: "FRANCHISEE",
-    department: "FRANCHISEE",
-  });
-
   console.log("Seeded users (dev password for all: %s):", DEV_PASSWORD);
-  for (const u of [admin, sales, pm, legal, franchisee]) {
+  for (const u of [admin]) {
     console.log(`  - ${u.email}  (${u.role})`);
   }
 }

@@ -7,9 +7,8 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { ROLE_LABELS, DEPARTMENT_LABELS } from "@/lib/format";
+import { ROLE_LABELS } from "@/lib/format";
 import { ResendInviteButton } from "./resend-invite-button";
-import { ResetPinButton } from "./reset-pin-button";
 import { DeleteUserButton } from "./delete-user-button";
 import { DeactivateUserButton } from "./deactivate-user-button";
 
@@ -17,7 +16,7 @@ export default async function UsersPage() {
   const user = await requireUser();
 
   if (!canManageUsers(user)) {
-    redirect("/dashboard");
+    redirect("/site-boq");
   }
 
   const users = await db.user.findMany({
@@ -26,19 +25,9 @@ export default async function UsersPage() {
       id: true,
       name: true,
       email: true,
-      phone: true,
       role: true,
-      additionalRoles: true,
-      category: true,
-      department: true,
       isActive: true,
       passwordHash: true,
-      // Only populated for SITE_SUPERVISOR rows — cheap enough to always
-      // include (Phase 1 user counts are small) rather than branching the
-      // query per role.
-      projectMemberships: {
-        select: { project: { select: { brand: true, location: true } } },
-      },
     },
   });
 
@@ -61,9 +50,8 @@ export default async function UsersPage() {
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Name</TableHead>
-              <TableHead>Contact</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Department / Projects</TableHead>
               <TableHead>Status</TableHead>
               <TableHead />
             </TableRow>
@@ -71,52 +59,19 @@ export default async function UsersPage() {
           <TableBody>
             {users.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
                   No users yet.
                 </TableCell>
               </TableRow>
             )}
             {users.map((u) => {
-              const isSupervisor = u.role === "SITE_SUPERVISOR";
-              // A supervisor's PIN is always set synchronously at creation
-              // (no invite-link step, plan.md section 16) — so "pending"
-              // only ever applies to the email+password flow.
-              const invitePending = !isSupervisor && !u.passwordHash;
+              const invitePending = !u.passwordHash;
 
               return (
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {u.email ?? u.phone ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span>{ROLE_LABELS[u.role]}</span>
-                      {u.additionalRoles.map((r) => (
-                        <Badge key={r} variant="secondary" className="text-[10px]">
-                          {ROLE_LABELS[r]}
-                        </Badge>
-                      ))}
-                      {u.category.map((c) => (
-                        <Badge key={c} variant="outline" className="text-[10px]">
-                          {c}
-                        </Badge>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {isSupervisor ? (
-                      u.projectMemberships.length > 0 ? (
-                        u.projectMemberships.map((m) => `${m.project.brand} — ${m.project.location}`).join(", ")
-                      ) : (
-                        "No projects assigned"
-                      )
-                    ) : u.department ? (
-                      DEPARTMENT_LABELS[u.department]
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                  <TableCell>{ROLE_LABELS[u.role]}</TableCell>
                   <TableCell>
                     {!u.isActive ? (
                       <Badge variant="outline">Inactive</Badge>
@@ -129,7 +84,6 @@ export default async function UsersPage() {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {u.isActive && invitePending && <ResendInviteButton userId={u.id} />}
-                      {u.isActive && isSupervisor && <ResetPinButton userId={u.id} name={u.name} />}
                       <Button
                         nativeButton={false}
                         variant="ghost"

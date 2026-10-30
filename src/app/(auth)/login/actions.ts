@@ -80,36 +80,13 @@ export async function login(
   await createSession(user.id);
 
   await writeAuditEvent(db, {
-    actor: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      additionalRoles: user.additionalRoles,
-      category: user.category,
-      department: user.department,
-    },
+    actor: { id: user.id, name: user.name, email: user.email, role: user.role },
     entityType: "User",
     entityId: user.id,
     action: "LOGIN",
   });
 
-  // plan.md section 17: a FRANCHISEE with a non-complete StoreOnboarding
-  // lands on their onboarding portal instead of /dashboard. A franchisee
-  // with no onboarding record (existing seeded/real users) or a completed
-  // one keeps today's behaviour exactly — no regression to existing
-  // franchisee/project flows.
-  if (user.role === "FRANCHISEE" && (!next || next === "/dashboard")) {
-    const onboarding = await db.storeOnboarding.findUnique({
-      where: { franchiseeUserId: user.id },
-      select: { onboardingStatus: true },
-    });
-    if (onboarding && onboarding.onboardingStatus !== "LOI_COMPLETE") {
-      redirect("/onboarding");
-    }
-  }
-
-  const destination = next && next.startsWith("/") ? next : "/dashboard";
+  const destination = next && next.startsWith("/") ? next : "/site-boq";
   redirect(destination);
 }
 

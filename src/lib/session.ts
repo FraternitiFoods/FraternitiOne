@@ -4,7 +4,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import type { Role, Department, OnboardingStatus } from "@prisma/client";
+import type { Role } from "@prisma/client";
 
 const COOKIE_NAME = "fo_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -56,30 +56,8 @@ export async function deleteSession(): Promise<void> {
 export type CurrentUser = {
   id: string;
   name: string;
-  /// Nullable as of plan.md section 16 (2026-09-24) — a phone+PIN
-  /// SITE_SUPERVISOR login may have no email on file.
-  email: string | null;
+  email: string;
   role: Role;
-  /// Extra roles granted on top of `role` — see User.additionalRoles'
-  /// schema comment. `role` itself still drives every single-role branch
-  /// (dashboard selection, nav baseline); this only widens department
-  /// ownership checks (ownsDepartment/getManageableModules, permissions.ts).
-  additionalRoles: Role[];
-  /// Optional trade-category scope — see User.category's schema comment.
-  category: string[];
-  department: Department | null;
-  /// Only meaningful for FRANCHISEE accounts — folded in here so the (app)
-  /// layout's stale-bookmark onboarding-gate check doesn't need its own DB
-  /// round trip on every navigation. `null`/absent for every other role and
-  /// for a FRANCHISEE with no onboarding record yet. Optional because other
-  /// call sites (e.g. audit log actors) build a `CurrentUser`-shaped object
-  /// from a plain `db.user` row that has no such relation loaded.
-  onboardingStatus?: OnboardingStatus | null;
-  /// Same reasoning as `onboardingStatus` above, for the (app) layout's
-  /// sidebar BOQ/Operations filter (app-sidebar.tsx): folding this in avoids
-  /// a second sequential DB round trip on every navigation for a FRANCHISEE.
-  /// `false` for every other role and for a FRANCHISEE with no project yet.
-  isLegacyFranchisee?: boolean;
 };
 
 /**
@@ -99,20 +77,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: {
-      user: {
-        include: {
-          onboardingAsFranchisee: { select: { onboardingStatus: true } },
-          // Latest project only — same "isPreExisting" lookup the (app)
-          // layout used to run as its own second query on every navigation.
-          franchiseeProjects: {
-            orderBy: { createdAt: "desc" },
-            take: 1,
-            select: { isPreExisting: true },
-          },
-        },
-      },
-    },
+    include: { user: true },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -130,10 +95,5 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     name: session.user.name,
     email: session.user.email,
     role: session.user.role,
-    additionalRoles: session.user.additionalRoles,
-    category: session.user.category,
-    department: session.user.department,
-    onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
-    isLegacyFranchisee: session.user.franchiseeProjects[0]?.isPreExisting === true,
   };
 });

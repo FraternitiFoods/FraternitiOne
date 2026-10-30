@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { useActionState } from "react";
 import { updateUser, type UpdateUserState } from "../../actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MultiCombobox } from "@/components/ui/multi-combobox";
 import {
   Select,
   SelectContent,
@@ -14,38 +12,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ROLE_LABELS, DEPARTMENT_LABELS } from "@/lib/format";
-import { DEPARTMENT_OWNERS } from "@/lib/role-departments";
-import type { Role, Department } from "@prisma/client";
+import { ROLE_LABELS } from "@/lib/format";
+import type { Role } from "@prisma/client";
 
-// SITE_SUPERVISOR excluded — see the same-reasoning comment in
-// new-user-form.tsx (this form has no phone/PIN fields yet).
-const ROLES = (Object.keys(ROLE_LABELS) as Role[]).filter((r) => r !== "SITE_SUPERVISOR");
-const DEPARTMENTS = Object.keys(DEPARTMENT_LABELS) as Department[];
+const ROLES = Object.keys(ROLE_LABELS) as Role[];
 
 type EditableUser = {
   id: string;
   name: string;
-  email: string | null;
+  email: string;
   role: Role;
-  additionalRoles: Role[];
-  category: string[];
-  department: Department | null;
-  phone: string | null;
 };
 
-export function EditUserForm({
-  user,
-  categoryOptions,
-}: {
-  user: EditableUser;
-  categoryOptions: string[];
-}) {
+export function EditUserForm({ user }: { user: EditableUser }) {
   const boundAction = updateUser.bind(null, user.id);
   const [state, action, pending] = useActionState<UpdateUserState, FormData>(boundAction, undefined);
-  const [role, setRole] = useState<Role>(user.role);
-
-  const managedDepartments = DEPARTMENT_OWNERS[role] ?? [];
 
   return (
     <form action={action} className="space-y-5">
@@ -61,21 +42,14 @@ export function EditUserForm({
           name="email"
           type="email"
           required
-          defaultValue={user.email ?? ""}
+          defaultValue={user.email}
           placeholder="name@fraterniti.co.in"
         />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="role">Role</Label>
-        {/* defaultValue (not value) — pre-fills without making the Select
-            controlled; see new-user-form.tsx for why `value` is avoided. */}
-        <Select
-          name="role"
-          required
-          defaultValue={user.role}
-          onValueChange={(v) => setRole(v as Role)}
-        >
+        <Select name="role" required defaultValue={user.role}>
           <SelectTrigger id="role" className="w-full">
             <SelectValue placeholder="Select role">
               {(value: Role | null) => (value ? ROLE_LABELS[value] : "Select role")}
@@ -89,87 +63,6 @@ export function EditUserForm({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          {managedDepartments.length > 0
-            ? `This role manages: ${managedDepartments.map((d) => DEPARTMENT_LABELS[d]).join(", ")}.`
-            : role === "MANAGEMENT" || role === "ADMIN"
-              ? "This role has cross-department access to every module."
-              : "This role has no module access by default."}
-        </p>
-      </div>
-
-      {(role === "COMPANY_SIGNATORY" || role === "ADMIN") && (
-        <div className="space-y-2">
-          <Label htmlFor="phone">Mobile number (optional)</Label>
-          <Input
-            id="phone"
-            name="phone"
-            type="tel"
-            inputMode="numeric"
-            defaultValue={user.phone ?? ""}
-            placeholder="10-digit mobile number"
-          />
-          <p className="text-xs text-muted-foreground">Contact number on file for this user.</p>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <Label>Additional roles (optional)</Label>
-        <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-md border p-3">
-          {ROLES.filter((r) => r !== role).map((r) => (
-            <label key={r} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="additionalRoles"
-                value={r}
-                defaultChecked={user.additionalRoles.includes(r)}
-                className="size-4"
-              />
-              {ROLE_LABELS[r]}
-            </label>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Grants every department the checked roles manage, on top of the primary role above.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="category">Category (optional)</Label>
-        <MultiCombobox
-          id="category"
-          name="category"
-          items={categoryOptions}
-          defaultValue={user.category}
-          placeholder="e.g. Tiling, Electrical"
-          emptyText="No categories in use yet."
-        />
-        <p className="text-xs text-muted-foreground">
-          Narrows task delegation to just these trades within their department(s). Leave blank to
-          delegate every task in their department(s).
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="department">Department label (optional)</Label>
-        <Select name="department" defaultValue={user.department ?? undefined}>
-          <SelectTrigger id="department" className="w-full">
-            <SelectValue placeholder="No department">
-              {(value: Department | null) => (value ? DEPARTMENT_LABELS[value] : "No department")}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {DEPARTMENTS.map((d) => (
-              <SelectItem key={d} value={d}>
-                {DEPARTMENT_LABELS[d]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Informational only — what this person actually manages is governed by their role above,
-          not this field.
-        </p>
       </div>
 
       {state?.error && (
