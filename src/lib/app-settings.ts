@@ -20,6 +20,7 @@ export const APP_SETTING_KEYS = [
   "poTerms",
   "urgentDays",
   "soonDays",
+  "poNumberPrefix",
 ] as const;
 
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
@@ -41,6 +42,8 @@ export type AppSettingsValues = {
   poTerms: string[];
   urgentDays: number;
   soonDays: number;
+  /** PO numbering (plan.md section 4.5): "configurable prefix + running number," default format `<prefix>-<YYYY>-<NNNN>`. The real prefix/format still needs founder confirmation (section 9). */
+  poNumberPrefix: string;
 };
 
 /**
@@ -67,6 +70,7 @@ export const DEFAULT_APP_SETTINGS: AppSettingsValues = {
   ],
   urgentDays: 7,
   soonDays: 30,
+  poNumberPrefix: "FF-PO",
 };
 
 function isAppSettingKey(key: string): key is AppSettingKey {

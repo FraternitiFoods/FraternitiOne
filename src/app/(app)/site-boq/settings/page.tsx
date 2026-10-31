@@ -86,6 +86,7 @@ export default async function SiteBoqSettingsPage() {
               <SettingRow label="Default GST %" value={`${settings.defaultGstPercent}%`} />
               <SettingRow label="Default payment terms" value={settings.defaultPaymentTerms} />
               <SettingRow label="Default delivery days" value={String(settings.defaultDeliveryDays)} />
+              <SettingRow label="PO number prefix" value={settings.poNumberPrefix} />
               <div className="pt-2">
                 <p className="text-xs font-medium text-muted-foreground">PO terms</p>
                 <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-sm text-muted-foreground">

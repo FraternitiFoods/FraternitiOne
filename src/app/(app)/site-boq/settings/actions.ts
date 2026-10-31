@@ -26,6 +26,7 @@ const SettingsSchema = z.object({
   poTerm3: z.string().trim().min(1, "All 4 PO terms are required."),
   urgentDays: z.coerce.number().int().min(0, "Urgent-days threshold can't be negative."),
   soonDays: z.coerce.number().int().min(0, "Soon-days threshold can't be negative."),
+  poNumberPrefix: z.string().trim().min(1, "PO number prefix is required."),
 });
 
 /**
@@ -56,6 +57,7 @@ export async function updateAppSettings(_prevState: ActionState, formData: FormD
     poTerms: [data.poTerm0, data.poTerm1, data.poTerm2, data.poTerm3],
     urgentDays: data.urgentDays,
     soonDays: data.soonDays,
+    poNumberPrefix: data.poNumberPrefix,
   };
 
   await db.$transaction(async (tx) => {
@@ -81,6 +83,7 @@ export async function updateAppSettings(_prevState: ActionState, formData: FormD
         poTerms: before.poTerms,
         urgentDays: before.urgentDays,
         soonDays: before.soonDays,
+        poNumberPrefix: before.poNumberPrefix,
       },
       newValue: after,
       reference: "Updated via Site BOQ Settings",

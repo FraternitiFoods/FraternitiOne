@@ -9,6 +9,7 @@ import {
   canEditSettings,
   canFlipMode,
   canViewAuditLog,
+  canCreatePo,
 } from "./permissions";
 
 const INTERNAL_ROLES: Role[] = [
@@ -60,5 +61,11 @@ describe("permissions — plan.md section 5 role matrix", () => {
     expect(canViewAuditLog(user("ADMIN"))).toBe(true);
     for (const role of INTERNAL_ROLES) expect(canViewAuditLog(user(role))).toBe(false);
     expect(canViewAuditLog(user("FRANCHISEE"))).toBe(false);
+  });
+
+  it("Create/download POs: Admin and every other internal role, not FRANCHISEE", () => {
+    expect(canCreatePo(user("ADMIN"))).toBe(true);
+    for (const role of INTERNAL_ROLES) expect(canCreatePo(user(role))).toBe(true);
+    expect(canCreatePo(user("FRANCHISEE"))).toBe(false);
   });
 });

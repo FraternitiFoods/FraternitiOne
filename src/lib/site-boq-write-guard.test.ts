@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isWriteAllowedInMode, isSiteItemEditableForLock, type BoqWriteArea } from "./site-boq-write-guard";
 
 const GATED_AREAS: BoqWriteArea[] = ["siteItem", "item", "site"];
-const EXEMPT_AREAS: BoqWriteArea[] = ["vendor", "settings"];
+const EXEMPT_AREAS: BoqWriteArea[] = ["vendor", "settings", "purchaseOrder"];
 
 /** plan.md section 1: "in SHEET_LIVE every BOQ write is rejected except vendor contact details, PO creation, settings." */
 describe("isWriteAllowedInMode", () => {
@@ -14,7 +14,7 @@ describe("isWriteAllowedInMode", () => {
     for (const area of GATED_AREAS) expect(isWriteAllowedInMode("WEBSITE_LIVE", area)).toBe(true);
   });
 
-  it("allows the exempt areas (vendor contact details, settings) in either mode", () => {
+  it("allows the exempt areas (vendor contact details, settings, PO creation) in either mode", () => {
     for (const area of EXEMPT_AREAS) {
       expect(isWriteAllowedInMode("SHEET_LIVE", area)).toBe(true);
       expect(isWriteAllowedInMode("WEBSITE_LIVE", area)).toBe(true);

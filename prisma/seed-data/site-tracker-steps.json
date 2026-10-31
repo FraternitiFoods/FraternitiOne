@@ -1,0 +1,301 @@
+{
+  "_comment": "Seed for the Site Tracker module. Source: Google Sheet 'Site Drawing Updates' > tab 'Stage 7 - Construction Execution'. 19 sections, 177 steps. 'Deep Cleaning' is a section with no sub-steps in the sheet, so it gets one synthetic step (7.18.1). Step codes are the sheet's own codes and are NOT contiguous (the sheet skips some numbers on purpose). Do not renumber.",
+  "sections": [
+    {
+      "name": "Site Handover",
+      "steps": [
+        { "code": "7.1.2", "name": "Site condition inspection" },
+        { "code": "7.1.3", "name": "Existing site measurements and verification" },
+        { "code": "7.1.4", "name": "Site photographs and documentation" },
+        { "code": "7.1.5", "name": "Architectural drawings received and verified" },
+        { "code": "7.1.6", "name": "Structural and MEP drawings received" },
+        { "code": "7.1.7", "name": "Site utilities availability check (water, electricity, drainage)" },
+        { "code": "7.1.8", "name": "Access, loading and material storage arrangements" },
+        { "code": "7.1.9", "name": "Safety requirements and site access permissions" },
+        { "code": "7.1.10", "name": "Existing defects / constraints identification" },
+        { "code": "7.1.11", "name": "Client / landlord handover documents sign-off" },
+        { "code": "7.1.12", "name": "Site handover clearance for construction commencement" }
+      ]
+    },
+    {
+      "name": "Civil Work",
+      "steps": [
+        { "code": "7.2.1", "name": "Site marking and layout as per approved drawings" },
+        { "code": "7.2.2", "name": "Demolition and dismantling (if required)" },
+        { "code": "7.2.4", "name": "Blockwork / brickwork" },
+        { "code": "7.2.5", "name": "Wall construction and partition work" },
+        { "code": "7.2.6", "name": "Plastering and wall surface preparation" },
+        { "code": "7.2.8", "name": "Bathroom and wet-area waterproofing" },
+        { "code": "7.2.9", "name": "Waterproofing pond test and approval" },
+        { "code": "7.2.17", "name": "Measurement verification and client / consultant approval" }
+      ]
+    },
+    {
+      "name": "Flooring Work",
+      "steps": [
+        { "code": "7.3.1", "name": "Flooring area measurement and quantity verification" },
+        { "code": "7.3.3", "name": "Floor level and slope verification" },
+        { "code": "7.3.6", "name": "Waterproofing coordination and clearance (where required)" },
+        { "code": "7.3.7", "name": "Flooring material delivery and quality inspection" },
+        { "code": "7.3.9", "name": "Floor tile / stone installation" },
+        { "code": "7.3.13", "name": "Grouting and joint finishing" },
+        { "code": "7.3.14", "name": "Skirting installation" },
+        { "code": "7.3.17", "name": "Floor protection after installation" },
+        { "code": "7.3.18", "name": "Hollow tile / unevenness inspection" }
+      ]
+    },
+    {
+      "name": "Plumbing Work",
+      "steps": [
+        { "code": "7.5.1", "name": "Plumbing drawings and water supply / drainage layouts review" },
+        { "code": "7.5.3", "name": "Plumbing material delivery and quality inspection" },
+        { "code": "7.5.4", "name": "Water supply pipe routing and installation; hot and cold water piping installation (where required); drainage and waste pipe installation" },
+        { "code": "7.5.8", "name": "Floor trap and drain point installation" },
+        { "code": "7.5.10", "name": "Water supply pressure testing and inspection" },
+        { "code": "7.5.11", "name": "Drainage leakage testing and flow testing" },
+        { "code": "7.5.13", "name": "Waterproofing and plumbing interface inspection" },
+        { "code": "7.5.14", "name": "Sanitary fixture installation (WC, basin, urinal, etc.)" },
+        { "code": "7.5.17", "name": "Water heater / geyser connections (where required)" },
+        { "code": "7.5.18", "name": "Sink and kitchen plumbing connections (where required)" },
+        { "code": "7.5.25", "name": "Waterproofing coordination before concealed pipe closure" }
+      ]
+    },
+    {
+      "name": "Electrical Work",
+      "steps": [
+        { "code": "7.6.1", "name": "Electrical drawings and load schedule review" },
+        { "code": "7.6.2", "name": "Electrical points marking as per approved drawings" },
+        { "code": "7.6.3", "name": "Electrical material delivery and quality inspection" },
+        { "code": "7.6.4", "name": "Conduiting on wall and ceiling and electrical box installation" },
+        { "code": "7.6.9", "name": "Electrical DB / distribution panel installation" },
+        { "code": "7.6.10", "name": "MCB / RCCB / RCBO and protection devices installation" },
+        { "code": "7.6.11", "name": "Earthing and bonding installation" },
+        { "code": "7.6.12", "name": "Switchboard and modular box installation" },
+        { "code": "7.6.13", "name": "Light fixture and lighting point installation" },
+        { "code": "7.6.14", "name": "Decorative lighting / LED strip / driver installation" },
+        { "code": "7.6.15", "name": "Power sockets and dedicated power points installation" },
+        { "code": "7.6.16", "name": "Equipment power connections (AC, appliances and other equipment)" },
+        { "code": "7.6.17", "name": "Emergency lighting and exit sign installation" },
+        { "code": "7.6.22", "name": "DB circuit labelling and circuit schedule preparation" }
+      ]
+    },
+    {
+      "name": "Ceiling Installation",
+      "steps": [
+        { "code": "7.7.1", "name": "Ceiling area measurement and site verification" },
+        { "code": "7.7.2", "name": "Approved reflected ceiling plan (RCP) review" },
+        { "code": "7.7.3", "name": "Ceiling levels and reference marking" },
+        { "code": "7.7.4", "name": "Ceiling material delivery and quality inspection" },
+        { "code": "7.7.8", "name": "Electrical, HVAC, fire-fighting and plumbing coordination above ceiling" },
+        { "code": "7.7.9", "name": "MEP services inspection and clearance before closing" },
+        { "code": "7.7.11", "name": "Access panel provision and installation" },
+        { "code": "7.7.12", "name": "Cut-outs for lights, diffusers, sprinklers and detectors" },
+        { "code": "7.7.19", "name": "Client / consultant inspection and approval" }
+      ]
+    },
+    {
+      "name": "HVAC Installation",
+      "steps": [
+        { "code": "7.8.1", "name": "HVAC drawings, equipment schedule and layout review" },
+        { "code": "7.8.2", "name": "AC capacity and equipment selection verification" },
+        { "code": "7.8.3", "name": "HVAC points and indoor / outdoor unit locations marking" },
+        { "code": "7.8.4", "name": "HVAC material and equipment delivery inspection" },
+        { "code": "7.8.5", "name": "AC drain piping installation and slope verification" },
+        { "code": "7.8.6", "name": "Drain line leakage and water flow testing" },
+        { "code": "7.8.7", "name": "Fresh air and exhaust duct installation (where applicable)" },
+        { "code": "7.8.8", "name": "Indoor unit installation and alignment" },
+        { "code": "7.8.9", "name": "Outdoor unit installation and mounting / support" },
+        { "code": "7.8.12", "name": "AC start-up and commissioning" },
+        { "code": "7.8.13", "name": "Airflow, temperature and condensate drain checks" },
+        { "code": "7.8.14", "name": "Noise, vibration and operational performance inspection" }
+      ]
+    },
+    {
+      "name": "Fire Fighting & Fire Alarm Work",
+      "steps": [
+        { "code": "7.9.1", "name": "Fire fighting and fire alarm drawings review" },
+        { "code": "7.9.2", "name": "Approved fire safety layout and equipment schedule verification" },
+        { "code": "7.9.3", "name": "Fire fighting / fire alarm points marking" },
+        { "code": "7.9.4", "name": "Fire protection material and equipment delivery inspection" },
+        { "code": "7.9.5", "name": "Sprinkler piping installation (where applicable)" },
+        { "code": "7.9.6", "name": "Fire hydrant / hose reel piping and cabinet installation (where applicable)" },
+        { "code": "7.9.7", "name": "Fire pump, valve and related equipment coordination (where applicable)" },
+        { "code": "7.9.8", "name": "Sprinkler heads and accessories installation" },
+        { "code": "7.9.9", "name": "Fire piping supports, hangers and identification" },
+        { "code": "7.9.10", "name": "Fire piping pressure testing and inspection" },
+        { "code": "7.9.11", "name": "Fire alarm cable routing and conduit installation" },
+        { "code": "7.9.12", "name": "Fire alarm control panel installation" },
+        { "code": "7.9.13", "name": "Smoke detectors and heat detectors installation" },
+        { "code": "7.9.14", "name": "Manual call points (MCPs) installation" },
+        { "code": "7.9.15", "name": "Hooters / sounders / visual alarm devices installation" },
+        { "code": "7.9.16", "name": "Input / output modules and interface wiring" },
+        { "code": "7.9.17", "name": "Fire alarm loop testing and device addressing" },
+        { "code": "7.9.18", "name": "Interface coordination with HVAC, electrical and other systems" },
+        { "code": "7.9.19", "name": "Fire stopping at service penetrations (where required)" },
+        { "code": "7.9.20", "name": "Inspection and clearance before ceiling closure" },
+        { "code": "7.9.21", "name": "Fire alarm cause-and-effect testing" },
+        { "code": "7.9.22", "name": "Fire fighting system functional testing and commissioning" },
+        { "code": "7.9.23", "name": "Fire alarm testing and commissioning" },
+        { "code": "7.9.24", "name": "Defect rectification and final system inspection" },
+        { "code": "7.9.25", "name": "Test reports, equipment details and as-built documentation" },
+        { "code": "7.9.26", "name": "Client / consultant / fire safety authority inspection and handover (as applicable)" }
+      ]
+    },
+    {
+      "name": "Interior Painting Work",
+      "steps": [
+        { "code": "7.10.1", "name": "Painting drawings, colour schedule and finish specifications review" },
+        { "code": "7.10.2", "name": "Paint area measurement and quantity verification" },
+        { "code": "7.10.3", "name": "Paint, putty, primer and consumables delivery inspection" },
+        { "code": "7.10.4", "name": "Surface inspection and acceptance before painting" },
+        { "code": "7.10.5", "name": "Surface cleaning, scraping and loose paint removal" },
+        { "code": "7.10.6", "name": "Crack filling and wall defect repairs" },
+        { "code": "7.10.7", "name": "Wall putty application (first coat)" },
+        { "code": "7.10.8", "name": "Putty sanding and surface levelling" },
+        { "code": "7.10.9", "name": "Wall putty application (second coat, where specified)" },
+        { "code": "7.10.10", "name": "Primer application on walls and ceilings" },
+        { "code": "7.10.11", "name": "Primer inspection and surface correction" },
+        { "code": "7.10.12", "name": "First coat of approved paint application" },
+        { "code": "7.10.13", "name": "Second coat of approved paint application" },
+        { "code": "7.10.14", "name": "Texture paint / feature wall finish (where applicable)" },
+        { "code": "7.10.15", "name": "Wood / metal surface preparation and primer (where applicable)" },
+        { "code": "7.10.16", "name": "Enamel paint / metal paint application (where applicable)" },
+        { "code": "7.10.17", "name": "Wood polishing / PU / melamine finish (where applicable)" },
+        { "code": "7.10.18", "name": "Masking and protection of flooring, fixtures and finished surfaces" },
+        { "code": "7.10.19", "name": "Painting touch-ups after electrical and other installations" },
+        { "code": "7.10.20", "name": "Shade, coverage and finish quality inspection" },
+        { "code": "7.10.21", "name": "Paint snag rectification and final cleaning" },
+        { "code": "7.10.22", "name": "Final inspection and client / consultant approval" }
+      ]
+    },
+    {
+      "name": "Carpentry & Joinery Work",
+      "steps": [
+        { "code": "7.11.1", "name": "Carpentry / joinery drawings and approved details review" },
+        { "code": "7.11.2", "name": "Site measurements and dimensions verification" },
+        { "code": "7.11.3", "name": "Carpentry material, boards and hardware delivery inspection" },
+        { "code": "7.11.4", "name": "Material shade, finish and sample approval" },
+        { "code": "7.11.9", "name": "Flush door / fire-rated door installation (where applicable)" },
+        { "code": "7.11.10", "name": "Wooden wall panelling and decorative cladding installation" },
+        { "code": "7.11.11", "name": "Carpentry alignment, level and workmanship inspection" },
+        { "code": "7.11.12", "name": "Protection of completed carpentry and joinery" },
+        { "code": "7.11.13", "name": "Final cleaning and client / consultant approval" },
+        { "code": "7.11.14", "name": "Countertop / worktop coordination and installation (where applicable)" }
+      ]
+    },
+    {
+      "name": "Toughened Glass & Decorative Mirror Work",
+      "steps": [
+        { "code": "7.12.1", "name": "Toughened glass and decorative mirror drawings / design review" },
+        { "code": "7.12.2", "name": "Site measurements and opening dimensions verification" },
+        { "code": "7.12.3", "name": "Glass thickness, type, tint and specification approval" },
+        { "code": "7.12.4", "name": "Mirror type, thickness, finish and design approval" },
+        { "code": "7.12.5", "name": "Glass / mirror samples and edge finish approval" },
+        { "code": "7.12.6", "name": "Glass and mirror quantity measurement and verification" },
+        { "code": "7.12.7", "name": "Glass clamps, patch fittings, hinges and handles installation" },
+        { "code": "7.12.8", "name": "Silicone sealing and perimeter finishing" },
+        { "code": "7.12.9", "name": "Glass safety marking / manifestation installation (where required)" },
+        { "code": "7.12.10", "name": "Protection of installed glass and mirrors" },
+        { "code": "7.12.11", "name": "Glass stability, door operation and fixing inspection" },
+        { "code": "7.12.12", "name": "Mirror alignment, finish and defect inspection" },
+        { "code": "7.12.13", "name": "Snag rectification and final cleaning" },
+        { "code": "7.12.14", "name": "Client / consultant inspection and handover" },
+        { "code": "7.12.15", "name": "Glass door installation and alignment" }
+      ]
+    },
+    {
+      "name": "Furniture Installation",
+      "steps": [
+        { "code": "7.13.1", "name": "Final BOQ prepared" },
+        { "code": "7.13.2", "name": "BOQ / specifications approved" },
+        { "code": "7.13.3", "name": "Purchase order placed" },
+        { "code": "7.13.4", "name": "Material received and inspected" },
+        { "code": "7.13.5", "name": "Furniture installed" }
+      ]
+    },
+    {
+      "name": "Decor - Lighting",
+      "steps": [
+        { "code": "7.14.1", "name": "Final BOQ prepared" },
+        { "code": "7.14.2", "name": "BOQ / specifications approved" },
+        { "code": "7.14.3", "name": "Purchase order placed" },
+        { "code": "7.14.4", "name": "Material received and inspected" },
+        { "code": "7.14.5", "name": "Lighting installed and tested" }
+      ]
+    },
+    {
+      "name": "Decor - Wallpapers",
+      "steps": [
+        { "code": "7.15.1", "name": "Final BOQ prepared" },
+        { "code": "7.15.2", "name": "Design / sample / specifications approved" },
+        { "code": "7.15.3", "name": "Purchase order placed" },
+        { "code": "7.15.4", "name": "Material received and inspected" },
+        { "code": "7.15.5", "name": "Wallpaper installed and finish inspected" }
+      ]
+    },
+    {
+      "name": "Kitchen Installation",
+      "steps": [
+        { "code": "7.16.1", "name": "[Operations] Equipment dispatch and installation at site (12-15 days prior)" },
+        { "code": "7.16.2", "name": "[Operations] Cutlery, crockery and glassware delivery (10-12 days prior)" }
+      ]
+    },
+    {
+      "name": "Branding Installation",
+      "steps": [
+        { "code": "7.17.1", "name": "Final BOQ prepared" },
+        { "code": "7.17.2", "name": "Artwork / design / specifications approved" },
+        { "code": "7.17.3", "name": "Purchase order placed" },
+        { "code": "7.17.4", "name": "Material received and inspected" },
+        { "code": "7.17.5", "name": "Signages installed and tested" }
+      ]
+    },
+    {
+      "name": "Deep Cleaning",
+      "steps": [
+        { "code": "7.18.1", "name": "Deep Cleaning", "synthetic": true }
+      ]
+    },
+    {
+      "name": "Snag List",
+      "steps": [
+        { "code": "7.19.1", "name": "All construction and interior works completed" },
+        { "code": "7.19.2", "name": "All decor categories (Furniture, Lighting, Wallpapers and Signages) checked" },
+        { "code": "7.19.3", "name": "Final inspection of completed works" },
+        { "code": "7.19.4", "name": "Snag list attached to the project records" },
+        { "code": "7.19.5", "name": "[Interior] Coordination for final site inspection and pre-opening readiness" }
+      ]
+    },
+    {
+      "name": "Snag Closure",
+      "steps": [
+        { "code": "7.20.1", "name": "Snag items rectified and verified" },
+        { "code": "7.20.2", "name": "Final client / consultant inspection and handover" }
+      ]
+    }
+  ],
+  "sites": [
+    { "name": "Pavitra" },
+    { "name": "Tulsi Ahmedabad", "linkBoqNames": ["Ahmedabad"] },
+    { "name": "Tulsi Ayodhya", "linkBoqNames": ["Ayodhya"] },
+    { "name": "Tulsi Ashok Vihar", "linkBoqNames": ["Ashok Vihar"] },
+    { "name": "Tulsi Rcube", "linkBoqNames": ["Rcube Noida"] },
+    { "name": "Tulsi Jabalpur" },
+    { "name": "Tulsi Bhuvaneshwar" },
+    { "name": "Tulsi Indrapuram", "linkBoqNames": ["Indirapuram"] },
+    { "name": "Tulsi Bhopal" },
+    { "name": "Tulsi Kanpur" },
+    { "name": "Tulsi Ujjain" },
+    { "name": "Tulsi Hisar", "linkBoqNames": ["Tulsi Hissar"] },
+    { "name": "Pavitra Vadodara" },
+    { "name": "Blink Mathura" },
+    { "name": "Tulsi Virar" },
+    { "name": "Tulsi Bangalore", "linkBoqNames": ["Bangalore"] },
+    { "name": "Tulsi Raipur" },
+    { "name": "Tulsi Indore", "linkBoqNames": ["Tulsi Indore"] },
+    { "name": "Blink Kharar" },
+    { "name": "Tulsi R Cube Monad" },
+    { "name": "Zoca Ocus 24k" },
+    { "name": "Zoca Courtyard Cuttack", "linkBoqNames": ["Cuttack"] }
+  ]
+}

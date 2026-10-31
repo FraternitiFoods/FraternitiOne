@@ -93,3 +93,13 @@ export function canLockSite(user: Pick<CurrentUser, "role">): boolean {
 export function canEditRateOverride(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
+
+/**
+ * Create/download Purchase Orders — row 5, same role set as canViewSiteBoq
+ * (every non-FRANCHISEE role). Kept as its own function per this file's
+ * convention of one function per plan.md section 5 row, even though the
+ * underlying check is identical to canViewSiteBoq.
+ */
+export function canCreatePo(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}

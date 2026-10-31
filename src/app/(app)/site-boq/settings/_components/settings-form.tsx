@@ -42,6 +42,7 @@ export function SettingsForm({ settings }: { settings: AppSettingsValues }) {
               type="number"
               defaultValue={String(settings.defaultDeliveryDays)}
             />
+            <Field label="PO number prefix" name="poNumberPrefix" defaultValue={settings.poNumberPrefix} />
             <div className="space-y-1.5">
               <Label>PO terms</Label>
               {settings.poTerms.map((term, i) => (

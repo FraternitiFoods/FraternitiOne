@@ -159,3 +159,34 @@ export async function getRecentBoqAuditEvents(limit = 50) {
     take: limit,
   });
 }
+
+/** plan.md section 4.5 — PO list, searchable by number, site name or vendor name. */
+export async function getPurchaseOrders(q?: string) {
+  const query = q?.trim();
+  return db.purchaseOrder.findMany({
+    where: query
+      ? {
+          OR: [
+            { poNumber: { contains: query, mode: "insensitive" } },
+            { site: { name: { contains: query, mode: "insensitive" } } },
+            { vendor: { name: { contains: query, mode: "insensitive" } } },
+          ],
+        }
+      : undefined,
+    include: { site: { select: { name: true } }, vendor: { select: { name: true } }, category: { select: { displayName: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function getPurchaseOrderById(id: string) {
+  return db.purchaseOrder.findUnique({
+    where: { id },
+    include: {
+      site: { select: { name: true } },
+      vendor: { select: { name: true } },
+      category: { select: { displayName: true } },
+      createdBy: { select: { name: true, email: true } },
+      lines: { orderBy: { id: "asc" } },
+    },
+  });
+}

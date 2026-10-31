@@ -10,9 +10,12 @@ import { getAppSettings, type ImportMode } from "@/lib/app-settings";
  * rule itself is unit-testable; `checkModeAllowsWrite` is the thin DB-backed
  * wrapper every Server Action actually calls.
  */
-export type BoqWriteArea = "siteItem" | "item" | "vendor" | "site" | "settings";
+export type BoqWriteArea = "siteItem" | "item" | "vendor" | "site" | "settings" | "purchaseOrder";
 
-const MODE_EXEMPT_AREAS: ReadonlySet<BoqWriteArea> = new Set(["vendor", "settings"]);
+// "purchaseOrder" is exempt per plan.md section 4.5: "Allowed in both modes
+// (POs are website-native data, not imported). Creating a PO never changes
+// BOQ quantities."
+const MODE_EXEMPT_AREAS: ReadonlySet<BoqWriteArea> = new Set(["vendor", "settings", "purchaseOrder"]);
 
 export function isWriteAllowedInMode(mode: ImportMode, area: BoqWriteArea): boolean {
   return MODE_EXEMPT_AREAS.has(area) || mode === "WEBSITE_LIVE";
