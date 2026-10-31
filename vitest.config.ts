@@ -9,6 +9,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // See src/test/server-only-shim.ts — lets a test import a module that
+      // does `import "server-only"` (e.g. permissions.ts) without Node's
+      // plain `require` throwing the way it would without Next's bundler.
+      "server-only": path.resolve(__dirname, "./src/test/server-only-shim.ts"),
     },
   },
   test: {

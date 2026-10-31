@@ -7,6 +7,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { formatCurrency } from "@/lib/format";
 import { SiteBoqSubNav } from "./_components/sub-nav";
 import { SearchBox } from "./_components/search-box";
+import { SiteLockBadge } from "./_components/site-lock-badge";
 
 /** plan.md section 4.1 — Overview (the sheet's "Dashboard"). */
 export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">) {
@@ -121,6 +122,7 @@ export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">)
                     <Link href={`/site-boq/site-view?site=${site.id}`} className="hover:underline">
                       {site.name}
                     </Link>
+                    <SiteLockBadge locked={site.isLocked} />
                   </TableCell>
                   {categories.map((c) => (
                     <TableCell key={c.id} className="text-right text-muted-foreground">

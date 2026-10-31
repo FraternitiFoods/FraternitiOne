@@ -1,19 +1,45 @@
 import { requireSiteBoqUser } from "@/lib/site-boq-access";
 import { db } from "@/lib/db";
 import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq-data";
+import { getAppSettings } from "@/lib/app-settings";
+import { canEditItems, canEditSiteItemTracking, canEditRateOverride } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import { SiteBoqSubNav } from "../_components/sub-nav";
 import { QuerySelect } from "../_components/query-select";
 import { SearchBox } from "../_components/search-box";
+import { SiteLockBadge } from "../_components/site-lock-badge";
+import { QtyCell } from "./_components/qty-cell";
+import { RemarkCell } from "./_components/remark-cell";
+import { TrackingDrawer, type TrackingFields } from "./_components/tracking-drawer";
+import { ItemFormDialog } from "./_components/item-form-dialog";
 
-/** plan.md section 4.3 — Items & Qty (the sheet's "RM - <Category>" tabs), read-only (milestone M3). */
+const EMPTY_TRACKING: TrackingFields = {
+  poAmount: null,
+  boqLink: null,
+  poLink: null,
+  approvedVia: null,
+  link: null,
+  advanceGiven: null,
+  stage: null,
+  followUp: null,
+  remarks: null,
+};
+
+/** plan.md section 4.3 — Items & Qty (the sheet's "RM - <Category>" tabs). Editing lands per milestone M5's role/mode rules. */
 export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
-  await requireSiteBoqUser();
+  const user = await requireSiteBoqUser();
 
   const searchParams = await props.searchParams;
-  const [sites, categories, items] = await Promise.all([getActiveSites(), getActiveCategories(), getComputedItems()]);
+  const [sites, categories, items, settings] = await Promise.all([
+    getActiveSites(),
+    getActiveCategories(),
+    getComputedItems(),
+    getAppSettings(),
+  ]);
 
   if (sites.length === 0 || categories.length === 0) {
     return (
@@ -60,6 +86,15 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
     { qty: 0, amount: 0, allSitesQty: 0, allSitesAmount: 0 }
   );
 
+  // plan.md section 1 (mode) + section 5 (roles) + section 3 "Site lock":
+  // every non-FRANCHISEE role can edit qty/remark/tracking once WEBSITE_LIVE,
+  // unless this specific site is locked — in which case nobody can, Admin
+  // included, until an Admin unlocks it.
+  const siteItemEditable = canEditSiteItemTracking(user) && settings.mode === "WEBSITE_LIVE" && !selectedSite.isLocked;
+  const itemsEditable = canEditItems(user) && settings.mode === "WEBSITE_LIVE";
+  // rate_override is Admin-only (section 5), unlike qty/remark/tracking which every internal role can edit, and is site-specific so it's still blocked on a locked site.
+  const rateOverrideEditable = canEditRateOverride(user) && settings.mode === "WEBSITE_LIVE" && !selectedSite.isLocked;
+
   return (
     <div className="space-y-6">
       <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
@@ -78,21 +113,35 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
           paramName="site"
           value={selectedSite.id}
           ariaLabel="Select site"
-          options={sites.map((s) => ({ value: s.id, label: s.name }))}
+          options={sites.map((s) => ({ value: s.id, label: s.isLocked ? `${s.name} (Locked)` : s.name }))}
         />
-        <div className="ml-auto">
+        <SiteLockBadge locked={selectedSite.isLocked} className="align-middle" />
+        <div className="ml-auto flex items-center gap-2">
           <SearchBox
             paramName="q"
             defaultValue={q}
             placeholder="Search items…"
             preserveParams={{ category: selectedCategory.id, site: selectedSite.id }}
           />
+          {itemsEditable && (
+            <ItemFormDialog
+              categoryId={selectedCategory.id}
+              categoryVendors={categoryVendors}
+              trigger={<Button size="sm">Add item</Button>}
+            />
+          )}
         </div>
       </div>
 
-      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-        Sheet is live — data syncs from the sheet. Editing lands in a later milestone.
-      </p>
+      {settings.mode === "SHEET_LIVE" ? (
+        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Sheet is live — data syncs from the sheet. Editing is disabled until an Admin switches the mode in Settings.
+        </p>
+      ) : selectedSite.isLocked ? (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          &quot;{selectedSite.name}&quot; is locked — its qty, remarks, rate override and tracking fields are frozen until an Admin unlocks it.
+        </p>
+      ) : null}
 
       <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
         <Table>
@@ -111,12 +160,13 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
               ))}
               <TableHead className="text-right">All-sites qty</TableHead>
               <TableHead className="text-right">All-sites cost</TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7 + categoryVendors.length} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8 + categoryVendors.length} className="text-center text-sm text-muted-foreground">
                   No items in this category{q ? ` matching "${q}"` : ""}.
                 </TableCell>
               </TableRow>
@@ -124,12 +174,41 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
             {rows.map(({ item, siteEntry, allSitesQty, allSitesAmount }) => {
               const qty = siteEntry?.qty ?? 0;
               const missingRate = qty > 0 && !siteEntry?.hasRate;
+              const tracking: TrackingFields = siteEntry
+                ? {
+                    poAmount: siteEntry.poAmount,
+                    boqLink: siteEntry.boqLink,
+                    poLink: siteEntry.poLink,
+                    approvedVia: siteEntry.approvedVia,
+                    link: siteEntry.link,
+                    advanceGiven: siteEntry.advanceGiven,
+                    stage: siteEntry.stage,
+                    followUp: siteEntry.followUp,
+                    remarks: siteEntry.remarks,
+                  }
+                : EMPTY_TRACKING;
+
               return (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{siteEntry?.remarkSize || "—"}</TableCell>
-                  <TableCell className={missingRate ? "text-right font-medium text-destructive" : "text-right"}>
-                    {formatNumber(qty)}
+                  <TableCell className="text-muted-foreground">
+                    <RemarkCell
+                      siteId={selectedSite.id}
+                      itemId={item.id}
+                      remarkSize={siteEntry?.remarkSize ?? null}
+                      editable={siteItemEditable}
+                      locked={selectedSite.isLocked}
+                    />
+                  </TableCell>
+                  <TableCell className={missingRate && !siteItemEditable ? "text-right font-medium text-destructive" : "text-right"}>
+                    <QtyCell
+                      siteId={selectedSite.id}
+                      itemId={item.id}
+                      qty={qty}
+                      missingRate={missingRate}
+                      editable={siteItemEditable}
+                      locked={selectedSite.isLocked}
+                    />
                   </TableCell>
                   <TableCell className="text-muted-foreground">{item.finalVendorName ?? "—"}</TableCell>
                   <TableCell className="text-right">
@@ -139,7 +218,14 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
                       <span className="text-destructive">No rate</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right font-medium">{formatCurrency(siteEntry?.amount ?? 0, 2)}</TableCell>
+                  <TableCell className="text-right font-medium">
+                    {formatCurrency(siteEntry?.amount ?? 0, 2)}
+                    {siteEntry?.rateOverride != null && (
+                      <Badge variant="outline" className="ml-1.5 align-middle" title={`Rate overridden for ${selectedSite.name}`}>
+                        Override
+                      </Badge>
+                    )}
+                  </TableCell>
                   {categoryVendors.map((v) => {
                     const vr = item.vendorRates.find((x) => x.vendorId === v.id);
                     return (
@@ -150,6 +236,41 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
                   })}
                   <TableCell className="text-right text-muted-foreground">{formatNumber(allSitesQty)}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{formatCurrency(allSitesAmount, 2)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <TrackingDrawer
+                        siteId={selectedSite.id}
+                        itemId={item.id}
+                        itemName={item.name}
+                        siteName={selectedSite.name}
+                        tracking={tracking}
+                        editable={siteItemEditable}
+                        locked={selectedSite.isLocked}
+                        rateOverride={siteEntry?.rateOverride ?? null}
+                        finalRate={item.finalRate}
+                        rateOverrideEditable={rateOverrideEditable}
+                      />
+                      {itemsEditable && (
+                        <ItemFormDialog
+                          categoryId={selectedCategory.id}
+                          categoryVendors={categoryVendors}
+                          item={{
+                            id: item.id,
+                            name: item.name,
+                            sizeNote: item.sizeNote,
+                            note: item.note,
+                            finalVendorId: item.finalVendorId,
+                            rates: Object.fromEntries(item.vendorRates.map((vr) => [vr.vendorId, vr.rate])),
+                          }}
+                          trigger={
+                            <Button variant="outline" size="sm">
+                              Edit
+                            </Button>
+                          }
+                        />
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -166,6 +287,7 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
                 ))}
                 <TableCell className="text-right">{formatNumber(totals.allSitesQty)}</TableCell>
                 <TableCell className="text-right">{formatCurrency(totals.allSitesAmount, 2)}</TableCell>
+                <TableCell />
               </TableRow>
             </tfoot>
           )}

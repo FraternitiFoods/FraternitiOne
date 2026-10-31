@@ -7,6 +7,8 @@ export type ComputedSiteEntry = {
   siteId: string;
   qty: number;
   rate: number | null;
+  /** The raw per-site override, independent of whether it's actually in effect (locked sites ignore it) — lets the UI show an "Overridden" marker and prefill the edit field. */
+  rateOverride: number | null;
   amount: number;
   hasRate: boolean;
   ordered: boolean;
@@ -17,6 +19,10 @@ export type ComputedSiteEntry = {
   pending: number | null;
   boqLink: string | null;
   poLink: string | null;
+  approvedVia: string | null;
+  link: string | null;
+  followUp: string | null;
+  remarks: string | null;
 };
 
 export type ComputedItem = {
@@ -24,6 +30,7 @@ export type ComputedItem = {
   sourceKey: string;
   name: string;
   sizeNote: string | null;
+  note: string | null;
   categoryId: string;
   finalVendorId: string | null;
   finalVendorName: string | null;
@@ -74,6 +81,7 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
           siteId: si.siteId,
           qty,
           rate,
+          rateOverride: decToNumber(si.rateOverride),
           amount: amountOf(qty, rate),
           hasRate: rate !== null,
           ordered: isOrdered(si),
@@ -84,6 +92,10 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
           pending: pendingAmount(poAmount, advanceGiven),
           boqLink: si.boqLink,
           poLink: si.poLink,
+          approvedVia: si.approvedVia,
+          link: si.link,
+          followUp: si.followUp,
+          remarks: si.remarks,
         };
       });
 
@@ -92,6 +104,7 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
       sourceKey: item.sourceKey,
       name: item.name,
       sizeNote: item.sizeNote,
+      note: item.note,
       categoryId: item.categoryId,
       finalVendorId: item.finalVendorId,
       finalVendorName: item.finalVendor?.name ?? null,
@@ -129,4 +142,20 @@ export async function getVendorsGroupedByCategory() {
 
 export async function getLatestImportRun() {
   return db.importRun.findFirst({ orderBy: { startedAt: "desc" } });
+}
+
+const BOQ_AUDIT_ENTITY_TYPES = ["SiteItem", "Item", "Vendor", "Site", "AppSetting"] as const;
+
+/**
+ * plan.md section 5 "a lightweight audit log for edits in WEBSITE_LIVE" +
+ * the Settings "simple viewer" — filtered to Site BOQ's own entity types so
+ * this doesn't mix in unrelated User-management audit events that share the
+ * same AuditEvent table.
+ */
+export async function getRecentBoqAuditEvents(limit = 50) {
+  return db.auditEvent.findMany({
+    where: { entityType: { in: [...BOQ_AUDIT_ENTITY_TYPES] } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
 }

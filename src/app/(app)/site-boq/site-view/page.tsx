@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSiteBoqUser } from "@/lib/site-boq-access";
 import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq-data";
 import { getAppSettings } from "@/lib/app-settings";
+import { canLockSite } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { formatCurrency, formatNumber, formatDate, daysUntil } from "@/lib/format";
 import { SiteBoqSubNav } from "../_components/sub-nav";
 import { QuerySelect } from "../_components/query-select";
+import { SiteLockBadge } from "../_components/site-lock-badge";
+import { SiteLockButton } from "../_components/site-lock-button";
 
 type SiteAgg = { itemsCount: number; ratesMissing: number; notOrdered: number; ordered: number; orderValue: number };
 type CategoryAgg = SiteAgg & { poAmount: number; advanceGiven: number };
@@ -35,7 +38,8 @@ function openingStatus(
 
 /** plan.md section 4.2 — Site view (the sheet's "Site Dashboard"). */
 export default async function SiteViewPage(props: PageProps<"/site-boq/site-view">) {
-  await requireSiteBoqUser();
+  const user = await requireSiteBoqUser();
+  const canLock = canLockSite(user);
 
   const searchParams = await props.searchParams;
   const pendingCategory = typeof searchParams.pendingCategory === "string" ? searchParams.pendingCategory : "all";
@@ -114,14 +118,16 @@ export default async function SiteViewPage(props: PageProps<"/site-boq/site-view
       <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
       <SiteBoqSubNav active="site-view" />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">Site</span>
         <QuerySelect
           paramName="site"
           value={selectedSite.id}
           ariaLabel="Select site"
-          options={sites.map((s) => ({ value: s.id, label: s.name }))}
+          options={sites.map((s) => ({ value: s.id, label: s.isLocked ? `${s.name} (Locked)` : s.name }))}
         />
+        <SiteLockBadge locked={selectedSite.isLocked} className="align-middle" />
+        {canLock && <SiteLockButton siteId={selectedSite.id} siteName={selectedSite.name} isLocked={selectedSite.isLocked} />}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -132,7 +138,10 @@ export default async function SiteViewPage(props: PageProps<"/site-boq/site-view
       </div>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold">By category — {selectedSite.name}</h2>
+        <h2 className="text-sm font-semibold">
+          By category — {selectedSite.name}
+          <SiteLockBadge locked={selectedSite.isLocked} />
+        </h2>
         <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
           <Table>
             <TableHeader>
@@ -215,6 +224,7 @@ export default async function SiteViewPage(props: PageProps<"/site-boq/site-view
                       <Link href={`/site-boq/site-view?site=${s.id}`} className="hover:underline">
                         {s.name}
                       </Link>
+                      <SiteLockBadge locked={s.isLocked} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(s.openingDate)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{days !== null ? days : "—"}</TableCell>
@@ -238,7 +248,10 @@ export default async function SiteViewPage(props: PageProps<"/site-boq/site-view
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">What&apos;s pending — {selectedSite.name}</h2>
+          <h2 className="text-sm font-semibold">
+            What&apos;s pending — {selectedSite.name}
+            <SiteLockBadge locked={selectedSite.isLocked} />
+          </h2>
           <div className="flex items-center gap-2">
             <QuerySelect
               paramName="pendingCategory"
