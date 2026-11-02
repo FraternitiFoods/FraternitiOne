@@ -5,6 +5,8 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Buffer } from "node:buffer";
@@ -14,6 +16,17 @@ import { Buffer } from "node:buffer";
 // file to activate even for free-tier usage; B2's free tier does not.
 // Swapping providers only touches this file plus env var names, since both
 // are S3-compatible — no other code depends on the provider.
+/**
+ * Non-throwing check used by the Site Tracker's dev-disk fallback
+ * (src/lib/tracker-storage.ts, site-tracker-plan.md section 5: "if B2
+ * credentials are blank and NODE_ENV !== production, store to local disk").
+ */
+export function isB2Configured(): boolean {
+  return Boolean(
+    process.env.B2_ENDPOINT && process.env.B2_KEY_ID && process.env.B2_APPLICATION_KEY && process.env.B2_BUCKET_NAME
+  );
+}
+
 function requireB2Config() {
   const endpoint = process.env.B2_ENDPOINT;
   const keyId = process.env.B2_KEY_ID;
@@ -209,4 +222,62 @@ export async function getObjectBuffer(key: string): Promise<Buffer> {
   const byteArray = await result.Body?.transformToByteArray();
   if (!byteArray) throw new Error(`Object body empty for key: ${key}`);
   return Buffer.from(byteArray);
+}
+
+/**
+ * Site Tracker evidence key (site-tracker-plan.md section 5):
+ * `site-tracker/<siteId>/<stepId>/<uuid>.<ext>`. The extension comes from
+ * the already-validated mimeType (src/lib/tracker-evidence-rules.ts), never
+ * the client's own filename.
+ */
+export function buildTrackerEvidenceKey(params: { siteId: string; stepId: string; extension: string }): string {
+  return `site-tracker/${params.siteId}/${params.stepId}/${randomUUID()}.${params.extension}`;
+}
+
+/**
+ * Presigned PUT URL for the Site Tracker's evidence upload (section 5: phone
+ * -> B2 directly, never proxied through a Next.js route — the same reason as
+ * getSupervisorUploadUrl above, just a wider expiry since a 100MB video on a
+ * site's phone signal can take a while to start).
+ */
+export async function getTrackerEvidenceUploadUrl(params: { key: string; contentType: string }): Promise<string> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  const command = new PutObjectCommand({ Bucket: bucketName, Key: params.key, ContentType: params.contentType });
+  return getSignedUrl(getClient(endpoint, keyId, applicationKey), command, { expiresIn: 60 * 10 });
+}
+
+/**
+ * Presigned GET for viewing evidence inline (gallery lightbox/video player)
+ * — no Content-Disposition override, unlike getDocumentDownloadUrl, since
+ * this is meant to render in an <img>/<video> tag, not download as an
+ * attachment.
+ */
+export async function getTrackerEvidenceViewUrl(params: { key: string }): Promise<string> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  const command = new GetObjectCommand({ Bucket: bucketName, Key: params.key });
+  return getSignedUrl(getClient(endpoint, keyId, applicationKey), command, { expiresIn: 60 * 5 });
+}
+
+/**
+ * Confirm step (section 5): "Server HEADs the object to verify it exists and
+ * the size matches." Returns null on any failure (object missing, wrong
+ * key, etc.) rather than throwing — the confirm route turns that into a
+ * clear 4xx instead of a 500.
+ */
+export async function headTrackerEvidenceObject(params: { key: string }): Promise<{ sizeBytes: number } | null> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  try {
+    const result = await getClient(endpoint, keyId, applicationKey).send(
+      new HeadObjectCommand({ Bucket: bucketName, Key: params.key })
+    );
+    return { sizeBytes: result.ContentLength ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+/** Deletes the underlying object when an evidence row is deleted, so a removed photo/video doesn't linger in the bucket indefinitely. */
+export async function deleteTrackerEvidenceObject(params: { key: string }): Promise<void> {
+  const { endpoint, keyId, applicationKey, bucketName } = requireB2Config();
+  await getClient(endpoint, keyId, applicationKey).send(new DeleteObjectCommand({ Bucket: bucketName, Key: params.key }));
 }

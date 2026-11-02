@@ -95,6 +95,9 @@ model User {
   auditEvents         AuditEvent[]
   purchaseOrders      PurchaseOrder[]
   lockedSites         Site[]               @relation("SiteLockedBy")
+  trackerStepsCompleted  TrackerSiteStep[] @relation("TrackerStepCompletedBy")
+  trackerStepsUpdated    TrackerSiteStep[] @relation("TrackerStepUpdatedBy")
+  trackerEvidenceUploads TrackerEvidence[]
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password".
@@ -191,6 +194,14 @@ model Site {
   note          String?
   isActive      Boolean   @default(true)
   sortOrder     Int       @default(0)
+  /// Site BOQ and Site Tracker (site-tracker-plan.md section 3) share this
+  /// one Site table. Each module's own on/off switch, independent of
+  /// isActive: the BOQ import only ever sets/toggles usedInBoq (never
+  /// isActive) when a site isn't in a push; the tracker seed only sets
+  /// usedInTracker. Existing rows default usedInBoq = true (every Site that
+  /// predates the tracker was a BOQ site); usedInTracker defaults false.
+  usedInBoq     Boolean   @default(true)
+  usedInTracker Boolean   @default(false)
   /// Set to the current ImportRun.id on every chunk that touches this row;
   /// finish() soft-deactivates any active Site whose lastSeenRunId doesn't
   /// match the run that just completed (plan.md section 7, "finish").
@@ -207,8 +218,9 @@ model Site {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  siteItems      SiteItem[]
-  purchaseOrders PurchaseOrder[]
+  siteItems        SiteItem[]
+  purchaseOrders   PurchaseOrder[]
+  trackerSiteSteps TrackerSiteStep[]
 }
 
 model Category {
@@ -422,4 +434,105 @@ model ImportRun {
   counts     Json?
   warnings   Json?
   dryRun     Boolean         @default(false)
+}
+
+// ---------------------------------------------------------------------------
+// Site Tracker (site-tracker-plan.md section 3). Separate module from Site
+// BOQ above, sharing only the Site table (via usedInTracker). The seed
+// (prisma/seed-data/site-tracker-steps.json) is the only writer of
+// TrackerSection/TrackerStep; TrackerSiteStep rows are created lazily by the
+// edit API (site-tracker-plan.md section 3: "no row = NOT_STARTED").
+// ---------------------------------------------------------------------------
+
+enum TrackerStepStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  NOT_REQUIRED
+}
+
+enum TrackerEvidenceKind {
+  IMAGE
+  VIDEO
+}
+
+model TrackerSection {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  order     Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps TrackerStep[]
+}
+
+model TrackerStep {
+  id        String         @id @default(cuid())
+  sectionId String
+  section   TrackerSection @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  /// The sheet's own step code (e.g. "7.2.1") — non-contiguous on purpose,
+  /// never renumbered. The seed's upsert key.
+  code      String         @unique
+  name      String
+  order     Int
+  isActive  Boolean        @default(true)
+  /// True for the one step manufactured for "Deep Cleaning" (site-tracker-
+  /// plan.md's seed comment: a section with no sub-steps in the sheet).
+  synthetic Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  siteSteps TrackerSiteStep[]
+
+  @@index([sectionId])
+}
+
+/// One row per (site, step) that has ever been touched — lazy: no row means
+/// NOT_STARTED (site-tracker-plan.md section 3). Rules enforced on the
+/// server, not here (section 4): COMPLETED needs >= 1 evidence unless
+/// legacyCompleted; evidence delete can't drop a COMPLETED non-legacy step to
+/// zero evidence.
+model TrackerSiteStep {
+  id                String            @id @default(cuid())
+  siteId            String
+  site              Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  stepId            String
+  step              TrackerStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  status            TrackerStepStatus @default(NOT_STARTED)
+  assignee          String?
+  remark            String?
+  notRequiredReason String?
+  completedAt       DateTime?
+  completedById     String?
+  completedBy       User?             @relation("TrackerStepCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  /// Set for rows created by the Phase 2 import (site-tracker-plan.md section
+  /// 7): "imported COMPLETED -> legacyCompleted = true (exempt from evidence
+  /// rule)" — the sheet's own history has no photos to backfill.
+  legacyCompleted   Boolean           @default(false)
+  updatedById       String?
+  updatedBy         User?             @relation("TrackerStepUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  evidence TrackerEvidence[]
+
+  @@unique([siteId, stepId])
+  @@index([stepId])
+}
+
+model TrackerEvidence {
+  id           String              @id @default(cuid())
+  siteStepId   String
+  siteStep     TrackerSiteStep     @relation(fields: [siteStepId], references: [id], onDelete: Cascade)
+  storageKey   String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  kind         TrackerEvidenceKind
+  uploadedById String?
+  uploadedBy   User?               @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime            @default(now())
+
+  @@index([siteStepId])
 }

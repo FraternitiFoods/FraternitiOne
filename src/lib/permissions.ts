@@ -103,3 +103,24 @@ export function canEditRateOverride(user: Pick<CurrentUser, "role">): boolean {
 export function canCreatePo(user: Pick<CurrentUser, "role">): boolean {
   return user.role !== "FRANCHISEE";
 }
+
+/**
+ * Site Tracker (site-tracker-plan.md section 4, rule 6): "Admin + internal
+ * roles. External roles: no sidebar item, 403 on pages and APIs." Same role
+ * set as canViewSiteBoq/canEditSiteItemTracking — FRANCHISEE is the one
+ * external role today — kept as its own function since it's a separate
+ * module with its own plan document, not literally Site BOQ's rule.
+ */
+export function canViewSiteTracker(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}
+
+/** Status/assignee/remark/evidence-add edits — same role set as canViewSiteTracker (site-tracker-plan.md section 4, rule 6). */
+export function canEditSiteTracker(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}
+
+/** Evidence delete — site-tracker-plan.md section 4, rule 3: "Admin only." */
+export function canDeleteTrackerEvidence(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}

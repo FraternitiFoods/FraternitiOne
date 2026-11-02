@@ -28,12 +28,15 @@ type NavItem = { label: string; href: string | null };
  */
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: null },
-  { label: "Site Tracker", href: null },
+  { label: "Site Tracker", href: "/site-tracker" },
   { label: "Site BOQ", href: "/site-boq" },
   { label: "Operations BOQ", href: null },
 ];
 
 const EXTERNAL_ROLES: Role[] = ["FRANCHISEE"];
+
+/** Internal-only live modules (plan.md section 2, site-tracker-plan.md section 4 rule 6) — hidden from the sidebar entirely for an external role, not just 403'd server-side. */
+const INTERNAL_ONLY_LABELS = ["Site BOQ", "Site Tracker"];
 
 /**
  * "Manage users" lives here (not the 4-item sidebar — plan.md section 2 is
@@ -59,7 +62,7 @@ function AccountMenuItems({ role }: { role: Role }) {
 export function AppSidebar({ name, role }: { name: string; role: Role }) {
   const pathname = usePathname();
   const isExternal = EXTERNAL_ROLES.includes(role);
-  const navItems = NAV_ITEMS.filter((item) => item.label !== "Site BOQ" || !isExternal);
+  const navItems = NAV_ITEMS.filter((item) => !INTERNAL_ONLY_LABELS.includes(item.label) || !isExternal);
 
   return (
     <>

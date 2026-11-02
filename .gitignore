@@ -44,6 +44,10 @@ next-env.d.ts
 # spec/reference PDFs dropped into the repo root — not meant to be committed
 *.pdf
 
+# site-tracker-plan.md section 5 — dev-only local disk fallback for evidence
+# uploads when B2 credentials are blank
+/.local-uploads/
+
 
 .vercel
 .env*

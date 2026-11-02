@@ -159,7 +159,9 @@ export async function createImportRun(dryRun: boolean) {
 // Site lock (plan.md section 3 "Site lock") is website-native data: the
 // upsert `update`/`create` payloads below never mention isLocked/lockedAt/
 // lockedById, so Prisma never touches them here regardless of what the sheet
-// sends.
+// sends. Same for usedInTracker (site-tracker-plan.md section 3) — this
+// import only ever sets/toggles usedInBoq, never isActive or usedInTracker,
+// since the Site table is now shared with the Site Tracker module.
 export function runSitesChunk(runId: string, data: SiteInput[]) {
   return runChunk(runId, async (tx) => {
     const warnings: string[] = [];
@@ -171,7 +173,7 @@ export function runSitesChunk(runId: string, data: SiteInput[]) {
           name: site.name,
           shortCode: trimOrNull(site.shortCode),
           openingDate,
-          isActive: true,
+          usedInBoq: true,
           lastSeenRunId: runId,
         },
         create: {
@@ -179,6 +181,7 @@ export function runSitesChunk(runId: string, data: SiteInput[]) {
           name: site.name,
           shortCode: trimOrNull(site.shortCode),
           openingDate,
+          usedInBoq: true,
           lastSeenRunId: runId,
         },
       });
@@ -449,9 +452,14 @@ export async function finishImportRun(runId: string) {
     let deactivatedItems = 0;
 
     if (!run.dryRun) {
+      // Site is shared with the Site Tracker module (site-tracker-plan.md
+      // section 3): a site missing from this BOQ run must only drop out of
+      // BOQ (usedInBoq = false), never get soft-deleted entirely via
+      // isActive — isActive is now Admin-only (Sites page "hide" toggle) and
+      // may also mean "still active in the Tracker."
       const sites = await tx.site.updateMany({
-        where: { isActive: true, lastSeenRunId: { not: null }, NOT: { lastSeenRunId: runId } },
-        data: { isActive: false },
+        where: { usedInBoq: true, lastSeenRunId: { not: null }, NOT: { lastSeenRunId: runId } },
+        data: { usedInBoq: false },
       });
       deactivatedSites = sites.count;
 

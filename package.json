@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "seed:tracker": "tsx prisma/seed-tracker.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

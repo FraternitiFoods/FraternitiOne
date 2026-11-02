@@ -53,7 +53,7 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
     include: {
       finalVendor: { select: { id: true, name: true } },
       vendorRates: { include: { vendor: { select: { id: true, name: true } } } },
-      siteItems: { include: { site: { select: { id: true, isActive: true, isLocked: true } } } },
+      siteItems: { include: { site: { select: { id: true, isActive: true, usedInBoq: true, isLocked: true } } } },
     },
   });
 
@@ -66,7 +66,10 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
     const finalRate = finalRateOf(item.finalVendorId, vendorRates);
 
     const siteEntries: ComputedSiteEntry[] = item.siteItems
-      .filter((si) => si.site.isActive)
+      // Site is shared with the Site Tracker module (site-tracker-plan.md
+      // section 3) — a BOQ screen must never show a site that isn't a BOQ
+      // site, even if it's active/used in the Tracker.
+      .filter((si) => si.site.isActive && si.site.usedInBoq)
       .map((si) => {
         const qty = decToNumber(si.qty) ?? 0;
         const rate = rateForAmount({
@@ -115,15 +118,17 @@ export async function getComputedItems(): Promise<ComputedItem[]> {
   });
 }
 
+/** Both Site BOQ queries below are scoped to usedInBoq — Site is shared with the Site Tracker module (site-tracker-plan.md section 3) and a BOQ screen must never show a Tracker-only site. */
 export async function getActiveSites() {
   return db.site.findMany({
-    where: { isActive: true },
+    where: { isActive: true, usedInBoq: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 }
 
 export async function getAllSites() {
   return db.site.findMany({
+    where: { usedInBoq: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 }
