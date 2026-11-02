@@ -462,4 +462,15 @@ Throughout: after every milestone, run lint/typecheck/build and report what a hu
 
 **Still pending / needs a human:**
 - Same open items as every prior entry: DB location (docker-compose Postgres, port 5433; Docker Desktop must be running locally), B2/photo-storage credentials (also now the reason item photos won't appear on any real PO PDF yet), sheet-owner answers (section 9), real PO number format/company GSTIN/address/signatory, real vendor GSTIN/addresses, real sheet data for the section-8 reference numbers.
+
+### 2026-11-02 — Bug fix — missing `nativeButton={false}` on anchor-rendered PO buttons
+
+**Verified:**
+- `pnpm run typecheck`, `pnpm run lint` (same one pre-existing unrelated warning in `src/lib/email-domain.ts`) and `pnpm run test` (48/48) all pass clean.
+- Re-ran `scripts/tmp-e2e-m6-purchase-orders.ts` against the running `pnpm dev` — 21/21 checks still pass (no regression).
+- A direct browser check (throwaway script, deleted after use — not one of the kept `tmp-e2e-*.ts` files since it only asserts on `console` events, nothing in the DB) logged in, loaded `/site-boq/purchase-orders`, and confirmed zero console messages mentioning `nativeButton` or containing "error" — the reported warning is gone.
+
+**What was wrong and why:** Base UI's `Button` defaults `nativeButton` to `true`, which asserts the rendered element really is a `<button>`. Three `Button`s on the Purchase Orders list and detail pages used the `render` prop to swap in an `<a>`/`Link` (for "Create PO" and the two "Download PDF" buttons) without setting `nativeButton={false}`, so Base UI logged a console warning on every render. The repo already had the correct pattern elsewhere (`src/app/(app)/users/page.tsx`, with a comment explaining it) — these three call sites were just missed when Purchase Orders was built in the M6 session.
+
+**Fix:** added `nativeButton={false}` to the three call sites in `src/app/(app)/site-boq/purchase-orders/page.tsx` (the "Create PO" button and the per-row "Download PDF" button) and `src/app/(app)/site-boq/purchase-orders/[id]/page.tsx` (the detail page's "Download PDF" button). No other `Button`+`render` call sites in the codebase were missing it (checked via grep across the repo).
 - M7 — Polish (empty/loading/error states, responsive check, README for env vars) is the only milestone left per plan.md section 10.

@@ -34,7 +34,7 @@ export default async function PurchaseOrdersPage(props: PageProps<"/site-boq/pur
 
       <div className="flex items-center justify-between gap-2">
         <SearchBox paramName="q" defaultValue={q} placeholder="Search by PO number, site or vendor…" />
-        <Button size="sm" render={<Link href="/site-boq/purchase-orders/new" />}>
+        <Button nativeButton={false} size="sm" render={<Link href="/site-boq/purchase-orders/new" />}>
           Create PO
         </Button>
       </div>
@@ -83,6 +83,7 @@ export default async function PurchaseOrdersPage(props: PageProps<"/site-boq/pur
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
+                    nativeButton={false}
                     variant="outline"
                     size="sm"
                     render={<a href={`/api/site-boq/purchase-orders/${po.id}/pdf`} target="_blank" rel="noopener noreferrer" />}

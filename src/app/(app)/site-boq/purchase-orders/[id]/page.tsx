@@ -40,7 +40,7 @@ export default async function PurchaseOrderDetailPage(props: PageProps<"/site-bo
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={po.status === "ISSUED" ? "outline" : "secondary"}>{po.status}</Badge>
-          <Button render={<a href={`/api/site-boq/purchase-orders/${po.id}/pdf`} target="_blank" rel="noopener noreferrer" />}>
+          <Button nativeButton={false} render={<a href={`/api/site-boq/purchase-orders/${po.id}/pdf`} target="_blank" rel="noopener noreferrer" />}>
             Download PDF
           </Button>
         </div>
