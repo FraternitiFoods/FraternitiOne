@@ -13,7 +13,16 @@ generator client {
 
 datasource db {
   provider          = "postgresql"
+  // Pooled connection (e.g. Neon's pgbouncer endpoint) — what the running
+  // app/Prisma Client uses at request time.
   url               = env("DATABASE_URL")
+  // Direct (unpooled) connection — Prisma's migration engine uses this
+  // automatically for `migrate deploy`/`migrate dev`/`db push` whenever it's
+  // set, instead of `url`. DDL over a pgbouncer transaction-mode pooler is
+  // unreliable (advisory locks, session state), so migrations must run
+  // against the direct connection. Locally, where there's no pooler, this is
+  // the same value as DATABASE_URL.
+  directUrl         = env("DIRECT_URL")
   // `migrate dev`'s shadow-database step needs CREATEDB, which the native
   // Postgres role backing DATABASE_URL (port 5432) doesn't have. Point it at
   // the docker-compose Postgres instead (port 5433, docker-compose.yml) —

@@ -21,21 +21,20 @@ import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
-const db = new PrismaClient();
+export type StepJson = { code: string; name: string; synthetic?: boolean };
+export type SectionJson = { name: string; steps: StepJson[] };
+export type SiteJson = { name: string; linkBoqNames?: string[] };
+export type TrackerSeedFile = { sections: SectionJson[]; sites: SiteJson[] };
 
-type StepJson = { code: string; name: string; synthetic?: boolean };
-type SectionJson = { name: string; steps: StepJson[] };
-type SiteJson = { name: string; linkBoqNames?: string[] };
-type SeedFile = { sections: SectionJson[]; sites: SiteJson[] };
-
-function loadSeedFile(): SeedFile {
+export function loadTrackerSeedFile(): TrackerSeedFile {
   const filePath = path.join(process.cwd(), "prisma/seed-data/site-tracker-steps.json");
   const raw = readFileSync(filePath, "utf8");
-  return JSON.parse(raw) as SeedFile;
+  return JSON.parse(raw) as TrackerSeedFile;
 }
 
-async function seedSections(sections: SectionJson[]) {
+export async function seedTrackerSections(db: PrismaClient, sections: SectionJson[]) {
   let stepCount = 0;
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
@@ -69,7 +68,7 @@ async function seedSections(sections: SectionJson[]) {
   return { sectionCount: sections.length, stepCount };
 }
 
-async function seedSites(sites: SiteJson[]) {
+export async function seedTrackerSites(db: PrismaClient, sites: SiteJson[]) {
   const linked: { trackerName: string; boqName: string }[] = [];
   const own: string[] = [];
 
@@ -113,27 +112,33 @@ async function seedSites(sites: SiteJson[]) {
 }
 
 async function main() {
-  const seedFile = loadSeedFile();
+  const db = new PrismaClient();
+  try {
+    const seedFile = loadTrackerSeedFile();
 
-  const { sectionCount, stepCount } = await seedSections(seedFile.sections);
-  console.log(`Seeded ${sectionCount} sections, ${stepCount} steps.`);
+    const { sectionCount, stepCount } = await seedTrackerSections(db, seedFile.sections);
+    console.log(`Seeded ${sectionCount} sections, ${stepCount} steps.`);
 
-  const { linked, own } = await seedSites(seedFile.sites);
+    const { linked, own } = await seedTrackerSites(db, seedFile.sites);
 
-  console.log(`\nLinked to an existing Site BOQ site (${linked.length}):`);
-  for (const l of linked) console.log(`  - "${l.trackerName}" -> existing Site "${l.boqName}"`);
+    console.log(`\nLinked to an existing Site BOQ site (${linked.length}):`);
+    for (const l of linked) console.log(`  - "${l.trackerName}" -> existing Site "${l.boqName}"`);
 
-  console.log(`\nTracker-only sites, not linked to any BOQ site (${own.length}):`);
-  for (const name of own) console.log(`  - ${name}`);
+    console.log(`\nTracker-only sites, not linked to any BOQ site (${own.length}):`);
+    for (const name of own) console.log(`  - ${name}`);
 
-  console.log(`\nTotal tracker sites: ${linked.length + own.length}.`);
+    console.log(`\nTotal tracker sites: ${linked.length + own.length}.`);
+  } finally {
+    await db.$disconnect();
+  }
 }
 
-main()
-  .catch((err) => {
+// Only auto-run when this file is executed directly (`npm run seed:tracker`)
+// — prisma/seed-prod.ts imports the functions above without triggering this.
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
+if (isMain) {
+  main().catch((err) => {
     console.error(err);
     process.exit(1);
-  })
-  .finally(async () => {
-    await db.$disconnect();
   });
+}

@@ -1,13 +1,20 @@
 /**
- * Dev-only user seed (just enough to log in as an admin, plan.md milestone
- * M0) plus the Site BOQ baseline seed data that every environment needs
- * regardless of real import data: the 21 categories and app_settings
- * defaults (plan.md milestone M1).
+ * Dev-only seed: fixtures/demo data, starting with just enough of a user to
+ * log in as an admin (plan.md milestone M0). Never run this in production —
+ * use `npm run seed:prod` (prisma/seed-prod.ts) there instead, which seeds
+ * only the baseline data (categories, app_settings, tracker steps) and never
+ * creates a dev/demo user.
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { SEED_CATEGORIES } from "@/lib/boq-categories";
-import { APP_SETTING_KEYS, DEFAULT_APP_SETTINGS } from "@/lib/app-settings";
+import { seedCategories, seedAppSettings } from "./seed-shared";
+
+if (process.env.NODE_ENV === "production") {
+  console.error(
+    "prisma/seed.ts is the DEV seed (fixtures/demo data) — refusing to run with NODE_ENV=production. Use `npm run seed:prod` instead."
+  );
+  process.exit(1);
+}
 
 const db = new PrismaClient();
 
@@ -48,32 +55,6 @@ async function upsertUser(input: {
   });
 }
 
-async function seedCategories() {
-  for (const category of SEED_CATEGORIES) {
-    await db.category.upsert({
-      where: { name: category.name },
-      // Seeding never overwrites a category already touched by a real
-      // import — only fills in categories that don't exist yet.
-      update: {},
-      create: category,
-    });
-  }
-  console.log(`Seeded ${SEED_CATEGORIES.length} categories.`);
-}
-
-async function seedAppSettings() {
-  for (const key of APP_SETTING_KEYS) {
-    await db.appSetting.upsert({
-      where: { key },
-      // Never overwrite a value an Admin may have already changed from
-      // Settings — seeding only fills in keys that don't exist yet.
-      update: {},
-      create: { key, value: DEFAULT_APP_SETTINGS[key] },
-    });
-  }
-  console.log(`Seeded app_settings (mode = ${DEFAULT_APP_SETTINGS.mode}).`);
-}
-
 async function main() {
   const admin = await upsertUser({
     email: "tech@fraterniti.co.in",
@@ -86,8 +67,10 @@ async function main() {
     console.log(`  - ${u.email}  (${u.role})`);
   }
 
-  await seedCategories();
-  await seedAppSettings();
+  const categoryCount = await seedCategories(db);
+  console.log(`Seeded ${categoryCount} categories.`);
+  const mode = await seedAppSettings(db);
+  console.log(`Seeded app_settings (mode = ${mode}).`);
 }
 
 main()
