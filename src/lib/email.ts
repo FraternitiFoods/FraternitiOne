@@ -74,3 +74,46 @@ export async function sendPasswordSetupEmail(params: {
     throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
   }
 }
+
+function formatIst(date: Date): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+/**
+ * docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 7: "Use the app's existing
+ * mail function" — reuses this file's getClient/getFrom plumbing rather than
+ * adding a second mail path. Sent once per failed run (caller's
+ * responsibility — src/lib/sheet-sync/run.ts only calls this from the single
+ * place a run transitions to failed).
+ */
+export async function sendSheetSyncFailureEmail(params: {
+  to: string;
+  trigger: string;
+  errorMessage: string;
+  lastSyncedAt: Date | null;
+}): Promise<void> {
+  const subject = "Fraterniti One – sheet sync failed";
+  const lastSynced = params.lastSyncedAt ? formatIst(params.lastSyncedAt) : "never";
+  const lines = [
+    `Trigger: ${params.trigger}`,
+    `Time: ${formatIst(new Date())} IST`,
+    `Error: ${params.errorMessage}`,
+    `Last successful sync: ${lastSynced}`,
+  ];
+
+  const { error } = await getClient().emails.send({
+    from: getFrom(),
+    to: params.to,
+    subject,
+    text: lines.join("\n"),
+    html: `<p>${lines.join("</p><p>")}</p>`,
+  });
+
+  if (error) {
+    throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
+  }
+}

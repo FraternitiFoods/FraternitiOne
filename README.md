@@ -79,7 +79,7 @@ Not needed in production (dev-only — see `.env.example` instead): `SHADOW_DATA
 
 1. Create a **new** Vercel project from this repo (don't reuse the old app's project).
 2. Project Settings → Git → **Production Branch** = `new-main`.
-3. Project Settings → General → **Node.js Version** = 20.x (matches CI).
+3. Project Settings → General → **Node.js Version** — use whatever Vercel's current default/highest-supported option is (CI pins 20.x, but Vercel periodically discontinues old Node versions — if `vercel deploy` rejects your pinned version as discontinued, it tells you exactly which version to switch to).
 4. Build command: leave as the default (`next build` from `package.json`). Install command: default (`pnpm install`).
 5. Add every environment variable from the table above under **Production**.
 6. Deploy. Vercel will give you a temporary `https://<project>.vercel.app` URL — use that to test before any domain is attached.

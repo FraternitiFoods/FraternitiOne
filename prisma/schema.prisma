@@ -224,6 +224,12 @@ model Site {
   lockedAt      DateTime?
   lockedById    String?
   lockedBy      User?     @relation("SiteLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
+  /// Sheet-sync's own "order delivered/locked" flag from the TULSI sheet
+  /// (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 4: `lockedSites[]`) —
+  /// purely informational (shows a badge), NOT the website's isLocked above.
+  /// Unlike isLocked, this never blocks a sync from writing this site's
+  /// qty/tracking data; only sheet-sync itself ever sets it.
+  sheetLocked   Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -434,6 +440,7 @@ model AppSetting {
 }
 
 /// One row per import push (plan.md section 7's begin/chunk/photo/finish
+/// sequence, OR docs/sheet-sync/CLAUDE_CODE_HANDOFF.md's start/chunk/finish
 /// sequence). counts/warnings are only populated once finish() commits.
 model ImportRun {
   id         String          @id @default(cuid())
@@ -443,6 +450,39 @@ model ImportRun {
   counts     Json?
   warnings   Json?
   dryRun     Boolean         @default(false)
+  /// Sheet-sync additions (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md) — all null
+  /// for the old M2 push-import rows; set for every run created via
+  /// POST /api/sheet-sync/start. trigger is 'button'|'daily'|'menu';
+  /// requestId links back to the AppSetting "sheetSyncRequest" singleton
+  /// that spawned this run; errorMessage is the human-readable failure
+  /// reason shown by GET /status and the failure email.
+  trigger      String?
+  requestId    String?
+  errorMessage String?
+  /// start.sites[]/lockedSites[] — small (～17 rows today), kept directly on
+  /// the run rather than chunked into staging since finish only needs it
+  /// once, unlike the 21 per-category chunks below.
+  sitesPayload Json?
+
+  stagingChunks BoqSyncStagingChunk[]
+}
+
+/// Sheet-sync staging (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 0):
+/// POST /api/sheet-sync/chunk writes here, keyed by (runId, category) so a
+/// retried chunk (the script retries on 5xx) replaces rather than
+/// duplicates. Live Site BOQ tables are untouched until finish reads every
+/// row for the run and commits in one transaction; fail (or a reaped,
+/// timed-out run) just deletes these rows, leaving live data exactly as it
+/// was before the run started.
+model BoqSyncStagingChunk {
+  id        String    @id @default(cuid())
+  runId     String
+  run       ImportRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  category  String
+  payload   Json
+  createdAt DateTime  @default(now())
+
+  @@unique([runId, category])
 }
 
 // ---------------------------------------------------------------------------

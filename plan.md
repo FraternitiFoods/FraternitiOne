@@ -513,3 +513,52 @@ All work done on a new local branch `new-main` (branched from `new`), nothing pu
 - Add the domain(s), then rotate `tech@fraterniti.co.in`'s password wherever it's currently live.
 - Decide whether `scripts/tmp-e2e-site-tracker.ts`'s timing margin is worth tightening in a future session.
 - M7 — Polish (empty/loading/error states, responsive check, README for env vars) is the only milestone left per plan.md section 10.
+
+### 2026-11-03 — Sheet sync (`docs/sheet-sync/CLAUDE_CODE_HANDOFF.md`): Apps Script push, Step 0 through a working end-to-end sync
+
+Branch `new-main`. Implements the handoff doc's full `/api/sheet-sync/*` contract — a newer, stricter sibling to the M2 `/api/import/boq/*` push (staging + atomic commit, button/daily/menu triggers, failure email), left deliberately separate per Step 0's findings and the user's explicit decisions below.
+
+**Step 0 findings (reported and approved before any code was written):** reused as-is, no schema change — `Site`/`Category`/`Vendor`/`CategoryVendor`/`VendorRate`/`Item` (its existing `sourceKey`-fallback-key idea is exactly the handoff's `itemKey` format), `SiteItem` (its columns already matched the payload's per-site fields ~1:1), `AppSetting`'s `mode` switch, the bearer-secret pattern (`src/lib/import/auth.ts`), `requireSiteBoqUser`/`permissions.ts`, `src/lib/email.ts`'s Resend plumbing, `ImportRun` (extended, not replaced). Genuinely new: one staging table, a few nullable `ImportRun` columns, a new `Site.sheetLocked` boolean (the sheet's own "order delivered" flag — distinct from the website-native `isLocked`), a new route group, a new Zod schema file, one new permission (`canTriggerSheetSync`), and the button/status UI.
+
+**User's 5 conditions, all implemented:**
+1. **Mode**: `/pending` returns `{pending:false}` (not 403) in `WEBSITE_LIVE`; `/request` rejects with a clear message; `/start`/`/chunk` 403 like the old importer; `/finish` re-checks mode and fails the run (not just the HTTP call) if it flipped mid-sync.
+2. **Sheet is boss**: `commitRun` deletes a `SiteItem` row outright when the sheet no longer has data for that (site, item) — not just zeroed — and archives (`isActive=false`/`usedInBoq=false`) an item/site missing from the whole run, never deletes either. Two exclusions found and fixed during testing (test 7 below): a website-locked site's rows are frozen, not stale; a site that dropped out of `sites[]` entirely (archived) also keeps its old `SiteItem` rows frozen rather than losing them in the same sweep that clears a *present* site's missing-item data.
+3. **Batched/bulk finish**: `commit.ts` pre-fetches Category/Vendor/Site once, then bulk-upserts `Item`/`VendorRate`/`SiteItem` via raw parameterized `INSERT ... ON CONFLICT` statements (250-row batches) instead of one Prisma call per row — a few dozen statements total for 680 items / ~3000 site entries, not thousands. `finish`'s route has `maxDuration = 300` and the transaction timeout is 180s.
+4. **Atomic request claim**: `claimRequest` in `request-state.ts` uses `SELECT ... FOR UPDATE` inside one transaction on the `AppSetting` "sheetSyncRequest" singleton row — a real DB-level lock, not a read-then-write race. Verified: 5 concurrent `/request` calls produce exactly one `requestId`.
+5. **Field mapping**: `trackedAmount→poAmount`, `advGiven→advanceGiven`, `remark→remarkSize`, `remarks→remarks` (these are two separate existing `SiteItem` columns, not the same field spelled two ways — confirmed by reading the handoff's own illustrative example, which has both in the same object), rest 1:1 by name.
+
+**What was built:**
+- `prisma/schema.prisma` — `Site.sheetLocked`; `ImportRun.trigger/requestId/errorMessage/sitesPayload`; new `BoqSyncStagingChunk` model (migration `20261103080853_sheet_sync_staging`).
+- `src/lib/sheet-sync/`: `schema.ts` (Zod, verified field-for-field against `sample-payload.json`), `auth.ts`+`guard.ts` (bearer secret, separate `SHEET_SYNC_SECRET` from `IMPORT_SECRET`), `request-state.ts` (atomic singleton), `commit.ts` (bulk finish logic), `run.ts` (start/chunk/fail/pending/status + the reaper: >10min running → failed, >3min un-picked-up → one alert email), `errors.ts`.
+- `src/app/api/sheet-sync/{pending,start,chunk,finish,fail,request,status}/route.ts`.
+- `src/lib/email.ts` — added `sendSheetSyncFailureEmail` (reuses the existing `getClient`/`getFrom` Resend plumbing).
+- `src/lib/permissions.ts` — `canTriggerSheetSync` (Admin only, matches handoff section 6 "admin only").
+- `src/app/(app)/site-boq/_components/sync-with-sheet-button.tsx` + wired into the Overview page — polls `/status` only while active, exact copy from handoff section 6.
+- `.env`/`.env.example`/`.env.production.example` — `SHEET_SYNC_SECRET`, `SHEET_SYNC_ALERT_EMAIL` (not added to `env-validation.ts`'s hard boot gate — same optional-degradation treatment as B2/Resend, not SESSION_SECRET/IMPORT_SECRET).
+- `scripts/tmp-e2e-sheet-sync.ts` (new, kept per convention) — drives the real `docs/sheet-sync/sample-payload.json` through every one of handoff section 9's 9 tests, plus the user's stacking/atomicity/auth conditions, plus a real-browser Playwright pass of the button itself.
+
+**Two real bugs found and fixed by the e2e pass (not just typecheck/lint):**
+1. `/api/sheet-sync/request` and `/status` wrapped `requireUser()` (which uses Next's `redirect()` internally) inside a generic try/catch error-mapper — this swallowed `NEXT_REDIRECT` and turned a no-session request into a bogus 500 instead of a real redirect. Fixed by calling `requireUser()` unwrapped, outside the try/catch, matching the established pattern already used by `src/app/api/tracker/sites/route.ts`.
+2. The sync button's polling only rescheduled itself once after a click (a single extra `setTimeout`, not a real loop) — it would stop polling after ~1-2 checks and never observe the eventual "Done" state. Fixed with one self-rescheduling `pollLoop` (via a ref, not a self-referencing `useCallback` — `eslint-plugin-react-hooks` correctly flagged the first attempt). Also found: a completed sync's "success" state is server-persisted (survives until the next request), but the handoff only wants "Done — N items, N sites" shown to whoever was actually watching — a fresh page load later should show "Last synced: ..." instead. Fixed by tracking the state transition client-side (`justFinished`), not by trusting the server's state string alone.
+
+**Verified (`scripts/tmp-e2e-sheet-sync.ts`, 26/26 checks, against the real Neon dev DB + a running `pnpm dev`):**
+- Happy path: start → 21 real chunks (incl. one deliberately retried chunk) → finish; 680/680 items, 17/17 sites, no duplication from the retry.
+- Atomic: 10-of-21 chunks + `/fail` → live data byte-identical (same item/siteItem/vendor/site counts) to before. Full chunks + wrong `expected.items` → `/finish` rejects, run marked FAILED, live data unchanged.
+- Idempotent retried chunk confirmed via DB count, not just the response.
+- Duplicate-name items ("Japanese Cocktail Glass" ×3) land as 3 separate rows.
+- A `rateMissing:true` item's stored rate resolves to `null` (renders "Rate pending").
+- Auth: no/wrong secret → 401 on every script route; no admin session → real redirect (not 200/202) on `/request`.
+- Stacking: 5 concurrent `/request` calls → exactly 1 `requestId`.
+- A site removed from `sites[]` → archived (`usedInBoq=false`), not deleted; its prior `SiteItem` rows survive untouched (this is what caught bug-fix #2 under "Sheet is boss" above).
+- Real browser (Playwright): button visible → click → "Waiting for the sheet…" → (simulated Apps Script picks it up via `/pending` → runs the full payload) → "Done — 680 items, 17 sites" → page reload shows "Last synced: ...".
+- `pnpm run typecheck`, `pnpm run lint` (same one pre-existing unrelated `src/lib/email-domain.ts` warning), `pnpm run test` (48/48, no regressions), and `next build` all pass clean.
+- Final DB state after the full test pass: all 17 real sites active, 680 real items from the actual 02-Nov sheet backup — this incidentally also completes plan.md's open item that the real sheet data had never been imported (only the fixture had).
+
+**An unrelated environment issue found and fixed along the way (not a sheet-sync bug):** the local `.env`'s `DATABASE_URL` Neon project had a dangling, failed `_prisma_migrations` row (`20260915101650_init`, `finished_at=null`, error `type "Role" already exists`) — a stray leftover from an earlier session's migration attempt against the wrong migration set. The project's actual tables were already correct (this branch's real schema, 1 real admin user, 22 sites, 21 categories — not the old Phase-1 app's tables), so this was metadata corruption, not a wrong-database situation. Confirmed with the user, then resolved with `prisma migrate resolve --rolled-back` + removing the dangling row directly (both non-destructive to real tables/data) before running the new migration.
+
+**Two things flagged, not built, per Step 0/the user's decisions:** the old `/api/import/boq/*` (M2) push path is untouched and still live in parallel — revisit once sheet-sync is proven in production, not this session. Photos are out of scope for sheet-sync v1 (handoff section 4) — no `ItemPhoto` changes.
+
+**Still pending / needs a human:**
+- `WebsiteSync.js` (the real Apps Script) was never run against this app — only the recorded `sample-payload.json` was. The real script still needs the human steps in handoff section 11: paste `SHEET_SYNC_SECRET` into the sheet's menu, add the script, run its trigger setup, test against a preview URL before the live sheet.
+- Decide the fate of `/api/import/boq/*` once sheet-sync is proven (flagged above, deliberately not decided this session).
+- M7 — Polish is still the only Site BOQ milestone left per section 10, unchanged by this session.

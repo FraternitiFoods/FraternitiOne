@@ -84,6 +84,11 @@ export function canLockSite(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
 
+/** docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 3: "admin button (session auth, admin role only)" for POST /api/sheet-sync/request. */
+export function canTriggerSheetSync(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
 /**
  * SiteItem.rateOverride — the per-site rate override plan.md section 3 called
  * out as "the UI/data model must support a site-specific override later."
