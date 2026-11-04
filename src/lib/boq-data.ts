@@ -1,5 +1,6 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { decToNumber, finalRateOf, rateForAmount, amountOf, isOrdered, pendingAmount } from "@/lib/boq-calc";
 
@@ -133,10 +134,18 @@ export async function getAllSites() {
   });
 }
 
-/** Categories are a closed, rarely-changing list (plan.md section 1) — no is_active to filter on. */
-export async function getActiveCategories() {
-  return db.category.findMany({ orderBy: [{ sortOrder: "asc" }] });
-}
+/**
+ * Categories are a closed, rarely-changing list (plan.md section 1) — no
+ * is_active to filter on, and no Server Action ever writes db.category
+ * (sheet-sync refuses to create them). Cached with a defensive time-based
+ * ceiling rather than tag-based invalidation since there's no write path to
+ * invalidate against.
+ */
+export const getActiveCategories = unstable_cache(
+  async () => db.category.findMany({ orderBy: [{ sortOrder: "asc" }] }),
+  ["active-categories"],
+  { revalidate: 3600 }
+);
 
 export async function getVendorsGroupedByCategory() {
   return db.vendor.findMany({

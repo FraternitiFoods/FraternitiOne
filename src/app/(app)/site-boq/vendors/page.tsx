@@ -73,7 +73,15 @@ export default async function VendorsPage(props: PageProps<"/site-boq/vendors">)
                         {editable && (
                           <TableCell className="text-right">
                             <VendorEditDialog
-                              vendor={vendor}
+                              vendor={{
+                                id: vendor.id,
+                                name: vendor.name,
+                                address: vendor.address,
+                                gstin: vendor.gstin,
+                                phone: vendor.phone,
+                                email: vendor.email,
+                                note: vendor.note,
+                              }}
                               trigger={
                                 <Button variant="outline" size="sm">
                                   Edit

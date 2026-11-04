@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
@@ -34,53 +34,50 @@ export function SiteTrackerApp({
   currentUserName,
   canEdit,
   isAdmin,
+  initialSites,
+  initialSummary,
 }: {
   currentUserName: string;
   canEdit: boolean;
   isAdmin: boolean;
+  initialSites: SiteProgressRow[];
+  initialSummary: SiteSummary | null;
 }) {
   const [tab, setTab] = useState<"tracker" | "all">("tracker");
-  const [sites, setSites] = useState<SiteProgressRow[] | null>(null);
-  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-  const [summary, setSummary] = useState<SiteSummary | null>(null);
-  const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
+  const [sites] = useState<SiteProgressRow[]>(initialSites);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(initialSites[0]?.site.id ?? null);
+  const [summary, setSummary] = useState<SiteSummary | null>(initialSummary);
+  const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(
+    initialSummary ? computeDefaultOpenSection(initialSummary) : new Set()
+  );
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [search, setSearch] = useState("");
   const [hideCompleted, setHideCompleted] = useState(false);
 
-  // Load the site list once, then pick the initial selected site (remembered from localStorage if still valid).
+  // The server render already seeded `summary` for this site — skip the next fetch for it once, so mounting doesn't immediately re-request data we already have.
+  const skipInitialFetchRef = useRef(initialSummary ? (initialSites[0]?.site.id ?? null) : null);
+
+  // localStorage is only readable client-side, so "switch to the last site the user looked at" has to happen post-mount, not during the server render.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/tracker/sites");
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error ?? "Could not load sites.");
-        if (cancelled) return;
-        const list = body.sites as SiteProgressRow[];
-        setSites(list);
-        const remembered = readLastSiteId();
-        const initial = list.find((s) => s.site.id === remembered)?.site.id ?? list[0]?.site.id ?? null;
-        setSelectedSiteId(initial);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not load sites.");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const remembered = readLastSiteId();
+    if (remembered && remembered !== skipInitialFetchRef.current && sites.some((s) => s.site.id === remembered)) {
+      setSelectedSiteId(remembered);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load the selected site's full tracker whenever the selection changes.
+  // Load the selected site's full tracker whenever the selection changes (skipped once for the server-seeded default site).
   useEffect(() => {
     if (!selectedSiteId) return;
+    if (skipInitialFetchRef.current === selectedSiteId) {
+      skipInitialFetchRef.current = null;
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoadingSummary(true);
-      setLoadError(null);
       try {
         const res = await fetch(`/api/tracker/sites/${selectedSiteId}`);
         const body = await res.json();
@@ -90,7 +87,7 @@ export function SiteTrackerApp({
         setSummary(newSummary);
         setOpenSectionIds(computeDefaultOpenSection(newSummary));
       } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not load this site's tracker.");
+        if (!cancelled) toast.error(err instanceof Error ? err.message : "Could not load this site's tracker.");
       } finally {
         if (!cancelled) setLoadingSummary(false);
       }
@@ -196,10 +193,6 @@ export function SiteTrackerApp({
       }),
     }));
   }, [summary, statusFilter, hideCompleted, search]);
-
-  if (loadError && !sites) {
-    return <p className="text-sm text-destructive">{loadError}</p>;
-  }
 
   return (
     <div className="space-y-4">
