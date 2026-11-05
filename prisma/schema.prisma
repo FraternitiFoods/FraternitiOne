@@ -116,6 +116,8 @@ model User {
   trackerStepsCompleted  TrackerSiteStep[] @relation("TrackerStepCompletedBy")
   trackerStepsUpdated    TrackerSiteStep[] @relation("TrackerStepUpdatedBy")
   trackerEvidenceUploads TrackerEvidence[]
+  dashboardSiteAssignment    DashboardSiteAssignment?  @relation("DashboardSiteAssignmentUser")
+  dashboardSiteAssignmentsMade DashboardSiteAssignment[] @relation("DashboardSiteAssignedBy")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password".
@@ -593,4 +595,152 @@ model TrackerEvidence {
   createdAt    DateTime            @default(now())
 
   @@index([siteStepId])
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (dashboard-sheet-sync-plan.md). Separate "Site Drawing Updates"
+// sheet from the Site BOQ ("TULSI Rate Sheet") one, so this has its own Site
+// table (DashboardSite) rather than reusing the shared Site model above —
+// the two sheets' site lists aren't guaranteed to match 1:1 (this one
+// includes trash/Zoca sites). Read-only product: nothing here is ever
+// written back to the sheet, and there is no SHEET_LIVE/WEBSITE_LIVE mode —
+// the website only ever displays the last synced copy.
+// ---------------------------------------------------------------------------
+
+enum DashboardStepStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  NOT_REQUIRED
+}
+
+/// One sync run (mirrors ImportRun's role, kept fully separate so a bug in
+/// one sync can't touch the other's rows). trigger is 'button'|'daily'; no
+/// 'menu' trigger for Dashboard (dashboard-sheet-sync-plan.md doesn't mention
+/// a sheet-menu option, unlike Site BOQ's).
+model DashboardSyncRun {
+  id           String          @id @default(cuid())
+  status       ImportRunStatus @default(IN_PROGRESS)
+  trigger      String?
+  requestId    String?
+  startedAt    DateTime        @default(now())
+  finishedAt   DateTime?
+  errorMessage String?
+  counts       Json?
+  warnings     Json?
+  /// Per-site diff between our computed numbers and the sheet's own
+  /// Dashboard-tab sheetSummary (dashboard-sheet-sync-plan.md section 5),
+  /// shown to internal roles only.
+  mismatches   Json?
+  /// start.deptLinks[] (small — the whole Department Links tab) — held here
+  /// until finish() applies the full replace, same reasoning as ImportRun.
+  /// sitesPayload: a transaction can't span the separate start/chunk/finish
+  /// HTTP calls, so anything finish needs rides on the run row itself.
+  deptLinksPayload Json?
+
+  stagingChunks DashboardSyncStagingChunk[]
+}
+
+/// POST /api/dashboard-sync/chunk writes here, one row per (run, site) — a
+/// retried chunk (script retries on 5xx) replaces rather than duplicates.
+/// Live Dashboard tables are untouched until finish commits in one
+/// transaction; fail/reap just deletes these rows.
+model DashboardSyncStagingChunk {
+  id        String           @id @default(cuid())
+  runId     String
+  run       DashboardSyncRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  siteName  String
+  payload   Json
+  createdAt DateTime         @default(now())
+
+  @@unique([runId, siteName])
+}
+
+model DashboardSite {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  sortOrder     Int       @default(0)
+  driveFolderUrl String?
+  /// Raw per-site numbers from the sheet's own Dashboard tab (dashboard-
+  /// sheet-sync-plan.md section 3): {total, completed, inProgress,
+  /// notStarted, pct, shared, notShared, perStagePct: number[13], notRequired}.
+  /// Stored as-is for the mismatch check in commit(); never used to render
+  /// the website's own numbers, which are always recomputed from DashboardStep.
+  sheetSummary  Json?
+  lastSyncedAt  DateTime?
+  isActive      Boolean   @default(true)
+  /// Set to the current DashboardSyncRun.id on every chunk that touches this
+  /// row; finish() soft-deactivates any active site whose lastSeenRunId
+  /// doesn't match the run that just completed.
+  lastSeenRunId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  steps       DashboardStep[]
+  deptLinks   DashboardDeptLink[]
+  assignments DashboardSiteAssignment[]
+}
+
+/// One row per (site, stage, step) leaf or parent. Parents (isParent=true)
+/// have status null — their displayed status is derived on read from their
+/// children (dashboard-sheet-sync-plan.md section 3) — and are excluded from
+/// every percentage. stepKey is the sheet row number within the stage tab,
+/// stable across re-syncs unless rows are inserted/removed by hand.
+model DashboardStep {
+  id          String               @id @default(cuid())
+  siteId      String
+  site        DashboardSite        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  stageNo     Int
+  /// Live tab name (can be renamed in the sheet) — shown on the website as-is.
+  stageName   String
+  stepKey     String
+  parentKey   String?
+  label       String
+  sortOrder   Int
+  isParent    Boolean              @default(false)
+  assignedTo  String?
+  status      DashboardStepStatus?
+  remark      String?
+  shared      Boolean              @default(false)
+  /// [{name, url}] parsed from the sheet's HYPERLINK formula(s) or rich text runs.
+  deliverables Json                @default("[]")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([siteId, stageNo, stepKey])
+  @@index([siteId])
+}
+
+/// Department Links tab (dashboard-sheet-sync-plan.md section 3): Department |
+/// Site | Stage | Folder link, read as plain values. siteId is resolved by
+/// matching siteName at commit time (null if no DashboardSite matches yet).
+model DashboardDeptLink {
+  id              String         @id @default(cuid())
+  department      String
+  siteName        String
+  siteId          String?
+  site            DashboardSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  stageFolderName String
+  url             String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([siteId])
+}
+
+/// Admin-assigned mapping of a franchisee user to exactly one Dashboard site
+/// (dashboard-sheet-sync-plan.md section 2: "no mapping in the sheet").
+/// Website-native data — never touched by sync.
+model DashboardSiteAssignment {
+  id         String        @id @default(cuid())
+  userId     String        @unique
+  user       User          @relation("DashboardSiteAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  siteId     String
+  site       DashboardSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  assignedById String?
+  assignedBy   User?       @relation("DashboardSiteAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([siteId])
 }

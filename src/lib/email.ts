@@ -117,3 +117,32 @@ export async function sendSheetSyncFailureEmail(params: {
     throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
   }
 }
+
+/** dashboard-sheet-sync-plan.md section 6/7: same "reuse the app's existing mail function" rule as sendSheetSyncFailureEmail above, for the Dashboard sync's own alert address (DASHBOARD_SYNC_ALERT_EMAIL — kept separate from SHEET_SYNC_ALERT_EMAIL so the two modules' alerts can go to different people). */
+export async function sendDashboardSyncFailureEmail(params: {
+  to: string;
+  trigger: string;
+  errorMessage: string;
+  lastSyncedAt: Date | null;
+}): Promise<void> {
+  const subject = "Fraterniti One – dashboard sync failed";
+  const lastSynced = params.lastSyncedAt ? formatIst(params.lastSyncedAt) : "never";
+  const lines = [
+    `Trigger: ${params.trigger}`,
+    `Time: ${formatIst(new Date())} IST`,
+    `Error: ${params.errorMessage}`,
+    `Last successful sync: ${lastSynced}`,
+  ];
+
+  const { error } = await getClient().emails.send({
+    from: getFrom(),
+    to: params.to,
+    subject,
+    text: lines.join("\n"),
+    html: `<p>${lines.join("</p><p>")}</p>`,
+  });
+
+  if (error) {
+    throw new Error(`Resend failed to send (${error.name}): ${error.message}`);
+  }
+}

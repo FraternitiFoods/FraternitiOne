@@ -306,6 +306,18 @@ Throughout: after every milestone, run lint/typecheck/build and report what a hu
 
 ---
 
+## 11. Dashboard ("Site Drawing Updates" sheet sync)
+
+A separate module, own plan document: **`dashboard-sheet-sync-plan.md`**. Read that file for the full spec — sites, stages, steps, percentages, screens, build order (A-F), acceptance checks.
+
+Quick orientation (detail lives in the other file, not duplicated here):
+- Separate Google Sheet ("Site Drawing Updates" copy, own Apps Script project, own `WebsiteSync.gs`) from this file's Site BOQ ("TULSI Rate Sheet"). Fully read-only — no `SHEET_LIVE`/`WEBSITE_LIVE` mode, no edit path.
+- Own Prisma models (`DashboardSite`, `DashboardStep`, `DashboardDeptLink`, `DashboardSiteAssignment`, `DashboardSyncRun`, `DashboardSyncStagingChunk`) — deliberately not sharing Site BOQ's `Site`/`ImportRun`/`BoqSyncStagingChunk` tables, so a bug in one sync can't touch the other's rows.
+- Sync mechanics mirror section 7/the `docs/sheet-sync/` sheet-sync pattern (poll model: Apps Script polls `/api/dashboard-sync/pending` every ~1 min, never the other way — no web-app deployment needed), under its own `/api/dashboard-sync/*` routes, `src/lib/dashboard-sync/`, and `DASHBOARD_SYNC_SECRET`/`DASHBOARD_SYNC_ALERT_EMAIL` env vars, kept separate from Site BOQ's `SHEET_SYNC_SECRET`.
+- Percentage rules live in `src/lib/dashboard-calc.ts` (pure, unit-tested in `dashboard-calc.test.ts`) — the one place "per stage = Completed / (leaf rows - Not required)" is implemented, reused by both the sync's sheet-vs-computed mismatch check and the eventual Dashboard UI.
+
+---
+
 ## Progress log
 
 ### 2026-10-30 — M0 — Clean slate
@@ -617,3 +629,31 @@ Across all four attempts, the common thread was the `SiteItem` table specificall
 - **Check the Neon dashboard**: compute size/autoscaling settings (is it on a plan/tier that scales to a very small compute, or to zero, between requests?), and whether anything else is concurrently using the same branch/compute. The `SiteItem`-table instability measured above (same query, same code, ranging from 790ms to 20+ seconds across repeated runs in one sitting, trending *worse* over the session) is the single biggest remaining lever for Overview/Items page speed, and it's not something a code change can fix without first understanding why Neon's response times for that access pattern are this unstable.
 - Also still open from the previous entry: confirm the Vercel deployment's function region is set close to the Neon DB's `ap-southeast-1` — every round trip (including the now-optimized ones) pays extra latency if they're in different regions.
 - If Neon's dashboard shows nothing unusual, the next diagnostic step would be an `EXPLAIN ANALYZE` on the raw SQL Prisma generates for the `siteItems`/`vendorRates` batch queries, run directly against the DB (e.g. via Neon's SQL editor) — not done this session, since the instability looked infrastructure-side rather than query-plan-side (a bad plan would be *consistently* slow, not 790ms one run and 6s the next on identical input).
+### 2026-11-05 — Dashboard Phase A — Schema + ingest API + fixture
+
+Branch `new-main`, confirmed via `git branch --show-current` before starting. New module per `dashboard-sheet-sync-plan.md` section 7 (build order A-F); this entry covers Phase A only — schema, ingest API, a fixture so UI work doesn't have to wait on the real Apps Script.
+
+**One deliberate deviation from `dashboard-sheet-sync-plan.md` section 4, per the user's own rule 3 (mirror Site BOQ's sync pattern) overriding the plan where they disagree:** section 4 describes the website calling an Apps-Script web-app URL (`doPost`/deploy-as-web-app) to start a sync. The *live* Site BOQ sync (`docs/sheet-sync/`) actually works the opposite way — Apps Script polls the website every ~1 min, the website never calls Apps Script. Built the poll model instead: no web-app deployment, no public URL, one fewer human-dependent setup step. Flagged to the user before starting; they proceeded.
+
+**What was built:**
+- Schema (`prisma/schema.prisma`): `DashboardSite`, `DashboardStep`, `DashboardDeptLink`, `DashboardSiteAssignment`, `DashboardSyncRun`, `DashboardSyncStagingChunk`, `DashboardStepStatus` enum. Deliberately separate from Site BOQ's `Site`/`ImportRun`/`BoqSyncStagingChunk` (section 11 above explains why). Migration `20261105103354_dashboard_schema` applied to the Neon DB in `.env` — additive only, nothing existing touched. Required starting Docker Desktop (the shadow-DB step needs the docker-compose Postgres on port 5433, same as every prior session's migrations) and briefly stopping a `pnpm dev` that was holding the Prisma query-engine DLL open (Windows file lock) so `prisma generate` could run; restarted afterward.
+- `src/lib/dashboard-sync/`: `schema.ts` (Zod), `auth.ts`+`guard.ts` (bearer secret, `DASHBOARD_SYNC_SECRET` — separate from both `IMPORT_SECRET` and `SHEET_SYNC_SECRET`), `request-state.ts` (atomic singleton under its own `AppSetting` key `dashboardSyncRequest`, isolated from Site BOQ's `sheetSyncRequest`), `commit.ts` (site upsert by normalized name + archive-if-missing; full delete+recreate of a site's `DashboardStep` rows per sync, matching the user's own "old data of that site is replaced" mental model — no merge-upsert needed since the sheet always sends a site's complete step list in one chunk; dept links fully replaced each run; sheet-vs-computed mismatch diffing), `run.ts` (pending/start/chunk/finish/fail/status + the same >10min-running / >3min-unpicked-up reaper timers as sheet-sync), `errors.ts`.
+- `src/app/api/dashboard-sync/{pending,start,chunk,finish,fail,request,status}/route.ts` — script routes bearer-secret gated, `request`/`status` session-gated via the new `canTriggerDashboardSync` (internal roles, not Admin-only — unlike Site BOQ's equivalent button, per the plan's explicit "internal roles only" for this module).
+- `src/lib/permissions.ts`: `canViewAllDashboardSites`, `canTriggerDashboardSync`, `canManageDashboardSiteAssignment`.
+- `src/lib/dashboard-calc.ts` (+ `dashboard-calc.test.ts`, 7 tests): pure `computeSiteStats`/`deriveParentStatus` implementing section 5's percentage rule (per stage = Completed / (leaf rows - Not required), parents excluded) — the one place this lives, reused by the sync's mismatch check now and the Dashboard UI later.
+- `sendDashboardSyncFailureEmail` added to `src/lib/email.ts`, reusing the existing Resend plumbing (same pattern as `sendSheetSyncFailureEmail`).
+- `scripts/fixtures/dashboard-sync-fixture.json` (2 sites, hand-computed stage/status/shared/deliverable data) + `scripts/push-dashboard-sync-fixture.ts` (start → chunk-per-site → finish against a running `pnpm dev`).
+- `.env.example`: `DASHBOARD_SYNC_SECRET`, `DASHBOARD_SYNC_ALERT_EMAIL` documented (blank placeholders, same convention as the other sync secrets).
+
+**Verified:**
+- `pnpm run typecheck`, `pnpm run lint` (same one pre-existing unrelated warning in `src/lib/email-domain.ts`), `pnpm run test` (55/55 — 7 new in `dashboard-calc.test.ts`, 48 pre-existing) and `pnpm run build` all pass clean. Build lists all 7 new `/api/dashboard-sync/*` routes; no existing route changed.
+- Pushed `scripts/fixtures/dashboard-sync-fixture.json` through the real running `pnpm dev` against the Neon DB: `begin → chunk(Fixture Site A) → chunk(Fixture Site B) → finish` returned `{sites: 2, steps: 11, deptLinks: 1, deactivatedSites: 0}` with **zero warnings and zero mismatches** — the fixture's hand-computed `sheetSummary` numbers matched the website's own `computeSiteStats` output exactly, cross-checking both the fixture and the calc/commit code at once.
+- Direct DB query after the push confirmed: both sites present with correct `driveFolderUrl`/`lastSyncedAt`; all 8 (Site A) + 3 (Site B) `DashboardStep` rows with correct per-row status (including the blank-status-means-Not-started rule and the parent row's `status = null`), `shared` flags, and a deliverable's `[{name,url}]` JSON intact; the dept link row correctly resolved `siteId` to Fixture Site A.
+- Re-pushed the same fixture a second time: identical counts (11 steps total, not 22) — confirms idempotent replace, no duplication.
+- Auth: `GET /api/dashboard-sync/pending` with a wrong or missing bearer secret → 401 (checked both).
+
+**Still pending / needs a human:**
+- `DASHBOARD_SYNC_SECRET`/`DASHBOARD_SYNC_ALERT_EMAIL` currently only have locally-generated dev values in `.env` (same convention as the other sync secrets already there) — real production values need to be set in Vercel when this is deployed, and the same secret needs pasting into the sheet copy's Apps Script Script Properties once `WebsiteSync.gs` exists (Phase B).
+- Phase B: `WebsiteSync.gs` in the sheet copy at `C:\apps-script-copy` — not started yet. Per the user's rule 4, `dryRunWebsiteSync()` must be written and run by the user first, with the logged counts matched against the sheet's own Dashboard tab, before the real extractor is built.
+- Phase C (UI), D (button + daily trigger wiring on the website side — the API already supports it), E (franchisee site assignment + access checks), F (polish) — all untouched.
+- Fixture data (`Fixture Site A`/`Fixture Site B`) deliberately left in the dev DB (not cleaned up) — Phase C's UI work will build against it, same precedent as the Site BOQ M1-M3 sessions kept their fixture live between sessions.

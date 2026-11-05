@@ -129,3 +129,28 @@ export function canEditSiteTracker(user: Pick<CurrentUser, "role">): boolean {
 export function canDeleteTrackerEvidence(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
+
+/**
+ * Dashboard (dashboard-sheet-sync-plan.md section 2): internal roles see
+ * every site; a FRANCHISEE sees only their own assigned site (enforced by
+ * the page/query, not by hiding the module — a franchisee with no
+ * assignment yet sees an empty state, not a 403).
+ */
+export function canViewAllDashboardSites(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}
+
+/**
+ * "Sync with sheet" button — dashboard-sheet-sync-plan.md section 6/0:
+ * "internal roles only", unlike Site BOQ's sync button which is Admin-only
+ * (canTriggerSheetSync). Kept as its own function since the role set
+ * genuinely differs between the two modules' sync buttons.
+ */
+export function canTriggerDashboardSync(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}
+
+/** Assigning a Dashboard site to a franchisee user — dashboard-sheet-sync-plan.md section 2: "Admin assigns a site to a franchisee user inside the website." */
+export function canManageDashboardSiteAssignment(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}

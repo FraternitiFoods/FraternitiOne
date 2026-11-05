@@ -1,0 +1,90 @@
+{
+  "sites": [
+    {
+      "name": "Fixture Site A",
+      "sortOrder": 0,
+      "driveFolderUrl": "https://drive.google.com/drive/folders/fixture-site-a",
+      "sheetSummary": {
+        "total": 6,
+        "completed": 3,
+        "inProgress": 2,
+        "notStarted": 1,
+        "notRequired": 1,
+        "pct": 0.5,
+        "shared": 1,
+        "notShared": 5,
+        "perStagePct": [0.5, 0.6666666666666666, null, null, 0, null, null, null, null, null, null, null, null]
+      },
+      "stages": [
+        {
+          "stageNo": 1,
+          "stageName": "Stage 1 - Sales & Franchise Acquisition",
+          "steps": [
+            { "stepKey": "3", "label": "Franchise Lead Generated", "sortOrder": 0, "isParent": false, "assignedTo": "Rahul", "status": "Completed", "remark": "", "shared": false, "deliverables": [] },
+            { "stepKey": "4", "label": "Lead Qualification", "sortOrder": 1, "isParent": false, "assignedTo": "Rahul", "status": "In progress", "remark": "Waiting on docs", "shared": true, "deliverables": [] },
+            { "stepKey": "5", "label": "Discovery Call", "sortOrder": 2, "isParent": false, "assignedTo": "Rahul", "status": "Not required", "remark": "", "shared": false, "deliverables": [] }
+          ]
+        },
+        {
+          "stageNo": 2,
+          "stageName": "Stage 2 - Location Acquisition",
+          "steps": [
+            { "stepKey": "3", "label": "Site Identified", "sortOrder": 0, "isParent": false, "assignedTo": "Priya", "status": "Completed", "remark": "", "shared": false, "deliverables": [{ "name": "Site photos.pdf", "url": "https://drive.google.com/file/d/fixture-1" }] },
+            { "stepKey": "4", "label": "Site Agreement", "sortOrder": 1, "isParent": true, "assignedTo": null, "status": null, "remark": "", "shared": false, "deliverables": [] },
+            { "stepKey": "5", "parentKey": "4", "label": "2.2.1 Agreement Drafted", "sortOrder": 2, "isParent": false, "assignedTo": "Legal", "status": "Completed", "remark": "", "shared": false, "deliverables": [] },
+            { "stepKey": "6", "parentKey": "4", "label": "2.2.2 Agreement Signed", "sortOrder": 3, "isParent": false, "assignedTo": "Legal", "status": "In progress", "remark": "", "shared": false, "deliverables": [] }
+          ]
+        },
+        {
+          "stageNo": 5,
+          "stageName": "Stage 5 - Design",
+          "steps": [
+            { "stepKey": "3", "label": "Layout Finalized", "sortOrder": 0, "isParent": false, "assignedTo": "Design team", "status": null, "remark": "", "shared": false, "deliverables": [] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Fixture Site B",
+      "sortOrder": 1,
+      "driveFolderUrl": "https://drive.google.com/drive/folders/fixture-site-b",
+      "sheetSummary": {
+        "total": 2,
+        "completed": 1,
+        "inProgress": 0,
+        "notStarted": 1,
+        "notRequired": 1,
+        "pct": 0.5,
+        "shared": 0,
+        "notShared": 2,
+        "perStagePct": [0, 0, null, null, 1, null, null, null, null, null, null, null, null]
+      },
+      "stages": [
+        {
+          "stageNo": 1,
+          "stageName": "Stage 1 - Sales & Franchise Acquisition",
+          "steps": [
+            { "stepKey": "3", "label": "Franchise Lead Generated", "sortOrder": 0, "isParent": false, "assignedTo": "Rahul", "status": null, "remark": "", "shared": false, "deliverables": [] }
+          ]
+        },
+        {
+          "stageNo": 2,
+          "stageName": "Stage 2 - Location Acquisition",
+          "steps": [
+            { "stepKey": "3", "label": "Site Identified", "sortOrder": 0, "isParent": false, "assignedTo": "Priya", "status": "Not required", "remark": "", "shared": false, "deliverables": [] }
+          ]
+        },
+        {
+          "stageNo": 5,
+          "stageName": "Stage 5 - Design",
+          "steps": [
+            { "stepKey": "3", "label": "Layout Finalized", "sortOrder": 0, "isParent": false, "assignedTo": "Design team", "status": "Completed", "remark": "", "shared": false, "deliverables": [] }
+          ]
+        }
+      ]
+    }
+  ],
+  "deptLinks": [
+    { "department": "Interiors", "site": "Fixture Site A", "stage": "Stage 5 - Design", "url": "https://drive.google.com/drive/folders/fixture-dept-link" }
+  ]
+}
