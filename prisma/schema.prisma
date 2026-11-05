@@ -8,7 +8,16 @@
 // safe in git history on `main`/`dev`.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Collapses multi-relation `include` queries (e.g. getComputedItems,
+  // getCurrentUser's session+user) into a single SQL query with real JOINs
+  // instead of Prisma's default one-SQL-query-per-relation strategy — each
+  // of those separate round trips pays full network latency to the remote
+  // Neon DB (ap-southeast-1), which is what was actually making every page
+  // slow (measured: getComputedItems alone fired 6 sequential queries).
+  // Preview feature, not GA — but additive-only (opt in per query via
+  // relationLoadStrategy: "join"), easy to revert.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

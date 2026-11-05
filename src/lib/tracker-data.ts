@@ -72,6 +72,7 @@ export async function getSiteTrackerSections(siteId: string): Promise<TrackerSec
   const sections = await db.trackerSection.findMany({
     where: { isActive: true },
     orderBy: { order: "asc" },
+    relationLoadStrategy: "join",
     include: {
       steps: {
         where: { isActive: true },

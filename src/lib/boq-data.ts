@@ -48,6 +48,14 @@ export type ComputedItem = {
  * can't drift between pages.
  */
 export async function getComputedItems(): Promise<ComputedItem[]> {
+  // Deliberately NOT using relationLoadStrategy: "join" here, unlike the
+  // other queries in this file — measured directly against the real DB:
+  // the join collapses this to 1 query but that single query is unstable
+  // (6-20s+ across repeated runs) because it fans out across TWO one-to-many
+  // relations (vendorRates AND siteItems) at once over ~680 items. The
+  // default per-relation batching below was the only configuration that
+  // measured consistently (not fast, but stable ~2.5s) — see plan.md's
+  // Progress log for the full measurement trail.
   const items = await db.item.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -150,6 +158,7 @@ export const getActiveCategories = unstable_cache(
 export async function getVendorsGroupedByCategory() {
   return db.vendor.findMany({
     orderBy: { name: "asc" },
+    relationLoadStrategy: "join",
     include: { categoryVendors: { include: { category: true } } },
   });
 }
@@ -187,6 +196,7 @@ export async function getPurchaseOrders(q?: string) {
           ],
         }
       : undefined,
+    relationLoadStrategy: "join",
     include: { site: { select: { name: true } }, vendor: { select: { name: true } }, category: { select: { displayName: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -195,6 +205,7 @@ export async function getPurchaseOrders(q?: string) {
 export async function getPurchaseOrderById(id: string) {
   return db.purchaseOrder.findUnique({
     where: { id },
+    relationLoadStrategy: "join",
     include: {
       site: { select: { name: true } },
       vendor: { select: { name: true } },

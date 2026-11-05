@@ -77,6 +77,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(token) },
+    relationLoadStrategy: "join",
     include: { user: true },
   });
 
