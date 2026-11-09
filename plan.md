@@ -699,3 +699,29 @@ Branch `new-main`, confirmed via `git branch --show-current` before starting. Th
 - The real sync has only ever been pushed into the **local dev DB**, never production — no production Neon DB/Vercel project exists yet for `new-main` (same pending item as the 2026-11-02 entry).
 - `WebsiteSync.gs` still lives only in the sheet COPY's Apps Script project — per the user's own rule 3, it gets copied into the **original** sheet's Apps Script project only after the user is satisfied with the copy's behavior; not done yet.
 - Phase E (franchisee site assignment admin screen) — still not built, same as the Phase C entry above.
+
+### 2026-11-09 — Correction: `new-main` was already live on `fraterniti.one`, and it's a single DB (not separate dev/prod)
+
+**This corrects the "still pending" item above** (and the 2026-11-02 entry's framing) — both were written assuming no production deployment existed yet for `new-main`. It actually did, set up in a separate chat session on 2026-11-02 that this session had no memory of. Discovered mid-session while trying to get a stable `WEBSITE_BASE_URL` for `WebsiteSync.gs` (a `cloudflared` quick tunnel had just failed under load) — checked `vercel project ls` instead of assuming, which is what surfaced this.
+
+**Actual state, confirmed via `vercel` CLI (already logged in) and the Neon console, not assumed:**
+- Vercel project `fraterniti-foods/fraterniti-one-new` exists (created 2026-11-02), **Production Branch = `new-main`**, git-connected (auto-deploys on push — confirmed by a deployment timestamp matching this session's own `git push` to the minute). `fraterniti.one`/`www.fraterniti.one` are attached to **this** project — confirmed by matching `next.config.ts`'s production-only security headers (`Permissions-Policy`, `Strict-Transport-Security`, etc.) in the live site's response headers. The old `fraterniti-one` Vercel project (serving `main`/`dev`) is no longer attached to the domain.
+- **Only one Neon project exists in the account** (`fraterniti-one-new`, `ap-southeast-1`/Singapore, created 2026-11-02) — confirmed via the Neon console (no CLI access). There is no separate dev database; local `.env`'s `DATABASE_URL`/`DIRECT_URL` point at the same database Vercel production uses. This means every sync/test this session (the Phase A/C fixture pushes, and Phase B's dry runs and real sync) landed in what is also the production database — not a mistake exactly (the data is real, not fake), but not something this session realized until checking.
+- User's decision when asked: keep the single shared DB for now (no separate dev DB split today — revisit later if it becomes a problem), and wire the real sync straight at `https://fraterniti.one` rather than standing up a second environment just for this.
+
+**What was done:**
+- Added `DASHBOARD_SYNC_SECRET` and `DASHBOARD_SYNC_ALERT_EMAIL` to the `fraterniti-one-new` Vercel project's Production environment (`vercel env add`, values matching local `.env`) — previously only `SHEET_SYNC_SECRET`/`APP_URL`/`IMPORT_SECRET`/`SESSION_SECRET`/`DATABASE_URL`/`DIRECT_URL` were set; B2/Resend vars are still unset (not needed for the Dashboard sync path, only for file upload/email features — flagged, not fixed, out of scope today).
+- Triggered a production redeploy so the new env vars took effect (`vercel redeploy <url> --target production` — run by the user; Claude's own attempt was blocked by the harness's "Production Deploy" safety check, as expected/correct). Confirmed healthy via `GET https://fraterniti.one/api/health` → `{"status":"ok"}`.
+- User updated `WEBSITE_BASE_URL` in the sheet copy's Script Properties from the temporary `cloudflared` tunnel to `https://fraterniti.one`.
+
+**Verified:**
+- `testRunWebsiteSync()` against **real production** (`https://fraterniti.one`): `Dashboard sync OK (button): {"sites":23,"steps":10718,"deptLinks":336,"deactivatedSites":0}` — same counts as the earlier local-DB run (expected, same underlying database), completed in ~2.5 minutes (production network latency vs. the local tunnel, not a regression).
+- Did **not** re-verify `/dashboard` by logging into `https://fraterniti.one` directly this session (no production credentials in hand, and login attempts against a live system aren't something to guess at) — asked the user to check it themselves in their own already-authenticated browser.
+
+**Still pending / needs a human:**
+- `installWebsiteSyncTriggers()` (every-minute poll + ~10 AM daily, now safe to point at a stable URL) has **not** been run yet — this was the original blocker (ephemeral tunnel) and is now resolved, but installing continuous automation against real production is its own decision, intentionally not made automatically this session.
+- B2 (`B2_ENDPOINT`/`B2_KEY_ID`/etc.) and Resend (`RESEND_API_KEY`/`EMAIL_FROM`) env vars are still missing from Vercel's Production environment — not needed for anything Dashboard-related, but will surface as errors the first time anyone uses file upload or invite/reset emails on `fraterniti.one`.
+- `tech@fraterniti.co.in`'s password rotation (flagged back in the 2026-11-02 entry, two old dev passwords were committed to git history pre-dating this branch) — still not done; now more pressing since this account is confirmed live on `fraterniti.one`, not just a future plan.
+- `WebsiteSync.gs` still only lives in the sheet COPY's Apps Script project, not the original sheet — unchanged from above.
+- Phase E (franchisee site assignment admin screen) — still not built, unchanged from above.
+- Whether to eventually split dev/production into two separate databases — deliberately deferred per the user's call today, not forgotten.
