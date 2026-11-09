@@ -725,3 +725,16 @@ Branch `new-main`, confirmed via `git branch --show-current` before starting. Th
 - `WebsiteSync.gs` still only lives in the sheet COPY's Apps Script project, not the original sheet — unchanged from above.
 - Phase E (franchisee site assignment admin screen) — still not built, unchanged from above.
 - Whether to eventually split dev/production into two separate databases — deliberately deferred per the user's call today, not forgotten.
+
+### 2026-11-09 — Separated Vercel's Preview DB from Production (Neon branching)
+
+Follow-up in the same session: Vercel's **Preview** environment (used by any git branch other than `new-main`, e.g. `new`) had `DATABASE_URL`/`DIRECT_URL` pointing at the exact same Neon database as **Production** — confirmed via `vercel env ls` (both scopes created 7d ago, same project, and the Neon console showed only one project with one branch, "production"). The user asked for this fixed specifically for the `new` branch, separate from the "keep one shared DB for now" call made earlier today about local dev vs. `new-main` production.
+
+**What was done:**
+- Created a Neon branch `preview` (parent: `production`, "Branch data and schema" — a point-in-time copy, independent going forward; auto-delete explicitly set to **Never**, not the dialog's 1-day default) under the same Neon project (console UI — no Neon CLI/API access available).
+- User ran `vercel env rm DATABASE_URL preview` / `vercel env rm DIRECT_URL preview` then `vercel env add` for both, pointing them at the new `preview` branch's pooled/direct connection strings respectively, applied to all Preview branches (no git-branch scoping needed). Done in the user's own terminal — Claude never saw the new connection strings.
+- Checked for an existing live deployment that would need an immediate redeploy to pick this up: the only Preview deployment in the project (6 days old) turned out to be a `new-main` preview build from before it became the Production Branch, not a `new` branch deployment — so nothing is currently serving stale Preview-DB config. No action needed; the next push to any non-`new-main` branch will automatically get the new `preview` Neon branch.
+
+**Verified:** `vercel env ls` shows `DATABASE_URL`/`DIRECT_URL` under `Preview` with fresh 2-3 minute timestamps, distinct from `Production`'s untouched 7-day-old entries.
+
+**Still pending:** nothing new from this — `new` branch itself has no code changes and no pending deploy; this was purely a Vercel/Neon configuration fix.
