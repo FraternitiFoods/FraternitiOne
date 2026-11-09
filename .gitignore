@@ -56,3 +56,5 @@ CLAUDE.md
 # plan.md section 24, S1: a working deliverable for Apoorv/ops heads to fill
 # in and hand back (scripts/export-task-sla-template.ts) — not source.
 task-sla-template.csv
+
+.claude/settings.json
