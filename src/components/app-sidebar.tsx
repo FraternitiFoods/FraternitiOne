@@ -19,15 +19,18 @@ import type { Role } from "@prisma/client";
 type NavItem = { label: string; href: string | null };
 
 /**
- * Exactly 4 items (plan.md section 2): Dashboard, Site Tracker and
- * Operations BOQ are "Coming soon" placeholders with no route yet — only
- * Site BOQ is live. Site BOQ is internal-only (plan.md section 2): an
+ * Exactly 4 items (plan.md section 2). Site Tracker and Operations BOQ are
+ * "Coming soon" placeholders with no route yet. Dashboard is live
+ * (dashboard-sheet-sync-plan.md section 6) and, unlike Site BOQ, is visible
+ * to every role including franchisees — a franchisee is routed to their own
+ * assigned site (see src/app/(app)/dashboard/page.tsx), not hidden from the
+ * module entirely. Site BOQ is internal-only (plan.md section 2): an
  * external/franchisee-type role must not see it in the sidebar at all (it
  * still 403s server-side if reached directly — see
  * src/app/(app)/site-boq/page.tsx).
  */
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: null },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Site Tracker", href: "/site-tracker" },
   { label: "Site BOQ", href: "/site-boq" },
   { label: "Operations BOQ", href: null },
