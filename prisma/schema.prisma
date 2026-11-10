@@ -656,9 +656,21 @@ model DashboardSyncStagingChunk {
   @@unique([runId, siteName])
 }
 
+/// Where a DashboardSite row came from. WEBSITE sites are created by an admin
+/// on the website (src/app/(app)/dashboard/actions.ts) and are never touched by
+/// the sheet sync (commit.ts skips them); SHEET sites are sync-owned.
+enum DashboardSiteOrigin {
+  SHEET
+  WEBSITE
+}
+
 model DashboardSite {
   id            String    @id @default(cuid())
   name          String    @unique
+  origin        DashboardSiteOrigin @default(SHEET)
+  /// Free-text department links an admin typed in ("interiors --> https://...").
+  /// Website-owned (unlike DashboardDeptLink rows, which sync wipes each run).
+  deptLinksText String?
   sortOrder     Int       @default(0)
   driveFolderUrl String?
   /// Raw per-site numbers from the sheet's own Dashboard tab (dashboard-

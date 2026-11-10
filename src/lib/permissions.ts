@@ -150,6 +150,16 @@ export function canTriggerDashboardSync(user: Pick<CurrentUser, "role">): boolea
   return user.role !== "FRANCHISEE";
 }
 
+/** Creating a Dashboard site on the website (with the 402-step template) — Admin only. */
+export function canCreateDashboardSite(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/** Editing a website-created Dashboard site's details and step status/remark — Admin only. */
+export function canEditDashboardSite(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
 /** Assigning a Dashboard site to a franchisee user — dashboard-sheet-sync-plan.md section 2: "Admin assigns a site to a franchisee user inside the website." */
 export function canManageDashboardSiteAssignment(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";

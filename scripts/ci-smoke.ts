@@ -152,6 +152,30 @@ async function importApiChecks() {
   await db.importRun.delete({ where: { id: runId2 } }).catch(() => {});
 }
 
+/**
+ * Dashboard "New site" (admin-created sites): the admin creates a site from
+ * the template and lands on its page with all 402 tasks assigned to Admin.
+ * Fuller coverage lives in scripts/tmp-e2e-dashboard-create-site.ts.
+ */
+async function dashboardCreateSiteChecks(page: Page) {
+  const name = "CI Smoke Site";
+  await db.dashboardSite.deleteMany({ where: { name } });
+  try {
+    await page.goto(`${BASE}/dashboard`);
+    await page.getByRole("button", { name: "New site" }).click();
+    await page.getByLabel("Site name").fill(name);
+    await page.getByRole("button", { name: "Create site" }).click();
+    await page.waitForURL(`**/dashboard/${encodeURIComponent(name)}`, { timeout: 30000 });
+    const site = await db.dashboardSite.findUnique({ where: { name }, include: { steps: true } });
+    check("admin can create a Dashboard site", site?.origin === "WEBSITE");
+    check("new Dashboard site has 402 tasks, all assigned to Admin", site?.steps.length === 402 && site.steps.every((s) => s.assignedTo === "Admin"));
+  } finally {
+    const site = await db.dashboardSite.findUnique({ where: { name } });
+    if (site) await db.auditEvent.deleteMany({ where: { entityId: site.id } });
+    await db.dashboardSite.deleteMany({ where: { name } });
+  }
+}
+
 async function main() {
   await db.user.deleteMany({ where: { email: FRANCHISEE_EMAIL } });
   const passwordHash = await bcrypt.hash(THROWAWAY_PASSWORD, 12);
@@ -175,6 +199,7 @@ async function main() {
     check("admin login lands on /site-boq", adminPage.url().endsWith("/site-boq"));
     await adminPage.waitForSelector("text=Site BOQ", { timeout: 10000 });
     check("Site BOQ shell rendered", true);
+    await dashboardCreateSiteChecks(adminPage);
     await adminPage.close();
 
     // ---- Franchisee (external role) gets 403 on /site-boq. ----
