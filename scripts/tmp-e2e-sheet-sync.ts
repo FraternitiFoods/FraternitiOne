@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./lib/require-fixture-opt-in";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
