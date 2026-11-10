@@ -159,7 +159,9 @@ async function importApiChecks() {
  */
 async function dashboardCreateSiteChecks(page: Page) {
   const name = "CI Smoke Site";
+  const clashName = "CI Smoke Clash";
   await db.dashboardSite.deleteMany({ where: { name } });
+  await db.site.deleteMany({ where: { name: { in: [name, clashName] } } });
   try {
     await page.goto(`${BASE}/dashboard`);
     await page.getByRole("button", { name: "New site" }).click();
@@ -169,10 +171,22 @@ async function dashboardCreateSiteChecks(page: Page) {
     const site = await db.dashboardSite.findUnique({ where: { name }, include: { steps: true } });
     check("admin can create a Dashboard site", site?.origin === "WEBSITE");
     check("new Dashboard site has 402 tasks, all assigned to Admin", site?.steps.length === 402 && site.steps.every((s) => s.assignedTo === "Admin"));
+    const trackerSite = await db.site.findUnique({ where: { name } });
+    check("new Dashboard site is also a Site Tracker site (not BOQ)", !!trackerSite && trackerSite.usedInTracker && !trackerSite.usedInBoq);
+
+    // A name that already belongs to a shared Site (BOQ/Tracker) is rejected, nothing is created.
+    await db.site.create({ data: { sourceKey: "CI-SMOKE-CLASH", name: clashName, usedInBoq: false, usedInTracker: true } });
+    await page.goto(`${BASE}/dashboard`);
+    await page.getByRole("button", { name: "New site" }).click();
+    await page.getByLabel("Site name").fill(clashName.toLowerCase());
+    await page.getByRole("button", { name: "Create site" }).click();
+    await page.getByText("tracker/BOQ site with this name already exists").waitFor({ timeout: 30000 });
+    check("name clash with an existing Site is rejected", (await db.dashboardSite.count({ where: { name: clashName.toLowerCase() } })) === 0);
   } finally {
     const site = await db.dashboardSite.findUnique({ where: { name } });
     if (site) await db.auditEvent.deleteMany({ where: { entityId: site.id } });
     await db.dashboardSite.deleteMany({ where: { name } });
+    await db.site.deleteMany({ where: { name: { in: [name, clashName] } } });
   }
 }
 

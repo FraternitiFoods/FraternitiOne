@@ -137,10 +137,14 @@ export type SiteTrackerSummary = {
  * treat that as "not found."
  */
 export async function getSiteTrackerSummary(siteId: string): Promise<SiteTrackerSummary | null> {
-  const site = await db.site.findUnique({ where: { id: siteId } });
+  // Independent reads, one round trip instead of two; the sections query is
+  // wasted only for an unknown/non-tracker site (a rare 404).
+  const [site, sections] = await Promise.all([
+    db.site.findUnique({ where: { id: siteId } }),
+    getSiteTrackerSections(siteId),
+  ]);
   if (!site || !site.usedInTracker) return null;
 
-  const sections = await getSiteTrackerSections(siteId);
   const counts = countStatuses(sections);
   const progressPercent = trackerProgressPercent({
     completed: counts.completed,
@@ -173,14 +177,16 @@ export type SiteProgressRow = {
  * no row at all (the common case) has no NOT_STARTED row to group.
  */
 export async function getAllSitesProgress(): Promise<SiteProgressRow[]> {
-  const sites = await getTrackerSites();
-  const totalSteps = await db.trackerStep.count({ where: { isActive: true } });
-
-  const grouped = await db.trackerSiteStep.groupBy({
-    by: ["siteId", "status"],
-    _count: { _all: true },
-    where: { step: { isActive: true } },
-  });
+  // Three independent reads in one round trip.
+  const [sites, totalSteps, grouped] = await Promise.all([
+    getTrackerSites(),
+    db.trackerStep.count({ where: { isActive: true } }),
+    db.trackerSiteStep.groupBy({
+      by: ["siteId", "status"],
+      _count: { _all: true },
+      where: { step: { isActive: true } },
+    }),
+  ]);
 
   const bySite = new Map<string, { inProgress: number; completed: number; notRequired: number }>();
   for (const site of sites) bySite.set(site.id, { inProgress: 0, completed: 0, notRequired: 0 });

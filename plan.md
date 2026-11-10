@@ -750,3 +750,15 @@ Branch `new`. Admin can create a Dashboard site on the website with the 402-task
 **Not verified:** the sync guard end-to-end (the e2e skips it when the DB has real sheet-synced sites, since a real sync would archive them — only the unit test covers it); `scripts/ci-smoke.ts` got a create-site check but CI has not run it; production migration not applied; nothing checked on a deployed URL. Pre-existing, not changed: the franchisee 403 returns HTTP 200 on dashboard routes (streams behind `(app)/loading.tsx`), though no site data is rendered.
 
 **Pending / needs a human:** run `pnpm run db:migrate:prod` against production when ready (additive); consider setting Vercel function region to `sin1` (vercel.json is `{}`, so functions default to a US region while Neon is in Singapore — each DB round-trip costs more there).
+
+### 2026-11-10 — Dashboard-created sites also appear in Site Tracker
+
+Branch `new`. Creating a site on `/dashboard` now also creates a shared `Site` row (`usedInTracker = true`, `usedInBoq = false`, `sourceKey = WEB-<uuid>`) in the same transaction, so it shows in the Site Tracker dropdown and "All sites" tab with the normal sections at 0%. Tracker steps are lazy per-site rows, so nothing else is seeded. A name already used by any `Site` (case-insensitive) is rejected with "A tracker/BOQ site with this name already exists." No schema change.
+
+**Also (speed):** `src/lib/tracker-data.ts` — `getAllSitesProgress` (3 sequential reads → 1 parallel round trip) and `getSiteTrackerSummary` (site lookup + sections now parallel), which speeds the `/site-tracker` page load and every site switch. Create flow: the new reads run in parallel with the existing one.
+
+**Verified:** typecheck clean, lint 0 errors (same 1 old warning), 77 tests pass. `scripts/tmp-e2e-dashboard-tracker-link.ts` (throwaway admin, preview DB) all passed: tracker row exists and is tracker-only, name clash rejected, new site in dropdown at 0% with sections, in All sites, 0 leftover rows. `ci-smoke.ts` gained the same two checks (not run in CI).
+
+**Not verified:** the speed gain is not measured before/after — the e2e timings (page 4.5 s, site switch 2.6 s) came from `next dev` with on-demand compilation, so they say nothing about production. Nothing checked on a deployed URL.
+
+**Pending / needs a human:** "TULSI New Jersey" (a website-created site made earlier) has no tracker row; create-time linking only covers new sites — say if you want it backfilled. A later BOQ sheet sync with an identical name would match the tracker `Site` by name and switch it on in BOQ too. Vercel region `sin1` still not set.

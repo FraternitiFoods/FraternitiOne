@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
@@ -45,16 +46,24 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const data = parsed.data;
 
-  // Case/whitespace-insensitive, across ALL rows (including archived sheet
-  // sites): the sync matches by this same normalised name, so a near-duplicate
-  // would be adopted/skipped confusingly later. ~25 rows, name column only.
-  const existingSites = await db.dashboardSite.findMany({ select: { name: true, sortOrder: true } });
+  // One parallel round trip. Case/whitespace-insensitive, across ALL rows
+  // (including archived sheet sites): the sync matches by this same normalised
+  // name, so a near-duplicate would be adopted/skipped confusingly later.
+  // The shared Site table (Site BOQ + Site Tracker) has a unique name too, and
+  // the tracker row created below must not collide with / hijack an existing one.
+  const [existingSites, trackerNameTaken, siteSortMax] = await Promise.all([
+    db.dashboardSite.findMany({ select: { name: true, sortOrder: true } }),
+    db.site.findFirst({ where: { name: { equals: data.name, mode: "insensitive" } }, select: { id: true } }),
+    db.site.aggregate({ _max: { sortOrder: true } }),
+  ]);
   const wanted = normalizeSiteName(data.name);
   if (existingSites.some((s) => normalizeSiteName(s.name) === wanted)) {
     return { error: "A site with this name already exists." };
   }
-  // Same query doubles as the sortOrder source (a lost race here only means two sites share a sortOrder, which is harmless).
+  if (trackerNameTaken) return { error: "A tracker/BOQ site with this name already exists." };
+  // A lost race here only means two sites share a sortOrder, which is harmless.
   const nextSortOrder = existingSites.reduce((max, s) => Math.max(max, s.sortOrder), -1) + 1;
+  const nextTrackerSortOrder = (siteSortMax._max.sortOrder ?? -1) + 1;
 
   const template = getDashboardStepTemplate();
 
@@ -70,6 +79,20 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
             sortOrder: nextSortOrder,
             isActive: true,
           },
+        });
+
+        // Makes the site appear in Site Tracker (dropdown + All sites). Tracker
+        // steps are lazy per-site rows, so this one row is all it needs. Tracker
+        // only (usedInBoq false); `WEB-` sourceKey as in site-boq/sites/actions.ts.
+        const trackerSite = await tx.site.create({
+          data: {
+            sourceKey: `WEB-${randomUUID()}`,
+            name: data.name,
+            sortOrder: nextTrackerSortOrder,
+            usedInBoq: false,
+            usedInTracker: true,
+          },
+          select: { id: true },
         });
 
         await tx.dashboardStep.createMany({
@@ -99,6 +122,7 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
             driveFolderUrl: data.driveFolderUrl,
             deptLinksText: data.deptLinksText,
             steps: template.length,
+            trackerSiteId: trackerSite.id,
           },
           reference: "Created on the website (Dashboard)",
         });
@@ -114,6 +138,7 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
   }
 
   revalidateDashboard();
+  revalidatePath("/site-tracker"); // the new tracker site must show in its dropdown / All sites tab
   redirect(`/dashboard/${encodeURIComponent(data.name)}`);
 }
 
