@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "./lib/require-fixture-opt-in";
+import { createThrowawayAdmin, deleteThrowawayAdmin, THROWAWAY_ADMIN_PASSWORD } from "./lib/throwaway-admin";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -27,8 +28,7 @@ import path from "node:path";
 
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
-const DEV_PASSWORD = process.env.SEED_DEV_PASSWORD!;
-if (!DEV_PASSWORD) throw new Error("SEED_DEV_PASSWORD not set");
+const ADMIN_EMAIL = "tmp-e2e-m5-edit-admin@example.com"; // throwaway ADMIN, deleted in `finally` (not the real admin: its password is rotated)
 const IMPORT_SECRET = process.env.IMPORT_SECRET!;
 if (!IMPORT_SECRET) throw new Error("IMPORT_SECRET not set");
 
@@ -81,6 +81,7 @@ async function setMode(mode: "SHEET_LIVE" | "WEBSITE_LIVE") {
 }
 
 async function main() {
+  await createThrowawayAdmin(db, ADMIN_EMAIL);
   await db.user.deleteMany({ where: { email: SALES_EMAIL } });
   const passwordHash = await bcrypt.hash(SALES_PASSWORD, 12);
   await db.user.create({ data: { name: "Tmp E2E M5 Sales", email: SALES_EMAIL, role: "SALES", passwordHash } });
@@ -100,7 +101,7 @@ async function main() {
 
   try {
     const adminPage = await browser.newPage();
-    await login(adminPage, "tech@fraterniti.co.in", DEV_PASSWORD);
+    await login(adminPage, ADMIN_EMAIL, THROWAWAY_ADMIN_PASSWORD);
 
     // ---- SHEET_LIVE: read-only everywhere except vendor contact details and settings (plan.md section 1). ----
     await adminPage.goto(itemsUrl);
@@ -209,11 +210,11 @@ async function main() {
     await salesPage.close();
 
     // ---- Site lock (plan.md sections 3 & 5): freezes edits for every role, Admin included, until unlocked. ----
-    const admin = await db.user.findFirst({ where: { role: "ADMIN" } });
+    const admin = await db.user.findUnique({ where: { email: ADMIN_EMAIL } });
     await db.site.update({ where: { id: siteA.id }, data: { isLocked: true, lockedAt: new Date(), lockedById: admin!.id } });
 
     const adminPage2 = await browser.newPage();
-    await login(adminPage2, "tech@fraterniti.co.in", DEV_PASSWORD);
+    await login(adminPage2, ADMIN_EMAIL, THROWAWAY_ADMIN_PASSWORD);
     await adminPage2.goto(itemsUrl);
     const lockedBodyText = await adminPage2.locator("body").innerText();
     check("Locked site: lock banner shown on Items & Qty", lockedBodyText.includes("is locked"));
@@ -242,6 +243,10 @@ async function main() {
     });
     await db.user.deleteMany({ where: { email: SALES_EMAIL } }).catch((e) => {
       console.error("Failed to delete throwaway SALES user:", e);
+      failures++;
+    });
+    await deleteThrowawayAdmin(db, ADMIN_EMAIL).catch((e) => {
+      console.error("Failed to delete throwaway admin user:", e);
       failures++;
     });
   }

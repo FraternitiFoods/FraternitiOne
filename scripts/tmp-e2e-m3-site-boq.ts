@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createThrowawayAdmin, deleteThrowawayAdmin, THROWAWAY_ADMIN_PASSWORD } from "./lib/throwaway-admin";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -21,8 +22,7 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
-const DEV_PASSWORD = process.env.SEED_DEV_PASSWORD!;
-if (!DEV_PASSWORD) throw new Error("SEED_DEV_PASSWORD not set");
+const ADMIN_EMAIL = "tmp-e2e-m3-admin@example.com"; // throwaway ADMIN, deleted in `finally` (not the real admin: its password is rotated)
 
 const FRANCHISEE_EMAIL = "tmp-e2e-m3-franchisee@example.com";
 const THROWAWAY_PASSWORD = "TmpE2eM3Test123!";
@@ -45,6 +45,7 @@ async function login(page: Page, email: string, password: string) {
 const READ_ONLY_ROUTES = ["/site-boq", "/site-boq/site-view", "/site-boq/items", "/site-boq/vendors", "/site-boq/sites", "/site-boq/settings"];
 
 async function main() {
+  await createThrowawayAdmin(db, ADMIN_EMAIL);
   await db.user.deleteMany({ where: { email: FRANCHISEE_EMAIL } });
   const passwordHash = await bcrypt.hash(THROWAWAY_PASSWORD, 12);
   await db.user.create({
@@ -61,7 +62,7 @@ async function main() {
 
   try {
     const adminPage = await browser.newPage();
-    await login(adminPage, "tech@fraterniti.co.in", DEV_PASSWORD);
+    await login(adminPage, ADMIN_EMAIL, THROWAWAY_ADMIN_PASSWORD);
 
     // ---- Overview: totals computed from the item/rate/site_item rules must match the hand-computed fixture numbers. ----
     await adminPage.goto(`${BASE}/site-boq`);
@@ -126,6 +127,10 @@ async function main() {
     await browser.close();
     await db.user.deleteMany({ where: { email: FRANCHISEE_EMAIL } }).catch((e) => {
       console.error("Failed to delete throwaway franchisee user:", e);
+      failures++;
+    });
+    await deleteThrowawayAdmin(db, ADMIN_EMAIL).catch((e) => {
+      console.error("Failed to delete throwaway admin user:", e);
       failures++;
     });
   }
