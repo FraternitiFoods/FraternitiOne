@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canViewAllDashboardSites, canTriggerDashboardSync } from "@/lib/permissions";
+import { canViewAllDashboardSites, canCreateDashboardSite } from "@/lib/permissions";
 import { getDashboardRanking, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DashboardSyncButton } from "./_components/dashboard-sync-button";
+import { CreateSiteDialog } from "./_components/create-site-dialog";
 
 /** Dashboard home (dashboard-sheet-sync-plan.md section 6): site-wise ranking, high to low. */
 export default async function DashboardHomePage() {
@@ -29,20 +31,21 @@ export default async function DashboardHomePage() {
   }
 
   const ranking = await getDashboardRanking();
+  const canCreate = canCreateDashboardSite(user);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
-        subtitle="Site-wise progress across all 13 stages, synced from the Site Drawing Updates sheet."
+        subtitle="Site-wise progress across all 13 stages."
         isFranchisee={isFranchisee}
-        action={canTriggerDashboardSync(user) ? <DashboardSyncButton /> : undefined}
+        action={canCreate ? <CreateSiteDialog trigger={<Button size="sm">New site</Button>} /> : undefined}
       />
 
       {ranking.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No sites synced yet. Run a sync to pull data from the sheet.
+            {canCreate ? "No sites yet. Create one to get started." : "No sites yet."}
           </CardContent>
         </Card>
       )}
@@ -57,7 +60,14 @@ export default async function DashboardHomePage() {
                   <span className="w-6 shrink-0 text-sm font-medium text-muted-foreground">#{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="truncate font-medium">{site.name}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-medium">{site.name}</span>
+                        {site.origin === "WEBSITE" && (
+                          <Badge variant="outline" className="shrink-0 text-muted-foreground">
+                            Not synced with sheet
+                          </Badge>
+                        )}
+                      </span>
                       <span className="shrink-0 text-sm font-semibold">{pct}%</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-muted">

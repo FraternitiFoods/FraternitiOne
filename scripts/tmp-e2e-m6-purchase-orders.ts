@@ -1,4 +1,6 @@
 import "dotenv/config";
+import "./lib/require-fixture-opt-in";
+import { createThrowawayAdmin, deleteThrowawayAdmin, THROWAWAY_ADMIN_PASSWORD } from "./lib/throwaway-admin";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
@@ -27,8 +29,7 @@ import path from "node:path";
 
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
-const DEV_PASSWORD = process.env.SEED_DEV_PASSWORD!;
-if (!DEV_PASSWORD) throw new Error("SEED_DEV_PASSWORD not set");
+const ADMIN_EMAIL = "tmp-e2e-m6-admin@example.com"; // throwaway ADMIN, deleted in `finally` (not the real admin: its password is rotated)
 const IMPORT_SECRET = process.env.IMPORT_SECRET!;
 if (!IMPORT_SECRET) throw new Error("IMPORT_SECRET not set");
 
@@ -78,6 +79,7 @@ async function setMode(mode: "SHEET_LIVE" | "WEBSITE_LIVE") {
 }
 
 async function main() {
+  await createThrowawayAdmin(db, ADMIN_EMAIL);
   await setMode("SHEET_LIVE"); // pushFixture requires SHEET_LIVE (the import endpoints 403 in WEBSITE_LIVE).
   await pushFixture();
 
@@ -105,7 +107,7 @@ async function main() {
 
   try {
     const page = await browser.newPage();
-    await login(page, "tech@fraterniti.co.in", DEV_PASSWORD);
+    await login(page, ADMIN_EMAIL, THROWAWAY_ADMIN_PASSWORD);
 
     // ---- Lock Site A, then change GN Pan's rate — the PO line for a locked site must use locked_rate, not the live rate.
     // Every SiteItem's locked_rate is snapshotted at its *current* effective rate (mirroring lockSite()) — not just
@@ -153,9 +155,16 @@ async function main() {
     // ---- Search by the PO number. ----
     const poNumber = poNumberText.replace(/\s*New\s*$/, "").trim();
     await page.goto(`${BASE}/site-boq/purchase-orders?q=${encodeURIComponent(poNumber)}`);
+    // The page streams behind site-boq/loading.tsx, so wait for the real content before reading it (a bare innerText right after goto can read the skeleton).
+    await page.locator("tbody tr").first().waitFor({ timeout: 15000 }).catch(() => {});
     check("Search by PO number finds exactly one row", (await page.locator("tbody tr").count()) === 1);
     await page.goto(`${BASE}/site-boq/purchase-orders?q=zzz-does-not-exist`);
-    check("Search with no match shows the empty state", (await page.locator("body").innerText()).includes("No purchase orders match"));
+    const emptyStateShown = await page
+      .getByText("No purchase orders match")
+      .waitFor({ timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
+    check("Search with no match shows the empty state", emptyStateShown);
 
     // ---- Detail page: missing-fields notice, correct snapshot values. ----
     await page.goto(`${BASE}/site-boq/purchase-orders/${createdIds[0]}`);
@@ -198,6 +207,10 @@ async function main() {
     await db.vendorRate.updateMany({ where: { itemId: gnPan.id, vendorId: gogia.id }, data: { rate: 605 } }).catch(() => {});
     await pushFixture().catch((e) => {
       console.error("Failed to re-push the fixture during cleanup:", e);
+      failures++;
+    });
+    await deleteThrowawayAdmin(db, ADMIN_EMAIL).catch((e) => {
+      console.error("Failed to delete throwaway admin user:", e);
       failures++;
     });
   }

@@ -10,6 +10,8 @@ import {
   canFlipMode,
   canViewAuditLog,
   canCreatePo,
+  canCreateDashboardSite,
+  canEditDashboardSite,
 } from "./permissions";
 
 const INTERNAL_ROLES: Role[] = [
@@ -61,6 +63,14 @@ describe("permissions — plan.md section 5 role matrix", () => {
     expect(canViewAuditLog(user("ADMIN"))).toBe(true);
     for (const role of INTERNAL_ROLES) expect(canViewAuditLog(user(role))).toBe(false);
     expect(canViewAuditLog(user("FRANCHISEE"))).toBe(false);
+  });
+
+  it("Create/edit Dashboard sites: Admin only", () => {
+    for (const check of [canCreateDashboardSite, canEditDashboardSite]) {
+      expect(check(user("ADMIN"))).toBe(true);
+      for (const role of INTERNAL_ROLES) expect(check(user(role))).toBe(false);
+      expect(check(user("FRANCHISEE"))).toBe(false);
+    }
   });
 
   it("Create/download POs: Admin and every other internal role, not FRANCHISEE", () => {

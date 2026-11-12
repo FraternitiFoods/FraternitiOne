@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, forbidden } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canViewAllDashboardSites } from "@/lib/permissions";
+import { canViewAllDashboardSites, canEditDashboardSite } from "@/lib/permissions";
 import { getStageDetail, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
 import { StepList } from "./_components/step-list";
@@ -34,7 +34,7 @@ export default async function DashboardStagePage(props: PageProps<"/dashboard/[s
         }
         isFranchisee={isFranchisee}
       />
-      <StepList steps={stage.steps} />
+      <StepList steps={stage.steps} editable={stage.origin === "WEBSITE" && canEditDashboardSite(user)} />
     </div>
   );
 }

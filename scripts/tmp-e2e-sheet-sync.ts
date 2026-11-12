@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { chromium, expect, type Browser, type Page } from "@playwright/test";
+import "./lib/require-fixture-opt-in";
+import { chromium, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { readFileSync } from "node:fs";
@@ -28,16 +29,6 @@ let failures = 0;
 function check(label: string, cond: boolean) {
   console.log(cond ? "OK  " : "FAIL", "-", label);
   if (!cond) failures++;
-}
-
-/** Auto-retrying visibility check (Playwright's own waiting, not a fixed sleep) — avoids racing the component's async poll-on-mount/poll-on-click. */
-async function checkVisible(label: string, locator: ReturnType<Page["getByText"]>, timeout = 8000) {
-  try {
-    await expect(locator).toBeVisible({ timeout });
-    check(label, true);
-  } catch {
-    check(label, false);
-  }
 }
 
 type Payload = {
@@ -148,19 +139,13 @@ async function main() {
     const noSessionRequest = await fetch(`${BASE}/api/sheet-sync/request`, { method: "POST" });
     check("no admin session -> not 202 on /request", noSessionRequest.status !== 202);
 
-    // --- Test 6: stacking (5 rapid clicks -> exactly one request) ---
-    console.log("\n-- Test 6: stacking --");
+    // --- Test 6: /request is retired (website is the source of truth) ---
+    console.log("\n-- Test 6: /request retired --");
     await resetSheetSyncRequestState();
-    const requestResults = await Promise.all(Array.from({ length: 5 }, () => page.request.post(`${BASE}/api/sheet-sync/request`)));
-    const requestIds = new Set<string>();
-    for (const r of requestResults) {
-      const body = (await r.json()) as { requestId?: string };
-      if (body.requestId) requestIds.add(body.requestId);
-    }
-    check("5 rapid /request calls -> exactly one distinct requestId", requestIds.size === 1);
-    const pendingAfterStack = await callSync("/api/sheet-sync/pending", undefined, { secret: SHEET_SYNC_SECRET });
-    check("/pending sees the stacked request", (pendingAfterStack.json as { pending: boolean }).pending === true);
-    await resetSheetSyncRequestState();
+    const retired = await page.request.post(`${BASE}/api/sheet-sync/request`);
+    check("admin POST /request -> 410 (no new sync can be queued)", retired.status() === 410);
+    const pendingAfterRetired = await callSync("/api/sheet-sync/pending", undefined, { secret: SHEET_SYNC_SECRET });
+    check("/pending sees nothing queued", (pendingAfterRetired.json as { pending: boolean }).pending === false);
 
     const payload = loadPayload();
 
@@ -246,34 +231,11 @@ async function main() {
     const siteItemsForSiteAfter = await db.siteItem.count({ where: { siteId: siteBefore!.id } });
     check(`"${removedSiteName}"'s old SiteItem rows survive (frozen, not deleted)`, siteItemsForSiteAfter === siteItemsForSiteBefore);
 
-    // --- UI: the actual "Sync with sheet" button in a real browser, end to end. ---
-    console.log("\n-- UI: Sync with sheet button (real browser) --");
-    await resetSheetSyncRequestState();
+    // --- UI: the "Sync with sheet" button is gone from /site-boq. ---
+    console.log("\n-- UI: no Sync with sheet button --");
     await page.goto(`${BASE}/site-boq`);
-    const syncButton = page.getByRole("button", { name: "Sync with sheet" });
-    await expect(syncButton).toBeVisible({ timeout: 8000 });
-    check("button visible on /site-boq for an Admin", true);
-    await syncButton.click();
-    await checkVisible("clicking it shows 'Waiting for the sheet…'", page.getByText("Waiting for the sheet… (up to a minute)"));
-
-    // Simulate the Apps Script side: poll /pending, then run the full happy path.
-    let picked = false;
-    for (let i = 0; i < 5 && !picked; i++) {
-      const pendingCheck = await callSync("/api/sheet-sync/pending", undefined, { secret: SHEET_SYNC_SECRET });
-      picked = (pendingCheck.json as { pending?: boolean }).pending === true;
-      if (!picked) await new Promise((r) => setTimeout(r, 500));
-    }
-    check("/pending picks up the button-triggered request", picked);
-
-    const uiRun = await runFullSync(payload);
-    check("UI-triggered sync finishes successfully", uiRun.finish.ok);
-
-    await checkVisible("UI shows 'Done — N items, N sites' after the sync completes", page.getByText(/^Done — \d+ items, \d+ sites$/), 15000);
-    await page.screenshot({ path: "scripts/.tmp-sheet-sync-ui.png" });
-
-    await page.reload();
     await page.waitForLoadState("networkidle");
-    await checkVisible("after reload, UI shows 'Last synced: ...'", page.getByText(/^Last synced:/));
+    check("no 'Sync with sheet' button on /site-boq", (await page.getByRole("button", { name: "Sync with sheet" }).count()) === 0);
   } finally {
     await browser?.close();
   }

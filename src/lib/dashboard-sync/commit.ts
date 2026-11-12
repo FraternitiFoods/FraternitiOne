@@ -50,19 +50,28 @@ type SiteRef = { id: string; name: string };
  * this run's sites. dashboard-sheet-sync-plan.md section 2: show every site
  * exactly as in the sheet, including "trash"/Zoca ones — no filtering here.
  */
-async function upsertSites(
+export async function upsertSites(
   tx: Tx,
   runId: string,
   sites: SiteInput[]
-): Promise<{ byNormName: Map<string, SiteRef>; archivedCount: number }> {
+): Promise<{ byNormName: Map<string, SiteRef>; archivedCount: number; skippedWebsiteSites: string[] }> {
   const existing = await tx.dashboardSite.findMany();
   const byNormName = new Map(existing.map((s) => [normalizeName(s.name), s]));
 
   const result = new Map<string, SiteRef>();
+  const skippedWebsiteSites: string[] = [];
   const now = new Date();
   for (const input of sites) {
     const norm = normalizeName(input.name);
     const current = byNormName.get(norm);
+
+    // Website-created sites are owned by the website: never updated, never
+    // given the sheet's steps. Left out of `result` so replaceSiteSteps /
+    // dept-link resolution skip them too.
+    if (current?.origin === "WEBSITE") {
+      skippedWebsiteSites.push(current.name);
+      continue;
+    }
 
     if (current) {
       await tx.dashboardSite.update({
@@ -95,12 +104,14 @@ async function upsertSites(
   }
 
   const seenIds = new Set([...result.values()].map((v) => v.id));
-  const toArchive = existing.filter((s) => s.isActive && s.lastSeenRunId !== null && !seenIds.has(s.id));
+  const toArchive = existing.filter(
+    (s) => s.origin === "SHEET" && s.isActive && s.lastSeenRunId !== null && !seenIds.has(s.id)
+  );
   if (toArchive.length > 0) {
     await tx.dashboardSite.updateMany({ where: { id: { in: toArchive.map((s) => s.id) } }, data: { isActive: false } });
   }
 
-  return { byNormName: result, archivedCount: toArchive.length };
+  return { byNormName: result, archivedCount: toArchive.length, skippedWebsiteSites };
 }
 
 /**
@@ -225,7 +236,10 @@ export async function commitRun(
     async (tx) => {
       const siteInputs = run.stagingChunks.map((c) => c.payload as unknown as SiteInput);
 
-      const { byNormName, archivedCount } = await upsertSites(tx, runId, siteInputs);
+      const { byNormName, archivedCount, skippedWebsiteSites } = await upsertSites(tx, runId, siteInputs);
+      for (const name of skippedWebsiteSites) {
+        warnings.push(`Skipped "${name}": a site with this name was created on the website, so the sheet's copy was ignored.`);
+      }
 
       let steps = 0;
       for (const input of siteInputs) {
