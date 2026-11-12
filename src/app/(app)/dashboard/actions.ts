@@ -81,15 +81,16 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
           },
         });
 
-        // Makes the site appear in Site Tracker (dropdown + All sites). Tracker
-        // steps are lazy per-site rows, so this one row is all it needs. Tracker
-        // only (usedInBoq false); `WEB-` sourceKey as in site-boq/sites/actions.ts.
+        // Makes the site appear in Site Tracker (dropdown + All sites) AND Site
+        // BOQ (the website is the source of truth; BOQ queries filter on
+        // usedInBoq). Tracker steps are lazy per-site rows, so this one row is
+        // all it needs; `WEB-` sourceKey as in site-boq/sites/actions.ts.
         const trackerSite = await tx.site.create({
           data: {
             sourceKey: `WEB-${randomUUID()}`,
             name: data.name,
             sortOrder: nextTrackerSortOrder,
-            usedInBoq: false,
+            usedInBoq: true,
             usedInTracker: true,
           },
           select: { id: true },
@@ -139,6 +140,7 @@ export async function createDashboardSite(_prevState: ActionState, formData: For
 
   revalidateDashboard();
   revalidatePath("/site-tracker"); // the new tracker site must show in its dropdown / All sites tab
+  for (const p of ["/site-boq", "/site-boq/sites", "/site-boq/site-view", "/site-boq/items"]) revalidatePath(p);
   redirect(`/dashboard/${encodeURIComponent(data.name)}`);
 }
 

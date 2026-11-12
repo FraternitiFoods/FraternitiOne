@@ -172,7 +172,7 @@ async function dashboardCreateSiteChecks(page: Page) {
     check("admin can create a Dashboard site", site?.origin === "WEBSITE");
     check("new Dashboard site has 402 tasks, all assigned to Admin", site?.steps.length === 402 && site.steps.every((s) => s.assignedTo === "Admin"));
     const trackerSite = await db.site.findUnique({ where: { name } });
-    check("new Dashboard site is also a Site Tracker site (not BOQ)", !!trackerSite && trackerSite.usedInTracker && !trackerSite.usedInBoq);
+    check("new Dashboard site is also a Site Tracker + Site BOQ site", !!trackerSite && trackerSite.usedInTracker && trackerSite.usedInBoq);
 
     // A name that already belongs to a shared Site (BOQ/Tracker) is rejected, nothing is created.
     await db.site.create({ data: { sourceKey: "CI-SMOKE-CLASH", name: clashName, usedInBoq: false, usedInTracker: true } });

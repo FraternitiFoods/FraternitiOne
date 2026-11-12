@@ -1,26 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { canTriggerSheetSync } from "@/lib/permissions";
-import { runSheetSyncHandler } from "@/lib/sheet-sync/guard";
-import { requestSync } from "@/lib/sheet-sync/run";
 
 /**
- * POST /api/sheet-sync/request — the "Sync with sheet" button. Admin
- * session auth, not the bearer secret (handoff section 3). requireUser()
- * is called unwrapped, outside runSheetSyncHandler's try/catch — it
- * redirects (not throws a normal error) when there's no session, via
- * Next.js's internal NEXT_REDIRECT mechanism, which must propagate up to
- * the framework untouched (src/app/api/tracker/sites/route.ts's GET is the
- * established pattern for this in the codebase).
+ * POST /api/sheet-sync/request — retired. The website is the source of truth,
+ * so the "Sync with sheet" button is gone and no new request may be queued
+ * (a stale tab must not re-stick the sheetSyncRequest state). The Apps
+ * Script-facing endpoints (pending/start/chunk/finish/fail/status) are left in
+ * place. requireUser() stays unwrapped so its redirect propagates.
  */
 export async function POST() {
   const user = await requireUser();
   if (!canTriggerSheetSync(user)) {
     return NextResponse.json({ error: "You don't have permission to do this." }, { status: 403 });
   }
-
-  return runSheetSyncHandler(async () => {
-    const { requestId } = await requestSync();
-    return NextResponse.json({ requestId }, { status: 202 });
-  });
+  return NextResponse.json({ error: "Sheet sync is retired; the website is the source of truth." }, { status: 410 });
 }

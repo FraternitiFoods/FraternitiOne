@@ -64,7 +64,7 @@ async function main() {
     await page.waitForURL(`**/dashboard/${encodeURIComponent(NAME)}`, { timeout: 30000 });
 
     const tracker = await db.site.findUnique({ where: { name: NAME } });
-    check("tracker Site row exists, tracker-only", !!tracker && tracker.usedInTracker && !tracker.usedInBoq);
+    check("shared Site row exists for tracker AND BOQ", !!tracker && tracker.usedInTracker && tracker.usedInBoq);
 
     // Name clash with a shared Site -> rejected, no Dashboard site created.
     await db.site.create({ data: { sourceKey: "TMP-E2E-CLASH", name: CLASH, usedInBoq: false, usedInTracker: true } });
@@ -88,7 +88,17 @@ async function main() {
     await page.locator("details[data-section-name]").first().waitFor({ timeout: 30000 });
     console.log(`INFO - site switch ${Date.now() - t0} ms`);
     check("normal tracker sections render for the new site", (await page.locator("details[data-section-name]").count()) > 0);
-    check("new site is not in Site BOQ list", (await db.site.count({ where: { name: NAME, usedInBoq: true } })) === 0);
+    await page.goto(`${BASE}/site-boq/sites`);
+    await page.getByText(NAME, { exact: true }).first().waitFor({ timeout: 30000 }).catch(() => {}); // loading.tsx streams the table in after load
+    check("new site is in the Site BOQ sites list", await page.getByText(NAME, { exact: true }).first().isVisible());
+    await page.goto(`${BASE}/site-boq`);
+    await page.getByText(NAME, { exact: true }).first().waitFor({ timeout: 30000 }).catch(() => {});
+    check("new site is on the Site BOQ overview", await page.getByText(NAME, { exact: true }).first().isVisible());
+    check("no 'Sync with sheet' button on /site-boq", (await page.getByRole("button", { name: "Sync with sheet" }).count()) === 0);
+    await page.goto(`${BASE}/dashboard`);
+    check("no 'Sync with sheet' button on /dashboard", (await page.getByRole("button", { name: "Sync with sheet" }).count()) === 0);
+    await page.goto(`${BASE}/site-tracker`);
+    await page.getByRole("combobox").first().waitFor({ timeout: 60000 });
 
     await page.getByRole("button", { name: "All sites" }).click();
     check("new site is in the All sites tab", await page.getByText(NAME, { exact: true }).first().isVisible());

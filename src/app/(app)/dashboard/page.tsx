@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canViewAllDashboardSites, canTriggerDashboardSync, canCreateDashboardSite } from "@/lib/permissions";
+import { canViewAllDashboardSites, canCreateDashboardSite } from "@/lib/permissions";
 import { getDashboardRanking, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DashboardSyncButton } from "./_components/dashboard-sync-button";
 import { CreateSiteDialog } from "./_components/create-site-dialog";
 
 /** Dashboard home (dashboard-sheet-sync-plan.md section 6): site-wise ranking, high to low. */
@@ -40,20 +39,13 @@ export default async function DashboardHomePage() {
         title="Dashboard"
         subtitle="Site-wise progress across all 13 stages."
         isFranchisee={isFranchisee}
-        action={
-          canCreate || canTriggerDashboardSync(user) ? (
-            <div className="flex items-start gap-3">
-              {canCreate && <CreateSiteDialog trigger={<Button size="sm">New site</Button>} />}
-              {canTriggerDashboardSync(user) && <DashboardSyncButton />}
-            </div>
-          ) : undefined
-        }
+        action={canCreate ? <CreateSiteDialog trigger={<Button size="sm">New site</Button>} /> : undefined}
       />
 
       {ranking.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            {canCreate ? "No sites yet. Create one, or run a sync to pull data from the sheet." : "No sites yet."}
+            {canCreate ? "No sites yet. Create one to get started." : "No sites yet."}
           </CardContent>
         </Card>
       )}

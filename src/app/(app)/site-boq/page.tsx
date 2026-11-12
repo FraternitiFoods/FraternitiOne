@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { requireSiteBoqUser } from "@/lib/site-boq-access";
 import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq-data";
-import { canTriggerSheetSync } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -9,11 +8,10 @@ import { formatCurrency } from "@/lib/format";
 import { SiteBoqSubNav } from "./_components/sub-nav";
 import { SearchBox } from "./_components/search-box";
 import { SiteLockBadge } from "./_components/site-lock-badge";
-import { SyncWithSheetButton } from "./_components/sync-with-sheet-button";
 
 /** plan.md section 4.1 — Overview (the sheet's "Dashboard"). */
 export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">) {
-  const user = await requireSiteBoqUser();
+  await requireSiteBoqUser();
 
   const searchParams = await props.searchParams;
   const qParam = searchParams.q;
@@ -68,10 +66,7 @@ export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
-        {canTriggerSheetSync(user) && <SyncWithSheetButton />}
-      </div>
+      <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
       <SiteBoqSubNav active="overview" />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
