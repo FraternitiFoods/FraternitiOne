@@ -19,8 +19,8 @@ import type { Role } from "@prisma/client";
 type NavItem = { label: string; href: string | null };
 
 /**
- * Exactly 4 items (plan.md section 2). Site Tracker and Operations BOQ are
- * "Coming soon" placeholders with no route yet. Dashboard is live
+ * Exactly 4 items (plan.md section 2). All four are live. (The "Coming soon"
+ * rendering below stays for any future item added with `href: null`.) Dashboard is live
  * (dashboard-sheet-sync-plan.md section 6) and, unlike Site BOQ, is visible
  * to every role including franchisees — a franchisee is routed to their own
  * assigned site (see src/app/(app)/dashboard/page.tsx), not hidden from the
@@ -33,13 +33,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Site Tracker", href: "/site-tracker" },
   { label: "Site BOQ", href: "/site-boq" },
-  { label: "Operations BOQ", href: null },
+  { label: "Operations BOQ", href: "/operations-boq" },
 ];
 
 const EXTERNAL_ROLES: Role[] = ["FRANCHISEE"];
 
-/** Internal-only live modules (plan.md section 2, site-tracker-plan.md section 4 rule 6) — hidden from the sidebar entirely for an external role, not just 403'd server-side. */
-const INTERNAL_ONLY_LABELS = ["Site BOQ", "Site Tracker"];
+/** Internal-only live modules (plan.md section 2, site-tracker-plan.md section 4 rule 6, operations-boq-handoff.md section 7) — hidden from the sidebar entirely for an external role, not just 403'd server-side. */
+const INTERNAL_ONLY_LABELS = ["Site BOQ", "Site Tracker", "Operations BOQ"];
 
 /**
  * "Manage users" lives here (not the 4-item sidebar — plan.md section 2 is

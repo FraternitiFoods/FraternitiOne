@@ -167,7 +167,7 @@ export async function getLatestImportRun() {
   return db.importRun.findFirst({ orderBy: { startedAt: "desc" } });
 }
 
-const BOQ_AUDIT_ENTITY_TYPES = ["SiteItem", "Item", "Vendor", "Site", "AppSetting"] as const;
+const BOQ_AUDIT_ENTITY_TYPES = ["SiteItem", "Item", "Vendor", "Site", "AppSetting", "OpsBoqRow"] as const;
 
 /**
  * plan.md section 5 "a lightweight audit log for edits in WEBSITE_LIVE" +

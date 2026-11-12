@@ -118,6 +118,7 @@ model User {
   trackerEvidenceUploads TrackerEvidence[]
   dashboardSiteAssignment    DashboardSiteAssignment?  @relation("DashboardSiteAssignmentUser")
   dashboardSiteAssignmentsMade DashboardSiteAssignment[] @relation("DashboardSiteAssignedBy")
+  opsBoqRowsUpdated      OpsBoqRow[]       @relation("OpsBoqRowUpdatedBy")
 }
 
 /// Backs both the admin "invite" flow and self-service "forgot password".
@@ -247,6 +248,7 @@ model Site {
   siteItems        SiteItem[]
   purchaseOrders   PurchaseOrder[]
   trackerSiteSteps TrackerSiteStep[]
+  opsBoqRows       OpsBoqRow[]
 }
 
 model Category {
@@ -755,4 +757,51 @@ model DashboardSiteAssignment {
   updatedAt  DateTime      @updatedAt
 
   @@index([siteId])
+}
+
+// ---------------------------------------------------------------------------
+// Operations BOQ (operations-boq-handoff.md). Website-owned procurement
+// tracker: 11 fixed rows per site (src/lib/ops-boq-seed.ts, created by
+// ensureOpsBoqRows when a site is created) plus user-added rows for that site
+// only. No sheet sync; "Link" columns are plain pasted URLs, not Site BOQ links.
+// Pending Amount is never stored (amount - advanceGiven, computed on read).
+// ---------------------------------------------------------------------------
+
+enum OpsBoqStatus {
+  NOT_SHARED
+  SHARED
+}
+
+model OpsBoqRow {
+  id              String       @id @default(cuid())
+  siteId          String
+  site            Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  /// Display string, not auto-renumbered (the sheet's two UTENSILS rows share "1").
+  sno             String
+  name            String
+  isFixed         Boolean      @default(false)
+  /// Stable key of a seeded row (src/lib/ops-boq-seed.ts); null for user-added
+  /// rows. The unique index below makes ensureOpsBoqRows idempotent and
+  /// race-safe (Postgres allows many NULLs, so added rows are unconstrained).
+  fixedKey        String?
+  sortOrder       Int
+  vendor          String?
+  boqStatus       OpsBoqStatus @default(NOT_SHARED)
+  amount          Decimal?     @db.Decimal(14, 2)
+  linkBoq         String?
+  linkApprovedBoq String?
+  linkPo          String?
+  approvedVia     String?
+  link            String?
+  advanceGiven    Decimal?     @db.Decimal(14, 2)
+  stage           String?
+  followUpDate    DateTime?    @db.Date
+  remarks         String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  updatedById     String?
+  updatedBy       User?        @relation("OpsBoqRowUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([siteId, fixedKey])
+  @@index([siteId, sortOrder])
 }
