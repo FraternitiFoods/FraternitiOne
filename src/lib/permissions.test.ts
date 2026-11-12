@@ -12,6 +12,9 @@ import {
   canCreatePo,
   canCreateDashboardSite,
   canEditDashboardSite,
+  canDeleteDashboardSite,
+  canViewOpsBoq,
+  canEditOpsBoq,
 } from "./permissions";
 
 const INTERNAL_ROLES: Role[] = [
@@ -66,7 +69,7 @@ describe("permissions — plan.md section 5 role matrix", () => {
   });
 
   it("Create/edit Dashboard sites: Admin only", () => {
-    for (const check of [canCreateDashboardSite, canEditDashboardSite]) {
+    for (const check of [canCreateDashboardSite, canEditDashboardSite, canDeleteDashboardSite]) {
       expect(check(user("ADMIN"))).toBe(true);
       for (const role of INTERNAL_ROLES) expect(check(user(role))).toBe(false);
       expect(check(user("FRANCHISEE"))).toBe(false);
@@ -77,5 +80,16 @@ describe("permissions — plan.md section 5 role matrix", () => {
     expect(canCreatePo(user("ADMIN"))).toBe(true);
     for (const role of INTERNAL_ROLES) expect(canCreatePo(user(role))).toBe(true);
     expect(canCreatePo(user("FRANCHISEE"))).toBe(false);
+  });
+
+  it("Operations BOQ: every internal role views, only Admin + OPERATIONS edit, FRANCHISEE nothing", () => {
+    expect(canViewOpsBoq(user("ADMIN"))).toBe(true);
+    for (const role of INTERNAL_ROLES) expect(canViewOpsBoq(user(role))).toBe(true);
+    expect(canViewOpsBoq(user("FRANCHISEE"))).toBe(false);
+
+    expect(canEditOpsBoq(user("ADMIN"))).toBe(true);
+    expect(canEditOpsBoq(user("OPERATIONS"))).toBe(true);
+    for (const role of INTERNAL_ROLES.filter((r) => r !== "OPERATIONS")) expect(canEditOpsBoq(user(role))).toBe(false);
+    expect(canEditOpsBoq(user("FRANCHISEE"))).toBe(false);
   });
 });

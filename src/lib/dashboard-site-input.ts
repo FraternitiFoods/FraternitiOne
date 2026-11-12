@@ -112,3 +112,16 @@ export function linkifyText(text: string): LinkSegment[] {
   if (last < text.length) segments.push({ text: text.slice(last) });
   return segments;
 }
+
+/**
+ * The exact phrase an admin must type to delete a site ("Delete site Tulsi Pune").
+ * Case-sensitive on purpose: it is a deliberate speed bump, and the server
+ * re-checks it with this same function (a replayed action call cannot skip it).
+ */
+export function deleteSiteConfirmPhrase(siteName: string): string {
+  return `Delete site ${siteName}`;
+}
+
+export function isDeleteSiteConfirmed(siteName: string, typed: unknown): boolean {
+  return typeof typed === "string" && typed.trim() === deleteSiteConfirmPhrase(siteName);
+}

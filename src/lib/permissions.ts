@@ -160,7 +160,30 @@ export function canEditDashboardSite(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
 
+/** Permanently deleting a website-created Dashboard site (and its linked Tracker/BOQ/Operations BOQ data) - Admin only. */
+export function canDeleteDashboardSite(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
 /** Assigning a Dashboard site to a franchisee user — dashboard-sheet-sync-plan.md section 2: "Admin assigns a site to a franchisee user inside the website." */
 export function canManageDashboardSiteAssignment(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
+}
+
+/**
+ * Operations BOQ (operations-boq-handoff.md section 7): internal-only. Every
+ * internal role can view every site; FRANCHISEE has no access at all (no
+ * sidebar item, 403 on the page, refused in every action).
+ */
+export function canViewOpsBoq(user: Pick<CurrentUser, "role">): boolean {
+  return user.role !== "FRANCHISEE";
+}
+
+/**
+ * Edit any Operations BOQ cell, add a row, rename/delete an added row — Admin
+ * and the existing OPERATIONS role only (the doc's "new Operations role" already
+ * exists in the Role enum). Other internal roles are read-only.
+ */
+export function canEditOpsBoq(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN" || user.role === "OPERATIONS";
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, forbidden } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canViewAllDashboardSites, canEditDashboardSite } from "@/lib/permissions";
+import { canViewAllDashboardSites, canEditDashboardSite, canDeleteDashboardSite } from "@/lib/permissions";
 import { getSiteDetail, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/format";
 import { linkifyText } from "@/lib/dashboard-site-input";
 import { EditSiteDialog } from "../_components/edit-site-dialog";
+import { DeleteSiteDialog } from "../_components/delete-site-dialog";
 
 /**
  * Site page (dashboard-sheet-sync-plan.md section 6): overall %, Drive link,
@@ -34,6 +35,7 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
   const overallPct = Math.round(site.overall.pct * 100);
   const isWebsiteSite = site.origin === "WEBSITE";
   const canEdit = isWebsiteSite && canEditDashboardSite(user);
+  const canDelete = isWebsiteSite && canDeleteDashboardSite(user);
 
   return (
     <div className="space-y-6">
@@ -50,7 +52,7 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
         }
         isFranchisee={isFranchisee}
         action={
-          site.driveFolderUrl || canEdit ? (
+          site.driveFolderUrl || canEdit || canDelete ? (
             <div className="flex items-center gap-3">
               {site.driveFolderUrl && (
                 <a
@@ -73,6 +75,16 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
                   trigger={
                     <Button size="sm" variant="outline">
                       Edit details
+                    </Button>
+                  }
+                />
+              )}
+              {canDelete && (
+                <DeleteSiteDialog
+                  site={{ id: site.id, name: site.name }}
+                  trigger={
+                    <Button size="sm" variant="destructive">
+                      Delete site
                     </Button>
                   }
                 />

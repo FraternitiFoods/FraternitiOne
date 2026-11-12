@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   collapseSpaces,
   createDashboardSiteSchema,
+  deleteSiteConfirmPhrase,
+  isDeleteSiteConfirmed,
   isHttpUrl,
   linkifyText,
   normalizeSiteName,
@@ -86,5 +88,19 @@ describe("linkifyText", () => {
 
   it("returns an empty list for empty text", () => {
     expect(linkifyText("")).toEqual([]);
+  });
+});
+
+describe("delete-site confirmation phrase", () => {
+  it("is 'Delete site <name>' and must be typed exactly (case-sensitive, edges trimmed)", () => {
+    expect(deleteSiteConfirmPhrase("Tulsi Pune")).toBe("Delete site Tulsi Pune");
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "Delete site Tulsi Pune")).toBe(true);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "  Delete site Tulsi Pune ")).toBe(true);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "delete site tulsi pune")).toBe(false);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "Tulsi Pune")).toBe(false);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "Delete site Tulsi")).toBe(false);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", "")).toBe(false);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", null)).toBe(false);
+    expect(isDeleteSiteConfirmed("Tulsi Pune", undefined)).toBe(false);
   });
 });

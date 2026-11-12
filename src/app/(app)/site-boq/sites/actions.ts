@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
 import { canEditSites, canLockSite } from "@/lib/permissions";
 import { checkModeAllowsWrite } from "@/lib/site-boq-write-guard";
+import { ensureOpsBoqRows } from "@/lib/ops-boq-ensure";
 import { decToNumber, finalRateOf, rateForAmount } from "@/lib/boq-calc";
 
 export type ActionState = { error?: string; success?: boolean } | undefined;
@@ -27,6 +28,7 @@ const SiteSchema = z.object({
 });
 
 function revalidateBoqPages() {
+  revalidatePath("/operations-boq");
   revalidatePath("/site-boq");
   revalidatePath("/site-boq/site-view");
   revalidatePath("/site-boq/sites");
@@ -74,6 +76,9 @@ export async function createSite(_prevState: ActionState, formData: FormData): P
     const created = await tx.site.create({
       data: { sourceKey, name: data.name, shortCode: data.shortCode, openingDate, note: data.note },
     });
+
+    // Operations BOQ: the 11 fixed rows, in this same transaction (idempotent).
+    await ensureOpsBoqRows(tx, created.id);
 
     await writeAuditEvent(tx, {
       actor: user,
