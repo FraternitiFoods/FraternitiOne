@@ -9,7 +9,7 @@ import { ensureOpsBoqRows } from "../src/lib/ops-boq-ensure";
  * Operations BOQ acceptance pass (operations-boq-handoff.md section 11) in a
  * real Chromium against `pnpm dev` and the .env database. NOT a fixture-push
  * script (no snapshot/restore needed): it creates its own throwaway users
- * (ADMIN, OPERATIONS, SALES = read-only internal, FRANCHISEE) and two sites,
+ * (ADMIN, OPERATIONS, MANAGEMENT = can view but read-only (the SALES const name is historical), FRANCHISEE) and two sites,
  * "TMP E2E Ops Site" / "TMP E2E Ops Site 2", through the real Dashboard "New
  * site" flow, and removes everything it made (rows, audit events, sites,
  * dashboard sites, users) in `finally`. Refuses a DB host in E2E_FORBIDDEN_DB_HOSTS.
@@ -28,7 +28,7 @@ const NAME_PREFIX = "TMP E2E Ops Site";
 const USERS: Record<string, Role> = {
   "tmp-e2e-opsboq-admin@example.com": "ADMIN",
   "tmp-e2e-opsboq-ops@example.com": "OPERATIONS",
-  "tmp-e2e-opsboq-sales@example.com": "SALES",
+  "tmp-e2e-opsboq-sales@example.com": "MANAGEMENT",
   "tmp-e2e-opsboq-franchisee@example.com": "FRANCHISEE",
 };
 const [ADMIN, OPS, SALES, FRANCHISEE] = Object.keys(USERS);

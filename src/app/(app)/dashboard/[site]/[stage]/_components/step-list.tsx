@@ -27,24 +27,47 @@ const STATUS_ORDER: StepNode["status"][] = ["NOT_STARTED", "IN_PROGRESS", "COMPL
 const FIELD_CLASS =
   "h-8 rounded-lg border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60";
 
+/** Who may edit what on this page (decided server-side in the page, plan.md section 12) — the UI only reflects it. */
+type StepAccess = { editAll: boolean; editable: ReadonlySet<string>; mine: ReadonlySet<string> };
+
 /**
  * Stage page step list (dashboard-sheet-sync-plan.md section 6): parent steps expandable (+/-), "Not required" dimmed.
- * `editable` (admin on a website-created site only) adds a status select + remark box to leaf steps.
+ * A leaf gets a status select + remark box when `editAll` (Admin on a website-created site) or its id is in
+ * `editableStepIds` (the signed-in user's own assigned tasks). `highlightStepIds` marks those tasks as "yours".
+ * The Server Action re-checks every save, so these props are display-only.
  */
-export function StepList({ steps, editable = false }: { steps: StepNode[]; editable?: boolean }) {
+export function StepList({
+  steps,
+  editAll = false,
+  editableStepIds = [],
+  highlightStepIds = [],
+}: {
+  steps: StepNode[];
+  editAll?: boolean;
+  editableStepIds?: string[];
+  highlightStepIds?: string[];
+}) {
+  const access: StepAccess = {
+    editAll,
+    editable: new Set(editableStepIds),
+    mine: new Set(highlightStepIds),
+  };
   return (
     <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
       {steps.map((step) => (
-        <StepRow key={step.id} step={step} depth={0} editable={editable} />
+        <StepRow key={step.id} step={step} depth={0} access={access} />
       ))}
     </div>
   );
 }
 
-function StepRow({ step, depth, editable }: { step: StepNode; depth: number; editable: boolean }) {
+function StepRow({ step, depth, access }: { step: StepNode; depth: number; access: StepAccess }) {
   const [open, setOpen] = useState(true);
   const hasChildren = step.children.length > 0;
-  const canEditThis = editable && !step.isParent;
+  const canEditThis = !step.isParent && (access.editAll || access.editable.has(step.id));
+  const isMine = !step.isParent && access.mine.has(step.id);
+  // Real assignees (Admin's Team page) win over the legacy free-text label, which defaults to "Admin" on new sites.
+  const assignedLabel = step.assignees.length > 0 ? step.assignees.map((a) => a.name).join(", ") : step.assignedTo;
 
   // Optimistic local copy: the UI changes instantly, the Server Action runs in
   // the background, and a rejected save rolls back to the last saved values.
@@ -73,7 +96,7 @@ function StepRow({ step, depth, editable }: { step: StepNode; depth: number; edi
   const dimmed = shownStatus === "NOT_REQUIRED";
 
   return (
-    <div className="border-b last:border-b-0">
+    <div className={cn("border-b last:border-b-0", isMine && "border-l-4 border-l-sky-500 bg-sky-500/5")} data-mine={isMine ? "true" : undefined}>
       <div className={cn("flex items-start gap-3 py-3 pr-4", dimmed && "opacity-50")} style={{ paddingLeft: `${1 + depth * 1.25}rem` }}>
         {hasChildren ? (
           <button
@@ -95,9 +118,14 @@ function StepRow({ step, depth, editable }: { step: StepNode; depth: number; edi
               {STATUS_LABEL[shownStatus]}
             </Badge>
             {step.shared && <Badge variant="outline">Shared</Badge>}
+            {isMine && (
+              <Badge variant="outline" className="border-transparent bg-sky-500/15 text-sky-500">
+                Assigned to you
+              </Badge>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            {step.assignedTo && <span>Assigned: {step.assignedTo}</span>}
+            {assignedLabel && <span>Assigned: {assignedLabel}</span>}
             {!canEditThis && step.remark && <span>Remark: {step.remark}</span>}
           </div>
           {canEditThis && (
@@ -154,7 +182,7 @@ function StepRow({ step, depth, editable }: { step: StepNode; depth: number; edi
       {hasChildren && open && (
         <div>
           {step.children.map((child) => (
-            <StepRow key={child.id} step={child} depth={depth + 1} editable={editable} />
+            <StepRow key={child.id} step={child} depth={depth + 1} access={access} />
           ))}
         </div>
       )}

@@ -118,6 +118,8 @@ model User {
   trackerEvidenceUploads TrackerEvidence[]
   dashboardSiteAssignment    DashboardSiteAssignment?  @relation("DashboardSiteAssignmentUser")
   dashboardSiteAssignmentsMade DashboardSiteAssignment[] @relation("DashboardSiteAssignedBy")
+  dashboardStepAssignments     DashboardStepAssignment[]  @relation("DashboardStepAssignmentUser")
+  dashboardStepAssignmentsMade DashboardStepAssignment[]  @relation("DashboardStepAssignedBy")
   opsBoqRowsUpdated      OpsBoqRow[]       @relation("OpsBoqRowUpdatedBy")
 }
 
@@ -721,8 +723,32 @@ model DashboardStep {
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
 
+  assignments DashboardStepAssignment[]
+
   @@unique([siteId, stageNo, stepKey])
   @@index([siteId])
+}
+
+/// Task-level "this person works on this step" (plan.md section 12). Admin sets
+/// these on the Team page of a WEBSITE-origin site; a user can open a stage iff
+/// they hold >= 1 step in it and can edit (status + remark) exactly the steps
+/// they hold. Many users per step. Keyed on DashboardStep.id, which is stable
+/// for WEBSITE sites (the sheet sync never rewrites them) but regenerated on
+/// every sync for SHEET sites — hence assignments exist for WEBSITE sites only.
+/// Website-native data, never touched by sync; cascades with the step/user.
+model DashboardStepAssignment {
+  id           String        @id @default(cuid())
+  stepId       String
+  step         DashboardStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation("DashboardStepAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String?
+  assignedBy   User?         @relation("DashboardStepAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+
+  @@unique([stepId, userId])
+  @@index([userId])
+  @@index([stepId])
 }
 
 /// Department Links tab (dashboard-sheet-sync-plan.md section 3): Department |

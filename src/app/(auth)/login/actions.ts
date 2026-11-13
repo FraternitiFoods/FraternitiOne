@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { verifyPassword, requireUser } from "@/lib/auth";
 import { createSession, deleteSession } from "@/lib/session";
 import { writeAuditEvent } from "@/lib/audit";
+import { landingPathForRole } from "@/lib/role-access";
 
 const LoginSchema = z.object({
   email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
@@ -86,7 +87,7 @@ export async function login(
     action: "LOGIN",
   });
 
-  const destination = next && next.startsWith("/") ? next : "/site-boq";
+  const destination = next && next.startsWith("/") ? next : landingPathForRole(user.role);
   redirect(destination);
 }
 

@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { notFound, forbidden } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { canViewAllDashboardSites, canEditDashboardSite, canDeleteDashboardSite } from "@/lib/permissions";
-import { getSiteDetail, getAssignedSiteName } from "@/lib/dashboard-data";
+import { Lock } from "lucide-react";
+import {
+  canViewAllDashboardSites,
+  canEditDashboardSite,
+  canDeleteDashboardSite,
+  canAssignDashboardTasks,
+} from "@/lib/permissions";
+import { openableStageNos } from "@/lib/dashboard-access";
+import { getSiteDetail, getAssignedSiteName, getAssignedStageNos } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +24,9 @@ import { DeleteSiteDialog } from "../_components/delete-site-dialog";
  * the 13 stages as cards, department folder links. A franchisee can only
  * reach their own assigned site — enforced here server-side, not just by
  * hiding the link (dashboard-sheet-sync-plan.md section 8 acceptance check).
+ * Every internal user sees every stage card with its progress; a card is a
+ * link only for a stage they may open (plan.md section 12) — the stage page
+ * re-checks, so a typed URL gets the same answer.
  */
 export default async function DashboardSitePage(props: PageProps<"/dashboard/[site]">) {
   const user = await requireUser();
@@ -36,6 +46,15 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
   const isWebsiteSite = site.origin === "WEBSITE";
   const canEdit = isWebsiteSite && canEditDashboardSite(user);
   const canDelete = isWebsiteSite && canDeleteDashboardSite(user);
+  const canAssign = isWebsiteSite && canAssignDashboardTasks(user);
+
+  const assignedStageNos =
+    user.role === "ADMIN" || isFranchisee ? new Set<number>() : await getAssignedStageNos(user.id, site.id);
+  const openable = openableStageNos({
+    role: user.role,
+    allStageNos: site.stages.map((s) => s.stageNo),
+    assignedStageNos,
+  });
 
   return (
     <div className="space-y-6">
@@ -52,7 +71,7 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
         }
         isFranchisee={isFranchisee}
         action={
-          site.driveFolderUrl || canEdit || canDelete ? (
+          site.driveFolderUrl || canEdit || canDelete || canAssign ? (
             <div className="flex items-center gap-3">
               {site.driveFolderUrl && (
                 <a
@@ -63,6 +82,14 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
                 >
                   Drive folder ↗
                 </a>
+              )}
+              {canAssign && (
+                <Button
+                  nativeButton={false}
+                  size="sm"
+                  variant="outline"
+                  render={<Link href={`/dashboard/${encodeURIComponent(site.name)}/team`}>Team</Link>}
+                />
               )}
               {canEdit && (
                 <EditSiteDialog
@@ -116,26 +143,41 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {site.stages.map((stage) => {
           const pct = Math.round(stage.pct * 100);
-          return (
+          const isOpenable = openable.has(stage.stageNo);
+          const card = (
+            <Card
+              className={
+                isOpenable ? "h-full transition-colors hover:ring-foreground/20" : "h-full opacity-60"
+              }
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                  <span>Stage {stage.stageNo}</span>
+                  {!isOpenable && <Lock className="size-3.5 text-muted-foreground" aria-label="Not assigned to you" />}
+                </CardTitle>
+                <p className="truncate text-xs text-muted-foreground">{stage.stageName}</p>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {stage.completed}/{stage.applicable}
+                  </span>
+                  <span className="text-sm font-semibold">{pct}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
+                </div>
+              </CardContent>
+            </Card>
+          );
+          return isOpenable ? (
             <Link key={stage.stageNo} href={`/dashboard/${encodeURIComponent(site.name)}/${stage.stageNo}`}>
-              <Card className="h-full transition-colors hover:ring-foreground/20">
-                <CardHeader>
-                  <CardTitle className="text-sm">Stage {stage.stageNo}</CardTitle>
-                  <p className="truncate text-xs text-muted-foreground">{stage.stageName}</p>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {stage.completed}/{stage.applicable}
-                    </span>
-                    <span className="text-sm font-semibold">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
-                  </div>
-                </CardContent>
-              </Card>
+              {card}
             </Link>
+          ) : (
+            <div key={stage.stageNo} aria-disabled="true" data-locked="true">
+              {card}
+            </div>
           );
         })}
       </div>

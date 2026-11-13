@@ -84,7 +84,7 @@ async function main() {
   await createThrowawayAdmin(db, ADMIN_EMAIL);
   await db.user.deleteMany({ where: { email: SALES_EMAIL } });
   const passwordHash = await bcrypt.hash(SALES_PASSWORD, 12);
-  await db.user.create({ data: { name: "Tmp E2E M5 Sales", email: SALES_EMAIL, role: "SALES", passwordHash } });
+  await db.user.create({ data: { name: "Tmp E2E M5 Project Manager", email: SALES_EMAIL, role: "PROJECT_MANAGER", passwordHash } });
 
   // pushFixture requires SHEET_LIVE (the import endpoints 403 in WEBSITE_LIVE).
   await setMode("SHEET_LIVE");
@@ -187,25 +187,25 @@ async function main() {
 
     await adminPage.close();
 
-    // ---- A non-Admin internal role (SALES): qty/tracking yes, item/vendor/site/settings management no. ----
+    // ---- A non-Admin role that can edit Site BOQ (PROJECT_MANAGER, plan.md section 12): qty/tracking yes, item/vendor/site/settings management no. ----
     const salesPage = await browser.newPage();
     await login(salesPage, SALES_EMAIL, SALES_PASSWORD);
 
     await salesPage.goto(itemsUrl);
-    check("SALES role: qty input is still editable (role allows qty/remark/tracking)", (await salesPage.locator('input[name="qty"]').count()) > 0);
-    check("SALES role: no 'Add item' button (item management is Admin-only)", (await salesPage.getByRole("button", { name: "Add item" }).count()) === 0);
+    check("PROJECT_MANAGER role: qty input is still editable (role allows qty/remark/tracking)", (await salesPage.locator('input[name="qty"]').count()) > 0);
+    check("PROJECT_MANAGER role: no 'Add item' button (item management is Admin-only)", (await salesPage.getByRole("button", { name: "Add item" }).count()) === 0);
 
     await salesPage.goto(`${BASE}/site-boq/vendors`);
-    check("SALES role: no vendor 'Edit' button (vendor management is Admin-only)", (await salesPage.getByRole("button", { name: "Edit" }).count()) === 0);
+    check("PROJECT_MANAGER role: no vendor 'Edit' button (vendor management is Admin-only)", (await salesPage.getByRole("button", { name: "Edit" }).count()) === 0);
 
     await salesPage.goto(`${BASE}/site-boq/sites`);
-    check("SALES role: no 'Add site' button (site management is Admin-only)", (await salesPage.getByRole("button", { name: "Add site" }).count()) === 0);
+    check("PROJECT_MANAGER role: no 'Add site' button (site management is Admin-only)", (await salesPage.getByRole("button", { name: "Add site" }).count()) === 0);
 
     await salesPage.goto(`${BASE}/site-boq/settings`);
     const salesSettingsText = await salesPage.locator("body").innerText();
-    check("SALES role: no mode-switch button on Settings", (await salesPage.getByRole("button", { name: /Switch to/i }).count()) === 0);
-    check("SALES role: settings fields are read-only, not a form", (await salesPage.locator('input[name="companyName"]').count()) === 0);
-    check("SALES role: no audit log section (Admin only)", !salesSettingsText.includes("Recent edits"));
+    check("PROJECT_MANAGER role: no mode-switch button on Settings", (await salesPage.getByRole("button", { name: /Switch to/i }).count()) === 0);
+    check("PROJECT_MANAGER role: settings fields are read-only, not a form", (await salesPage.locator('input[name="companyName"]').count()) === 0);
+    check("PROJECT_MANAGER role: no audit log section (Admin only)", !salesSettingsText.includes("Recent edits"));
 
     await salesPage.close();
 
@@ -242,7 +242,7 @@ async function main() {
       failures++;
     });
     await db.user.deleteMany({ where: { email: SALES_EMAIL } }).catch((e) => {
-      console.error("Failed to delete throwaway SALES user:", e);
+      console.error("Failed to delete throwaway PROJECT_MANAGER user:", e);
       failures++;
     });
     await deleteThrowawayAdmin(db, ADMIN_EMAIL).catch((e) => {

@@ -1,20 +1,28 @@
 import "server-only";
 
 import type { CurrentUser } from "@/lib/session";
+import {
+  BOQ_EDIT_ROLES,
+  BOQ_VIEW_ROLES,
+  OPS_BOQ_EDIT_ROLES,
+  PO_ROLES,
+  TRACKER_EDIT_ROLES,
+  isExternalRole,
+} from "@/lib/role-access";
 
 /**
- * RBAC for this branch. Site BOQ's role matrix is plan.md section 5:
- *   | Action                                              | Admin | Other internal | External |
- *   | View all Site BOQ screens                           | yes   | yes             | no       |
- *   | Edit qty, remark/size, order-tracking fields         | yes   | yes             | no       |
- *   | Edit items, vendor rates, final vendor, add items    | yes   | no              | no       |
- *   | Edit vendors, sites, settings, flip mode             | yes   | no              | no       |
- *   | Create/download POs                                  | yes   | yes             | no       |
- *   | Lock / unlock a site                                 | yes   | no              | no       |
- * "External" today is just FRANCHISEE (plan.md section 2); every other Role
- * value is an "other internal role". Every function here is a pure role
- * check — mode gating and the Site lock gate live in site-boq-write-guard.ts
- * and are composed on top of these in each Server Action.
+ * RBAC for this branch. The role -> module matrix is plan.md section 12 and
+ * its role sets live in role-access.ts (also used by the sidebar). Site BOQ's
+ * Admin-only rows are plan.md section 5:
+ *   | Action                                              | Admin | Other roles |
+ *   | Edit items, vendor rates, final vendor, add items    | yes   | no          |
+ *   | Edit vendors, sites, settings, flip mode             | yes   | no          |
+ *   | Lock / unlock a site                                 | yes   | no          |
+ * "External" is just FRANCHISEE (plan.md section 2). Every function here is a
+ * pure role check — mode gating and the Site lock gate live in
+ * site-boq-write-guard.ts and are composed on top of these in each Server
+ * Action. Per-user Dashboard task assignments are not role checks; see
+ * dashboard-access.ts.
  */
 
 /**
@@ -25,23 +33,22 @@ export function canManageUsers(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
- * Site BOQ is internal-only (plan.md section 2): every /site-boq/* page must
- * 403 a FRANCHISEE user. All other internal roles can view every screen
- * (plan.md section 5, "View all Site BOQ screens: yes").
+ * Site BOQ is limited to procurement / site-execution / money roles
+ * (plan.md section 12, BOQ_VIEW_ROLES): every /site-boq/* page must 403
+ * everyone else (FRANCHISEE, Marketing, Sales, Legal, HR, Culinary).
  */
 export function canViewSiteBoq(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return BOQ_VIEW_ROLES.includes(user.role);
 }
 
 /**
  * SiteItem.qty / remarkSize and the order-tracking fields (poAmount, boqLink,
- * poLink, approvedVia, link, advanceGiven, stage, followUp, remarks) — row 2
- * of the table above. Same role set as canViewSiteBoq (every non-FRANCHISEE
- * role, Admin included); kept as its own named function since it guards a
- * narrower, write-specific permission that happens to share the same roles.
+ * poLink, approvedVia, link, advanceGiven, stage, followUp, remarks).
+ * BOQ_EDIT_ROLES: Admin, Operations, Project Manager, Interiors. Accounts and
+ * Management can view Site BOQ but not edit it (plan.md section 12).
  */
 export function canEditSiteItemTracking(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return BOQ_EDIT_ROLES.includes(user.role);
 }
 
 /**
@@ -100,29 +107,30 @@ export function canEditRateOverride(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
- * Create/download Purchase Orders — row 5, same role set as canViewSiteBoq
- * (every non-FRANCHISEE role). Kept as its own function per this file's
- * convention of one function per plan.md section 5 row, even though the
- * underlying check is identical to canViewSiteBoq.
+ * Create/download Purchase Orders — PO_ROLES: the Site BOQ editors plus
+ * Accounts (plan.md section 12). Management is view-only.
  */
 export function canCreatePo(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return PO_ROLES.includes(user.role);
 }
 
 /**
- * Site Tracker (site-tracker-plan.md section 4, rule 6): "Admin + internal
- * roles. External roles: no sidebar item, 403 on pages and APIs." Same role
- * set as canViewSiteBoq/canEditSiteItemTracking — FRANCHISEE is the one
- * external role today — kept as its own function since it's a separate
- * module with its own plan document, not literally Site BOQ's rule.
+ * Site Tracker (site-tracker-plan.md section 4, rule 6): every internal role
+ * can view it (all sites); external roles get no sidebar item and a 403 on
+ * pages and APIs.
  */
 export function canViewSiteTracker(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return !isExternalRole(user.role);
 }
 
-/** Status/assignee/remark/evidence-add edits — same role set as canViewSiteTracker (site-tracker-plan.md section 4, rule 6). */
+/**
+ * Status/assignee/remark/evidence-add edits — TRACKER_EDIT_ROLES: Admin,
+ * Operations, Project Manager, Interiors (plan.md section 12). Every other
+ * internal role is view-only; this supersedes site-tracker-plan.md section 4
+ * rule 6 for edits.
+ */
 export function canEditSiteTracker(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return TRACKER_EDIT_ROLES.includes(user.role);
 }
 
 /** Evidence delete — site-tracker-plan.md section 4, rule 3: "Admin only." */
@@ -171,19 +179,28 @@ export function canManageDashboardSiteAssignment(user: Pick<CurrentUser, "role">
 }
 
 /**
- * Operations BOQ (operations-boq-handoff.md section 7): internal-only. Every
- * internal role can view every site; FRANCHISEE has no access at all (no
- * sidebar item, 403 on the page, refused in every action).
+ * Operations BOQ (operations-boq-handoff.md section 7): same visibility as
+ * Site BOQ (BOQ_VIEW_ROLES, plan.md section 12). Everyone else has no sidebar
+ * item, a 403 on the page and is refused in every action.
  */
 export function canViewOpsBoq(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
+  return BOQ_VIEW_ROLES.includes(user.role);
 }
 
 /**
  * Edit any Operations BOQ cell, add a row, rename/delete an added row — Admin
  * and the existing OPERATIONS role only (the doc's "new Operations role" already
- * exists in the Role enum). Other internal roles are read-only.
+ * exists in the Role enum). Other roles that can view are read-only.
  */
 export function canEditOpsBoq(user: Pick<CurrentUser, "role">): boolean {
-  return user.role === "ADMIN" || user.role === "OPERATIONS";
+  return OPS_BOQ_EDIT_ROLES.includes(user.role);
+}
+
+/**
+ * Assigning people to Dashboard tasks (the "Team" page of a website-created
+ * site) — Admin only (plan.md section 12). What an assigned person can then
+ * open/edit is decided per task in dashboard-access.ts.
+ */
+export function canAssignDashboardTasks(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
 }

@@ -318,6 +318,32 @@ Quick orientation (detail lives in the other file, not duplicated here):
 
 ---
 
+## 12. Access control and Dashboard task assignments (decided 2026-11-13)
+
+Replaces the old "every non-FRANCHISEE role is the same internal role" rule. Single source of truth: `src/lib/role-access.ts` (pure, client-safe); `src/lib/permissions.ts` and the sidebar are built on it.
+
+| Role | Dashboard | Site Tracker | Site BOQ / Operations BOQ |
+|---|---|---|---|
+| ADMIN | all, edits all, assigns tasks | edit | everything |
+| OPERATIONS, PROJECT_MANAGER, INTERIORS | assignment-based | edit | visible; edit qty/order tracking; create/download PO. Ops BOQ *edit* stays ADMIN + OPERATIONS |
+| ACCOUNTS | assignment-based | view | visible; view + create/download PO; no tracking edits |
+| MANAGEMENT | assignment-based | view | visible, view only |
+| MARKETING, SALES, LEGAL, HR, CULINARY | assignment-based | view | hidden in the sidebar, 403 on the pages |
+| FRANCHISEE | own assigned site only, read-only (unchanged) | none | none |
+
+Everything that was Admin-only (items, vendor rates, vendors, sites, settings, mode, lock, audit log, user management, Dashboard site create/edit/delete) stays Admin-only. Post-login landing is `/site-boq` for roles that can see it, otherwise `/dashboard`.
+
+**Dashboard task assignments** (table `DashboardStepAssignment`, task-level, many people per task):
+- Admin assigns a person to tasks inside the stages of a **website-created** Dashboard site (page `/dashboard/<site>/team`). Assigning a whole stage ticks all its tasks; Admin can untick individual tasks.
+- Everybody internal can open every site and sees every stage card with its progress. A stage card is tappable only if the user has >= 1 task assigned in it (Admin: all). A direct URL to any other stage is refused server-side (403).
+- Inside an opened stage all tasks are visible; only the user's own tasks are highlighted and editable (status + remark). Every save is audited under the user's name.
+- Sheet-synced sites (origin SHEET) are read-only for everybody but Admin, because the sync regenerates their step ids; no assignments exist there, so non-admins cannot open their stages.
+- Only Admin assigns. No assignment emails in v1.
+
+Known gap, not part of this change: there is still no UI to assign a franchisee user to a Dashboard site (`DashboardSiteAssignment` is read-only in code today).
+
+---
+
 ## Progress log
 
 ### 2026-10-30 — M0 — Clean slate
@@ -847,3 +873,13 @@ Branch `new`. Admin-only "Delete site" button on a website-created site's Dashbo
 
 **Not verified:** deleting tracker evidence files from storage (the test creates none, to avoid touching the B2 bucket in `.env`); a real site with lots of evidence/BOQ items; production.
 
+
+### 2026-11-13 — Access control by role + Dashboard task assignments (section 12)
+
+**What changed:** (1) Role sets in one pure module `src/lib/role-access.ts`; `permissions.ts` and the sidebar are built on it. Site BOQ + Operations BOQ now only for ADMIN/OPERATIONS/PROJECT_MANAGER/INTERIORS/ACCOUNTS/MANAGEMENT; BOQ tracking edits ADMIN/OPERATIONS/PM/INTERIORS; POs those + ACCOUNTS; Site Tracker edits ADMIN/OPERATIONS/PM/INTERIORS (everyone else internal view-only). (2) Post-login landing is role-aware (`/site-boq` or `/dashboard`) — before this every user was sent to `/site-boq`, which would 403 Marketing/Sales/etc. and franchisees; `proxy.ts` now sends signed-in visitors of `/login` to `/`, which picks the landing. (3) New table `DashboardStepAssignment` (migration `20261113090000_dashboard_step_assignments`, applied to the `.env` DB, no schema drift per `prisma migrate diff`). (4) Admin "Team" page `/dashboard/<site>/team` + `setUserSiteAssignments` action (replace semantics, one audit event with per-stage counts). (5) Stage cards locked (visible, with progress, not tappable) unless the user holds >= 1 task in the stage; stage page refuses other stages server-side; `updateDashboardStep` allows Admin or the person assigned to that exact step; assigned tasks highlighted ("Assigned to you"), real assignee names shown. Pure rules in `src/lib/dashboard-access.ts`.
+
+**Verified:** typecheck clean, lint 0 errors (same 1 old warning), tests 116 passed (new: full 12-role x function matrix in `permissions.test.ts`, `role-access`, `dashboard-access`, `dashboard-assignment-input`). Real Chromium run `npx tsx scripts/tmp-e2e-dashboard-assignments.ts`: ALL CHECKS PASSED, twice in a row (Admin assigns Marketing user Stage 1 minus 2 tasks + Stage 8 via the Team page; that user lands on /dashboard, sidebar = Dashboard + Site Tracker only, 403 on /site-boq and /operations-boq, only stages 1 and 8 tappable and the other 11 shown locked with progress, typed URL to stage 2 refused, sees all stage-1 tasks but only his are highlighted/editable, his save is persisted and audited under his name, a replayed Server Action for a task not assigned to him / in an unassigned stage is refused and the DB row is unchanged, Tracker edit API 403; unassigned Sales sees 13 locked cards; Operations/Accounts/Management sidebar, Ops BOQ, PO-gate and Tracker-edit API behaviour per the matrix; Franchisee lands on /dashboard with a Dashboard-only sidebar; Remove clears the assignments and the stage is refused again). Also re-run green: `tmp-e2e-dashboard-create-site.ts`, `tmp-e2e-dashboard-delete-site.ts`, `tmp-e2e-ops-boq.ts`. e2e scripts adjusted to the new access: `tmp-e2e-m5-site-boq-edit.ts` (SALES -> PROJECT_MANAGER), `tmp-e2e-ops-boq.ts` (SALES -> MANAGEMENT as the read-only viewer).
+
+**Cleanup proof:** after all runs: users `tmp-e2e-%` 0, `ci-smoke-%` 0, total users 1; Dashboard sites `TMP E2E%` 0; shared sites `TMP E2E%`/`S-FIX-`/`Fixture` 0; `DashboardStepAssignment` rows 0; vendors `TMP%` 0; `.local-uploads` empty; no `e2e_snapshot` schema; dev server stopped, no Playwright processes. Two leaks found and handled: `tmp-e2e-dashboard-create-site.ts` left the shared `Site` rows "TMP E2E Site A/B" (its cleanup only deleted the DashboardSite) — deleted by hand and the script's cleanup fixed; and 18 audit events from `tmp-e2e-*` actors dated 2026-11-03..05 are older leftovers from earlier sessions, not touched. A race in `tmp-e2e-dashboard-delete-site.ts` (checked the 404 before the streamed page settled) got a `networkidle` wait.
+
+**Not verified / needs a human:** `tmp-e2e-m5-site-boq-edit.ts` was edited (role swap only) but NOT run — it is a guarded fixture-push script and needs `E2E_ALLOW_FIXTURE_PUSH=1 npx tsx scripts/db-restore.ts run scripts/tmp-e2e-m5-site-boq-edit.ts` with the owner's OK. `tmp-e2e-site-tracker.ts` could not run: it still logs in as the real `tech@` admin with `DEV_PASSWORD` (unset here) rather than a throwaway admin (pre-existing); my 3 failed attempts bumped that account's `loginFailedAttempts` to 3, which I reset to 0 (no lockout ever triggered). Tracker view-only for Tony is covered by the new script's API 403 checks, not by this script. `ci-smoke.ts` (CI-only, not run locally) — its assertions (admin lands on /site-boq, franchisee 403 on /site-boq, anonymous redirect) are unaffected by the routing change by reading, not by running. Not built (out of scope): UI to assign a franchisee to a Dashboard site (`DashboardSiteAssignment` is still read-only in code); assignment emails; assignments on sheet-synced sites (non-admins cannot open stages there by design). Nothing committed or pushed (branch `new`).

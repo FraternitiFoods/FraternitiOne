@@ -10,7 +10,7 @@ export default async function EditUserPage(props: PageProps<"/users/[id]/edit">)
   const admin = await requireUser();
 
   if (!canManageUsers(admin)) {
-    redirect("/site-boq");
+    redirect("/");
   }
 
   const user = await db.user.findUnique({

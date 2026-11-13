@@ -7,7 +7,14 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { writeAuditEvent } from "@/lib/audit";
-import { canCreateDashboardSite, canEditDashboardSite, canDeleteDashboardSite } from "@/lib/permissions";
+import {
+  canAssignDashboardTasks,
+  canCreateDashboardSite,
+  canEditDashboardSite,
+  canDeleteDashboardSite,
+} from "@/lib/permissions";
+import { canEditStep } from "@/lib/dashboard-access";
+import { countByStage, diffAssignments, setUserSiteAssignmentsSchema } from "@/lib/dashboard-assignment-input";
 import { deleteEvidenceObject } from "@/lib/tracker-storage";
 import { getDashboardStepTemplate } from "@/lib/dashboard-template";
 import { ensureOpsBoqRows } from "@/lib/ops-boq-ensure";
@@ -29,6 +36,7 @@ function revalidateDashboard() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/[site]", "page");
   revalidatePath("/dashboard/[site]/[stage]", "page");
+  revalidatePath("/dashboard/[site]/team", "page");
 }
 
 /**
@@ -197,12 +205,22 @@ export async function updateDashboardSiteDetails(
 /**
  * Status + remark of one leaf step of a website-created site. Called straight
  * from the client (optimistic UI), so it validates everything itself:
- * admin, step exists, leaf only (parents derive from children), site is
- * WEBSITE-owned (sheet sites are overwritten by the next sync).
+ * Admin, or the person Admin assigned to this exact step (plan.md section 12,
+ * dashboard-access.ts canEditStep); step exists, leaf only (parents derive
+ * from children), site is WEBSITE-owned (sheet sites are overwritten by the
+ * next sync). A forged call for someone else's step is refused here no matter
+ * what the UI showed.
  */
 export async function updateDashboardStep(stepId: string, status: string, remark: string | null): Promise<ActionState> {
   const user = await requireUser();
-  if (!canEditDashboardSite(user)) return { error: NO_PERMISSION };
+  if (typeof stepId !== "string" || !stepId) return { error: "Invalid request." };
+
+  // Permission first, before revealing anything about the step: a non-admin must hold an assignment row for it.
+  const isAssignedToStep =
+    user.role === "ADMIN" || user.role === "FRANCHISEE"
+      ? false
+      : (await db.dashboardStepAssignment.count({ where: { stepId, userId: user.id } })) > 0;
+  if (user.role !== "ADMIN" && !isAssignedToStep) return { error: NO_PERMISSION };
 
   const parsed = updateDashboardStepSchema.safeParse({ status, remark });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -215,6 +233,10 @@ export async function updateDashboardStep(stepId: string, status: string, remark
   if (!step) return { error: "Step not found." };
   if (step.isParent) return { error: "A parent step's status is derived from its sub-steps." };
   if (step.site.origin !== "WEBSITE") return { error: "Only website-created sites can be edited here." };
+  // Single authority for the final decision (also rules out FRANCHISEE and any role/assignment mismatch).
+  if (!canEditStep({ role: user.role, origin: step.site.origin, isParent: step.isParent, isAssignedToStep })) {
+    return { error: NO_PERMISSION };
+  }
 
   if (step.status === data.status && (step.remark ?? null) === data.remark) return { success: true };
 
@@ -228,6 +250,81 @@ export async function updateDashboardStep(stepId: string, status: string, remark
       oldValue: { status: step.status, remark: step.remark },
       newValue: { status: data.status, remark: data.remark },
       reference: step.label,
+    });
+  });
+
+  revalidateDashboard();
+  return { success: true };
+}
+
+/**
+ * Makes `userId`'s assigned tasks on one website-created site exactly `stepIds`
+ * (replace semantics: ticked = assigned, unticked = removed; an empty list
+ * removes them from the site). Admin only (plan.md section 12). Called from
+ * the Team page's client component, so everything is validated here: the site
+ * is WEBSITE-owned (sheet sites regenerate step ids on every sync), the person
+ * is an assignable internal user (not Admin — already everything — and not a
+ * franchisee), and every step id is a leaf of THIS site. One transaction, ONE
+ * audit event with per-stage counts (not hundreds of ids).
+ */
+export async function setUserSiteAssignments(siteId: string, userId: string, stepIds: string[]): Promise<ActionState> {
+  const admin = await requireUser();
+  if (!canAssignDashboardTasks(admin)) return { error: NO_PERMISSION };
+
+  const parsed = setUserSiteAssignmentsSchema.safeParse({ siteId, userId, stepIds });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid request." };
+  const data = parsed.data;
+
+  const [site, person] = await Promise.all([
+    db.dashboardSite.findUnique({ where: { id: data.siteId }, select: { id: true, name: true, origin: true } }),
+    db.user.findUnique({ where: { id: data.userId }, select: { id: true, name: true, email: true, role: true, isActive: true } }),
+  ]);
+  if (!site) return { error: "Site not found." };
+  if (site.origin !== "WEBSITE") return { error: "Tasks can only be assigned on website-created sites." };
+  if (!person) return { error: "User not found." };
+  // Adding is restricted to active internal non-admins; removing is always allowed so leftovers from a role change/deactivation can be cleaned up.
+  if (data.stepIds.length > 0) {
+    if (person.role === "ADMIN") return { error: "Admins already have access to every task." };
+    if (person.role === "FRANCHISEE") return { error: "Franchisee users can't be assigned tasks." };
+    if (!person.isActive) return { error: "This user is deactivated." };
+  }
+
+  const steps = await db.dashboardStep.findMany({
+    where: { siteId: site.id, id: { in: data.stepIds } },
+    select: { id: true, stageNo: true, isParent: true },
+  });
+  if (steps.length !== data.stepIds.length) return { error: "One or more tasks don't belong to this site." };
+  if (steps.some((s) => s.isParent)) return { error: "Only individual tasks can be assigned." };
+
+  await db.$transaction(async (tx) => {
+    const current = await tx.dashboardStepAssignment.findMany({
+      where: { userId: person.id, step: { siteId: site.id } },
+      select: { stepId: true, step: { select: { stageNo: true } } },
+    });
+    const { toAdd, toRemove } = diffAssignments(
+      current.map((c) => c.stepId),
+      data.stepIds
+    );
+    if (toAdd.length === 0 && toRemove.length === 0) return;
+
+    if (toRemove.length > 0) {
+      await tx.dashboardStepAssignment.deleteMany({ where: { userId: person.id, stepId: { in: toRemove } } });
+    }
+    if (toAdd.length > 0) {
+      await tx.dashboardStepAssignment.createMany({
+        data: toAdd.map((stepId) => ({ stepId, userId: person.id, assignedById: admin.id })),
+        skipDuplicates: true,
+      });
+    }
+
+    await writeAuditEvent(tx, {
+      actor: admin,
+      entityType: "DashboardSite",
+      entityId: site.id,
+      action: "UPDATE",
+      oldValue: { assignee: person.email, tasksPerStage: countByStage(current.map((c) => c.step)) },
+      newValue: { assignee: person.email, tasksPerStage: countByStage(steps) },
+      reference: `Task assignment: ${person.name} on ${site.name}`,
     });
   });
 
