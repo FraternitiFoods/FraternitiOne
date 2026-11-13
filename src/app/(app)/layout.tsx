@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { needsOnboardingPortal } from "@/lib/role-access";
 import { logout } from "@/app/(auth)/login/actions";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -8,6 +10,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // the real (database-backed) check; src/proxy.ts only does an optimistic
   // cookie-presence check before the request even gets here.
   const user = await requireUser();
+
+  // A franchisee mid-onboarding belongs in the /onboarding portal. login()
+  // already routes them there; this is the backstop for a stale bookmark or
+  // back button. `onboardingStatus` rides on requireUser()'s own query (no
+  // extra round trip per navigation).
+  if (needsOnboardingPortal(user.role, user.onboardingStatus)) {
+    redirect("/onboarding");
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">

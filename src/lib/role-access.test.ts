@@ -3,22 +3,38 @@ import type { Role } from "@prisma/client";
 import { canSeeModule, landingPathForRole, type AppModule } from "./role-access";
 
 const NO_BOQ_ROLES: Role[] = ["SALES", "LEGAL", "HR", "CULINARY", "MARKETING"];
+const ONBOARDING_ROLES: Role[] = ["ADMIN", "SALES", "LEGAL", "ACCOUNTS", "MANAGEMENT"];
 const BOQ_ROLES: Role[] = ["ADMIN", "OPERATIONS", "PROJECT_MANAGER", "INTERIORS", "ACCOUNTS", "MANAGEMENT"];
 
 function visibleModules(role: Role): AppModule[] {
-  const all: AppModule[] = ["dashboard", "site-tracker", "site-boq", "operations-boq"];
+  const all: AppModule[] = ["dashboard", "site-tracker", "site-boq", "operations-boq", "store-onboarding"];
   return all.filter((m) => canSeeModule(role, m));
 }
 
 describe("role-access — sidebar modules per role (plan.md section 12)", () => {
-  it("Marketing/Sales/Legal/HR/Culinary see Dashboard + Site Tracker only", () => {
-    for (const role of NO_BOQ_ROLES) expect(visibleModules(role), role).toEqual(["dashboard", "site-tracker"]);
+  it("Marketing/HR/Culinary see Dashboard + Site Tracker only", () => {
+    for (const role of ["HR", "CULINARY", "MARKETING"] as Role[]) {
+      expect(visibleModules(role), role).toEqual(["dashboard", "site-tracker"]);
+    }
   });
 
-  it("Admin, Operations, PM, Interiors, Accounts, Management see all four modules", () => {
-    for (const role of BOQ_ROLES) {
+  it("Sales/Legal see Dashboard + Site Tracker + Store Onboarding (no BOQ)", () => {
+    for (const role of ["SALES", "LEGAL"] as Role[]) {
+      expect(visibleModules(role), role).toEqual(["dashboard", "site-tracker", "store-onboarding"]);
+    }
+  });
+
+  it("Operations, PM, Interiors see the four original modules (no onboarding)", () => {
+    for (const role of ["OPERATIONS", "PROJECT_MANAGER", "INTERIORS"] as Role[]) {
       expect(visibleModules(role), role).toEqual(["dashboard", "site-tracker", "site-boq", "operations-boq"]);
     }
+  });
+
+  it("Admin, Accounts, Management see all five modules", () => {
+    for (const role of ["ADMIN", "ACCOUNTS", "MANAGEMENT"] as Role[]) {
+      expect(visibleModules(role), role).toEqual(["dashboard", "site-tracker", "site-boq", "operations-boq", "store-onboarding"]);
+    }
+    expect(ONBOARDING_ROLES.every((r) => canSeeModule(r, "store-onboarding"))).toBe(true);
   });
 
   it("FRANCHISEE sees Dashboard only", () => {

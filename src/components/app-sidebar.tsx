@@ -20,7 +20,7 @@ import type { Role } from "@prisma/client";
 type NavItem = { label: string; href: string | null; module: AppModule };
 
 /**
- * Exactly 4 items (plan.md section 2). All four are live. (The "Coming soon"
+ * 5 items (plan.md section 2, extended by section 13 with Store Onboarding). All live. (The "Coming soon"
  * rendering below stays for any future item added with `href: null`.) Which
  * ones a role sees is decided by `canSeeModule` (src/lib/role-access.ts,
  * plan.md section 12) — the same sets the server-side permission checks use,
@@ -34,12 +34,13 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Site Tracker", href: "/site-tracker", module: "site-tracker" },
   { label: "Site BOQ", href: "/site-boq", module: "site-boq" },
   { label: "Operations BOQ", href: "/operations-boq", module: "operations-boq" },
+  { label: "Store Onboarding", href: "/store-onboarding", module: "store-onboarding" },
 ];
 
 /**
- * "Manage users" lives here (not the 4-item sidebar — plan.md section 2 is
- * exact about that list) and is Admin-only; everyone else only ever sees
- * "Sign out".
+ * Admin-only links live here, not in the main nav: "Manage users", plus the
+ * onboarding admin pages ("E-sign events", "Email templates" — plan.md
+ * section 13). Everyone else only ever sees "Sign out".
  */
 function AccountMenuItems({ role }: { role: Role }) {
   return (
@@ -47,6 +48,8 @@ function AccountMenuItems({ role }: { role: Role }) {
       {role === "ADMIN" && (
         <>
           <DropdownMenuLinkItem render={<Link href="/users" />}>Manage users</DropdownMenuLinkItem>
+          <DropdownMenuLinkItem render={<Link href="/admin/esign-events" />}>E-sign events</DropdownMenuLinkItem>
+          <DropdownMenuLinkItem render={<Link href="/admin/email-templates" />}>Email templates</DropdownMenuLinkItem>
           <DropdownMenuSeparator />
         </>
       )}

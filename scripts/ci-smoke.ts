@@ -214,6 +214,11 @@ async function main() {
     await adminPage.waitForSelector("text=Site BOQ", { timeout: 10000 });
     check("Site BOQ shell rendered", true);
     await dashboardCreateSiteChecks(adminPage);
+
+    // ---- Store Onboarding (plan.md section 13): Admin sees the queue. ----
+    await adminPage.goto(`${BASE}/store-onboarding`);
+    await adminPage.waitForSelector("text=Store Onboarding", { timeout: 15000 });
+    check("admin can open /store-onboarding", adminPage.url().endsWith("/store-onboarding"));
     await adminPage.close();
 
     // ---- Franchisee (external role) gets 403 on /site-boq. ----
@@ -221,6 +226,11 @@ async function main() {
     await login(franchiseePage, FRANCHISEE_EMAIL, THROWAWAY_PASSWORD);
     const boqResp = await franchiseePage.goto(`${BASE}/site-boq`);
     check("franchisee hitting /site-boq gets 403", boqResp?.status() === 403);
+    // Checked by rendered text, not status: under `pnpm dev` a segment with a
+    // loading.tsx streams its 403 screen after a 200 (plan.md progress log).
+    await franchiseePage.goto(`${BASE}/store-onboarding`);
+    await franchiseePage.waitForSelector("text=403", { timeout: 15000 });
+    check("franchisee hitting /store-onboarding is forbidden", (await franchiseePage.content()).includes("Forbidden"));
     await franchiseePage.close();
 
     // ---- Import API (plan.md section 7, milestone M2). ----

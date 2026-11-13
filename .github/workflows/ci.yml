@@ -77,6 +77,8 @@ jobs:
       SEED_DEV_PASSWORD: "CiSeedPassword123!"
       IMPORT_SECRET: "ci-only-import-secret-0000000000000000"
       APP_URL: "http://localhost:3000"
+      ESIGN_WEBHOOK_SECRET: "ci-only-not-a-real-secret"
+      PAN_ENCRYPTION_KEY: "ci-only-not-a-real-secret-32-bytes!!"
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4

@@ -19,6 +19,14 @@ import {
   canViewOpsBoq,
   canEditOpsBoq,
   canManageUsers,
+  canViewOnboardingModule,
+  canCreateOnboarding,
+  canReviewKyc,
+  canReviewPayment,
+  canPrepareLoi,
+  canCompanySign,
+  canManageOnboardingAdmin,
+  canViewOnboarding,
 } from "./permissions";
 
 /** Every value of the Role enum — a new role must be added here and decided in plan.md section 12. */
@@ -89,5 +97,40 @@ describe("permissions — plan.md section 12 role matrix", () => {
     ]) {
       expectOnly(check, ["ADMIN"]);
     }
+  });
+});
+
+/** Store onboarding role mapping (plan.md section 13; existing roles reused, decided 2026-11-13). */
+describe("permissions — store onboarding role matrix", () => {
+  it("module visible: Admin, Sales, Legal, Accounts, Management", () => {
+    expectOnly(canViewOnboardingModule, ["ADMIN", "SALES", "LEGAL", "ACCOUNTS", "MANAGEMENT"]);
+  });
+
+  it("create: Sales + Admin", () => {
+    expectOnly(canCreateOnboarding, ["ADMIN", "SALES"]);
+  });
+
+  it("KYC review and LOI prepare/release: Legal + Admin", () => {
+    expectOnly(canReviewKyc, ["ADMIN", "LEGAL"]);
+    expectOnly(canPrepareLoi, ["ADMIN", "LEGAL"]);
+  });
+
+  it("payment verification: Accounts + Admin", () => {
+    expectOnly(canReviewPayment, ["ADMIN", "ACCOUNTS"]);
+  });
+
+  it("company countersign: Management + Admin", () => {
+    expectOnly(canCompanySign, ["ADMIN", "MANAGEMENT"]);
+  });
+
+  it("Admin-only: delete, e-sign events/retry, email templates", () => {
+    expectOnly(canManageOnboardingAdmin, ["ADMIN"]);
+  });
+
+  it("a franchisee reaches only their own onboarding; staff roles in the module reach any", () => {
+    expect(canViewOnboarding({ role: "FRANCHISEE", id: "u1" }, { franchiseeUserId: "u1" })).toBe(true);
+    expect(canViewOnboarding({ role: "FRANCHISEE", id: "u1" }, { franchiseeUserId: "u2" })).toBe(false);
+    expect(canViewOnboarding({ role: "OPERATIONS", id: "x" }, { franchiseeUserId: "u1" })).toBe(false);
+    expect(canViewOnboarding({ role: "LEGAL", id: "x" }, { franchiseeUserId: "u1" })).toBe(true);
   });
 });

@@ -4,7 +4,13 @@ import type { CurrentUser } from "@/lib/session";
 import {
   BOQ_EDIT_ROLES,
   BOQ_VIEW_ROLES,
+  COMPANY_SIGN_ROLES,
+  KYC_REVIEW_ROLES,
+  LOI_PREPARE_ROLES,
+  ONBOARDING_CREATE_ROLES,
+  ONBOARDING_VIEW_ROLES,
   OPS_BOQ_EDIT_ROLES,
+  PAYMENT_REVIEW_ROLES,
   PO_ROLES,
   TRACKER_EDIT_ROLES,
   isExternalRole,
@@ -203,4 +209,53 @@ export function canEditOpsBoq(user: Pick<CurrentUser, "role">): boolean {
  */
 export function canAssignDashboardTasks(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
+}
+
+// ---------------------------------------------------------------------------
+// Store onboarding -> KYC -> payment -> LOI e-sign (plan.md section 13). Role
+// sets live in role-access.ts. Role mapping (decided 2026-11-13, existing roles
+// reused): Sales creates; Legal reviews KYC + prepares the LOI; Accounts
+// verifies payment; Management countersigns; Admin can do everything.
+// ---------------------------------------------------------------------------
+
+export function canViewOnboardingModule(user: Pick<CurrentUser, "role">): boolean {
+  return ONBOARDING_VIEW_ROLES.includes(user.role);
+}
+
+export function canCreateOnboarding(user: Pick<CurrentUser, "role">): boolean {
+  return ONBOARDING_CREATE_ROLES.includes(user.role);
+}
+
+export function canReviewKyc(user: Pick<CurrentUser, "role">): boolean {
+  return KYC_REVIEW_ROLES.includes(user.role);
+}
+
+export function canReviewPayment(user: Pick<CurrentUser, "role">): boolean {
+  return PAYMENT_REVIEW_ROLES.includes(user.role);
+}
+
+export function canPrepareLoi(user: Pick<CurrentUser, "role">): boolean {
+  return LOI_PREPARE_ROLES.includes(user.role);
+}
+
+export function canCompanySign(user: Pick<CurrentUser, "role">): boolean {
+  return COMPANY_SIGN_ROLES.includes(user.role);
+}
+
+/** Admin-only: delete an onboarding, retry/reconcile e-sign, e-sign events, email templates. */
+export function canManageOnboardingAdmin(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
+ * A franchisee reaches only their own onboarding (P1-03); staff in
+ * ONBOARDING_VIEW_ROLES see the list to work their queue (Sales is further
+ * scoped to its own rows in onboarding/search.ts).
+ */
+export function canViewOnboarding(
+  user: Pick<CurrentUser, "role" | "id">,
+  onboarding: { franchiseeUserId: string }
+): boolean {
+  if (isExternalRole(user.role)) return onboarding.franchiseeUserId === user.id;
+  return ONBOARDING_VIEW_ROLES.includes(user.role);
 }

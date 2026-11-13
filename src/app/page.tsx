@@ -9,5 +9,5 @@ import { landingPathForRole } from "@/lib/role-access";
  */
 export default async function RootPage() {
   const user = await requireUser();
-  redirect(landingPathForRole(user.role));
+  redirect(landingPathForRole(user.role, user.onboardingStatus));
 }
