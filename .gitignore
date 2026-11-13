@@ -57,3 +57,4 @@ CLAUDE.md
 # in and hand back (scripts/export-task-sla-template.ts) — not source.
 task-sla-template.csv
 .claude/settings.json
+operations-boq-handoff.md
