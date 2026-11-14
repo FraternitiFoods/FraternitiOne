@@ -92,9 +92,11 @@ export function needsOnboardingPortal(role: Role, onboardingStatus: OnboardingSt
 /**
  * Where a user lands after login / password set / visiting `/`. Roles that
  * can't see Site BOQ would 403 there. A franchisee mid-onboarding lands on the
- * onboarding portal.
+ * onboarding portal's Welcome page.
  */
+export const ONBOARDING_WELCOME_PATH = "/onboarding/welcome";
+
 export function landingPathForRole(role: Role, onboardingStatus?: OnboardingStatus | null): string {
-  if (needsOnboardingPortal(role, onboardingStatus)) return "/onboarding";
+  if (needsOnboardingPortal(role, onboardingStatus)) return ONBOARDING_WELCOME_PATH;
   return canSeeModule(role, "site-boq") ? "/site-boq" : "/dashboard";
 }

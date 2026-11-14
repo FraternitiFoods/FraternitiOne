@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { OnboardingSidebar } from "@/components/onboarding-sidebar";
+import { ChatShell } from "@/components/onboarding-chat/chat-shell";
 
 /**
  * plan.md section 17 — franchisee-only portal. Structurally satisfies P1-03
@@ -30,9 +31,7 @@ export default async function OnboardingLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="min-h-screen bg-muted/30">
       <OnboardingSidebar name={user.name} />
-      <main className="min-h-screen px-4 py-4 sm:py-8 sm:pr-8 sm:pl-[15rem]">
-        <div className="mx-auto max-w-4xl">{children}</div>
-      </main>
+      <ChatShell>{children}</ChatShell>
     </div>
   );
 }

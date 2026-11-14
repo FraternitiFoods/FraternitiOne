@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { needsOnboardingPortal } from "@/lib/role-access";
+import { needsOnboardingPortal, ONBOARDING_WELCOME_PATH } from "@/lib/role-access";
 import { logout } from "@/app/(auth)/login/actions";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // back button. `onboardingStatus` rides on requireUser()'s own query (no
   // extra round trip per navigation).
   if (needsOnboardingPortal(user.role, user.onboardingStatus)) {
-    redirect("/onboarding");
+    redirect(ONBOARDING_WELCOME_PATH);
   }
 
   return (

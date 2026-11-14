@@ -50,4 +50,20 @@ describe("role-access — landing page", () => {
   it("everyone else lands on the Dashboard instead of a 403", () => {
     for (const role of [...NO_BOQ_ROLES, "FRANCHISEE" as Role]) expect(landingPathForRole(role), role).toBe("/dashboard");
   });
+
+  it("a franchisee mid-onboarding lands on the portal's Welcome page", () => {
+    for (const status of [
+      "AWAITING_KYC_PAYMENT",
+      "UNDER_REVIEW",
+      "CORRECTIONS_REQUESTED",
+      "READY_FOR_SIGNATURE",
+      "FRANCHISE_SIGNED",
+    ] as const) {
+      expect(landingPathForRole("FRANCHISEE", status), status).toBe("/onboarding/welcome");
+    }
+  });
+
+  it("a converted franchisee (LOI Complete) goes to the Dashboard, not the portal", () => {
+    expect(landingPathForRole("FRANCHISEE", "LOI_COMPLETE")).toBe("/dashboard");
+  });
 });

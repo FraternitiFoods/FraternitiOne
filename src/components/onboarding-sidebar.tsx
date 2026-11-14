@@ -21,7 +21,8 @@ import { Button } from "@/components/ui/button";
  * (plan.md section 16) rather than reusing AppSidebar's desktop-only shape.
  */
 const NAV_ITEMS = [
-  { label: "Overview", href: "/onboarding" },
+  { label: "Welcome", href: "/onboarding/welcome" },
+  { label: "Progress", href: "/onboarding" },
   { label: "KYC & Documents", href: "/onboarding/documents" },
   { label: "LOI & E-Sign", href: "/onboarding/loi" },
 ];

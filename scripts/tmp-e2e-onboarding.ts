@@ -60,6 +60,128 @@ async function login(page: Page, email: string, password: string) {
   await page.waitForLoadState("networkidle");
 }
 
+/** Welcome page + assistant chat checks. Needs only franchisee B (AWAITING_KYC_PAYMENT): no B2/scanner/e-sign dependency, so it runs first. */
+async function welcomeAndChatChecks(frB: Page) {
+  await frB.setViewportSize({ width: 1440, height: 900 });
+  await frB.goto(`${BASE}/onboarding/welcome`);
+  await frB.getByRole("heading", { name: /Welcome, E2E Franchisee B/i }).waitFor({ timeout: 20000 });
+  check("Welcome: heading greets the franchisee by name", true);
+  // Warm-load timing (dev server, so inflated vs production; this is a regression guard, not the production number).
+  const ttfb: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    await frB.reload({ waitUntil: "load" });
+    ttfb.push(Math.round(await frB.evaluate(() => (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).responseStart)));
+  }
+  console.log(`[perf] /onboarding/welcome TTFB warm (dev server): ${ttfb.join("ms, ")}ms`);
+  check("Welcome: sidebar lists Welcome and Progress", (await frB.getByRole("link", { name: "Welcome" }).count()) > 0 && (await frB.getByRole("link", { name: "Progress" }).count()) > 0);
+  await frB.getByRole("heading", { name: /Welcome, E2E Franchisee B/i }).waitFor({ timeout: 20000 }); // the reloads above stream the page in; wait for it before counting
+  check("Welcome: two intro videos shown as play buttons (no YouTube iframe loaded yet)", (await frB.getByRole("button", { name: /^Play video/ }).count()) === 2 && (await frB.locator("iframe").count()) === 0);
+  await frB.getByRole("button", { name: /^Play video/ }).first().click();
+  const ytSrc = await frB.locator("iframe").first().getAttribute("src");
+  check("Welcome: clicking play loads the youtube-nocookie embed", !!ytSrc && ytSrc.startsWith("https://www.youtube-nocookie.com/embed/"));
+  check("Welcome: Next steps lists 4 steps", (await frB.locator("ol > li").count()) === 4);
+  check("Welcome: Next steps button goes to documents", (await frB.locator("a", { hasText: "Upload your documents" }).getAttribute("href")) === "/onboarding/documents");
+
+  // Docked chat panel on wide screens: visible, no floating button.
+  const docked = frB.getByRole("complementary", { name: "Assistant" });
+  await docked.getByText("Fraterniti Assistant").waitFor({ timeout: 20000 });
+  check("Chat: open by default on Welcome at 1440px", await docked.isVisible());
+  check("Chat: floating button hidden while the card is open", !(await frB.getByRole("button", { name: "Open assistant" }).isVisible()));
+  const panelBox = await docked.boundingBox();
+  const mainBox = await frB.locator("main > div").boundingBox();
+  check("Chat: open card does not overlap the page content", !!panelBox && !!mainBox && mainBox.x + mainBox.width <= panelBox.x + 1);
+
+  const cardBox = await docked.boundingBox();
+  check("Chat: card is the standard 384x544 size (same as other pages)", !!cardBox && Math.round(cardBox.width) === 384 && Math.round(cardBox.height) === 544);
+  await docked.getByRole("button", { name: "Close assistant" }).click();
+  check("Chat: can be closed on Welcome", !(await docked.isVisible()) && (await frB.getByRole("button", { name: "Open assistant" }).isVisible()));
+  await frB.getByRole("button", { name: "Open assistant" }).click();
+  check("Chat: reopens from the floating button", await docked.isVisible());
+
+  // Streaming UI, with the API mocked in the browser (no Gemini key needed): the reply arrives in pieces.
+  let sentBody: { messages: { role: string; text: string }[] } | null = null;
+  await frB.route("**/api/onboarding-chat", async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8", body: "You need PAN and Aadhaar." });
+  });
+  await docked.getByLabel("Your question").fill("What documents do I need?");
+  await docked.getByRole("button", { name: "Send" }).click();
+  await docked.getByText("You need PAN and Aadhaar.").waitFor({ timeout: 10000 });
+  check("Chat: question + streamed reply are shown", await docked.getByText("What documents do I need?").isVisible());
+  check("Chat: request carried only role/text turns, user last", !!sentBody && (sentBody as { messages: { role: string }[] }).messages.at(-1)?.role === "user");
+
+  // A server error (e.g. quota) shows the server's friendly message, not a blank bubble.
+  await frB.unroute("**/api/onboarding-chat");
+  await frB.route("**/api/onboarding-chat", (route) =>
+    route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: "The assistant is busy right now. Please try again in a minute." }) })
+  );
+  await docked.getByLabel("Your question").fill("And then?");
+  await docked.getByRole("button", { name: "Send" }).click();
+  await docked.getByText(/assistant is busy right now/i).waitFor({ timeout: 10000 });
+  check("Chat: 429 shows the friendly busy message", true);
+  await frB.unroute("**/api/onboarding-chat");
+
+  // Real route (no mock): auth + validation + not-configured/real-key behaviour.
+  const apiNoCookie = await (await import("@playwright/test")).request.newContext();
+  const unauth = await apiNoCookie.post(`${BASE}/api/onboarding-chat`, { data: { messages: [{ role: "user", text: "hi" }] }, maxRedirects: 0 });
+  check("Chat API: no session -> 401", unauth.status() === 401);
+  await apiNoCookie.dispose();
+  const badBody = await frB.request.post(`${BASE}/api/onboarding-chat`, { data: { messages: [{ role: "model", text: "x" }] } });
+  const keySet = !!process.env.GEMINI_API_KEY;
+  check(
+    keySet ? "Chat API: malformed history -> 400" : "Chat API: no key configured -> 503 (checked before validation)",
+    badBody.status() === (keySet ? 400 : 503)
+  );
+  if (keySet) {
+    // Real Gemini through the real route, timed in the browser: first streamed chunk vs full reply.
+    const real = await frB.evaluate(async () => {
+      const t0 = performance.now();
+      const res = await fetch("/api/onboarding-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", text: "What documents do I need as an individual?" }] }),
+      });
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      let text = "";
+      let firstMs = -1;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (firstMs < 0) firstMs = performance.now() - t0;
+        text += dec.decode(value, { stream: true });
+      }
+      return { status: res.status, firstMs: Math.round(firstMs), totalMs: Math.round(performance.now() - t0), text };
+    });
+    console.log(`[chat] real Gemini: status ${real.status}, first chunk ${real.firstMs}ms, total ${real.totalMs}ms`);
+    console.log("[chat] reply:", real.text.slice(0, 400).replaceAll(String.fromCharCode(10), " | "));
+    check("Chat API: real Gemini reply is 200 and mentions PAN and Aadhaar", real.status === 200 && /PAN/i.test(real.text) && /Aadhaar/i.test(real.text));
+    const off = await frB.evaluate(async () => {
+      const res = await fetch("/api/onboarding-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", text: "What is the refund policy and how many days will KYC review take?" }] }),
+      });
+      return { status: res.status, text: await res.text() };
+    });
+    console.log("[chat] out-of-knowledge reply:", off.text.slice(0, 400).replaceAll(String.fromCharCode(10), " | "));
+    check("Chat API: question outside the knowledge gets a 200 reply (content reviewed in the log)", off.status === 200 && off.text.length > 0);
+  }
+
+  // Small screen: docked panel collapses to the floating button + drawer.
+  await frB.setViewportSize({ width: 390, height: 844 });
+  await frB.goto(`${BASE}/onboarding/welcome`);
+  await frB.getByRole("button", { name: "Open assistant" }).waitFor({ timeout: 20000 });
+  check("Chat: mobile shows the floating button, panel closed", !(await frB.getByRole("complementary", { name: "Assistant" }).count()));
+  await frB.getByRole("button", { name: "Open assistant" }).click();
+  await frB.getByText("Fraterniti Assistant").waitFor({ timeout: 20000 });
+  check("Chat: mobile drawer opens", await frB.getByRole("complementary", { name: "Assistant" }).isVisible());
+  await frB.getByRole("button", { name: "Close assistant" }).click();
+  check("Chat: mobile drawer closes", !(await frB.getByRole("complementary", { name: "Assistant" }).isVisible()));
+  const sw = await frB.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  check("Welcome: mobile 390px has no horizontal overflow", sw[0] <= sw[1] + 1);
+}
+
 async function main() {
   // Neon wakes from idle on the first connection and the first attempt can fail — warm it up.
   for (let i = 1; ; i++) {
@@ -109,6 +231,16 @@ async function main() {
   let completed = false;
 
   try {
+    // ---- Welcome page + assistant chat first (franchisee B only) ----
+    const welcomePage = await browser.newPage();
+    await login(welcomePage, "tmp-e2e-franchiseeb@example.com", TEST_PASSWORD);
+    await welcomeAndChatChecks(welcomePage);
+    await welcomePage.close();
+    if (process.env.ONLY_WELCOME) {
+      completed = true;
+      return; // finally still runs the full cleanup
+    }
+
     // ---- Admin: create store onboarding via real UI ----
     const admin = await browser.newPage();
     await login(admin, "tmp-e2e-sales@example.com", TEST_PASSWORD);
@@ -143,7 +275,7 @@ async function main() {
     // ---- Franchisee: login lands on /onboarding, upload KYC + payment ----
     const fr = await browser.newPage();
     await login(fr, "tmp-e2e-main-franchisee@example.com", TEST_PASSWORD);
-    check("Franchisee: redirected to /onboarding after login", fr.url().endsWith("/onboarding"));
+    check("Franchisee: lands on the Welcome page after login", fr.url().endsWith("/onboarding/welcome"));
 
     await fr.goto(`${BASE}/onboarding/documents`);
     await fr.waitForLoadState("networkidle"); // let the client component hydrate before driving the file input
@@ -201,6 +333,7 @@ async function main() {
     console.log("[debug] frB /onboarding body:", (await frB.locator("body").innerText()).slice(0, 300));
     await frB.getByText(/E2E City B/i).first().waitFor({ timeout: 15000 }).catch(() => {});
     check("P1-03: Franchisee B's own /onboarding shows their own store, not A's", await frB.getByText(/E2E City B/i).first().isVisible());
+
     await frB.close();
 
     // ---- KYC Reviewer: reject with reason, then accept after resubmission ----
@@ -445,7 +578,7 @@ async function main() {
     // ---- Mobile viewport pass on franchisee portal ----
     const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await login(mobile, "tmp-e2e-main-franchisee@example.com", TEST_PASSWORD);
-    for (const path of ["/onboarding", "/onboarding/documents", "/onboarding/loi"]) {
+    for (const path of ["/onboarding/welcome", "/onboarding", "/onboarding/documents", "/onboarding/loi"]) {
       await mobile.goto(`${BASE}${path}`);
       const scrollWidth = await mobile.evaluate(() => document.documentElement.scrollWidth);
       const clientWidth = await mobile.evaluate(() => document.documentElement.clientWidth);
