@@ -76,6 +76,12 @@ async function welcomeAndChatChecks(frB: Page) {
   check("Welcome: sidebar lists Welcome and Progress", (await frB.getByRole("link", { name: "Welcome" }).count()) > 0 && (await frB.getByRole("link", { name: "Progress" }).count()) > 0);
   await frB.getByRole("heading", { name: /Welcome, E2E Franchisee B/i }).waitFor({ timeout: 20000 }); // the reloads above stream the page in; wait for it before counting
   check("Welcome: two intro videos shown as play buttons (no YouTube iframe loaded yet)", (await frB.getByRole("button", { name: /^Play video/ }).count()) === 2 && (await frB.locator("iframe").count()) === 0);
+  // Layout: cards share one top edge (no staggering), sit side by side, and the row fits in a 900px-tall screen.
+  const vidBoxes = await frB.getByRole("button", { name: /^Play video/ }).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, w: r.width, h: r.height })));
+  check("Welcome: both videos start at the same top edge (not staggered)", vidBoxes.length === 2 && Math.abs(vidBoxes[0].y - vidBoxes[1].y) < 1);
+  check("Welcome: videos sit side by side, close together", vidBoxes.length === 2 && vidBoxes[1].x > vidBoxes[0].x + vidBoxes[0].w && vidBoxes[1].x - (vidBoxes[0].x + vidBoxes[0].w) < 80);
+  check("Welcome: both video thumbnails fit in the viewport without scrolling", vidBoxes.length === 2 && vidBoxes.every((b) => b.y + b.h <= 900));
+  await frB.screenshot({ path: process.env.WELCOME_SHOT ?? "welcome-shot.png" });
   await frB.getByRole("button", { name: /^Play video/ }).first().click();
   const ytSrc = await frB.locator("iframe").first().getAttribute("src");
   check("Welcome: clicking play loads the youtube-nocookie embed", !!ytSrc && ytSrc.startsWith("https://www.youtube-nocookie.com/embed/"));

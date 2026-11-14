@@ -50,13 +50,10 @@ export default async function OnboardingWelcomePage() {
         <h2 id="intro-videos" className="text-base font-semibold">
           Get started
         </h2>
-        {/* Staggered like the wireframe: the second card sits lower on wide screens. */}
-        <div className="grid gap-6 sm:grid-cols-2">
-          {WELCOME_VIDEOS.map((video, i) => (
-            <div
-              key={video.title}
-              className={cn("w-full space-y-2", video.vertical && "mx-auto max-w-[17rem]", i % 2 === 1 && "sm:mt-10")}
-            >
+        {/* Cards share one top edge and sit side by side; vertical (9:16) ones are capped narrow so the row stays short enough to see in one screen. */}
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-8">
+          {WELCOME_VIDEOS.map((video) => (
+            <div key={video.title} className={cn("w-full space-y-2", video.vertical ? "max-w-[15rem]" : "max-w-md")}>
               <YoutubeFacade title={video.title} youtubeId={video.youtubeId} vertical={video.vertical} />
               <div>
                 <div className="text-sm font-medium">{video.title}</div>

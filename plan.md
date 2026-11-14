@@ -905,3 +905,13 @@ Branch `new`. Owner added `GEMINI_API_KEY` (in `.env`, gitignored, never printed
 **Cleanup proof:** `tmp-cleanup-onboarding-e2e.ts --count`: users 0, onboardings 0, Dashboard sites 0, sites 0, sessions 0; `ci-smoke-%` users 0; `.local-uploads` empty; 6 stray Playwright headless browsers from two killed/hung runs stopped. No fixture-push scripts used; `ci-smoke.ts` not run.
 
 **Not verified / needs a human:** (a) Production-build timing (`next build` would clobber the owner's running `next dev`), and `GEMINI_API_KEY` is only in local `.env`: it must be added to Vercel env vars (not done; needs the owner) before the assistant works in a deployed environment, otherwise the route answers 503 "assistant isn't set up". (b) Free-tier Gemini latency is spiky and can stall; the retry/timeouts bound it but a slow reply will still happen sometimes. (c) The Neon connection dropped repeatedly (`P1001`) this session, which hung one e2e run; not caused by this change. (d) The KYC-to-e-sign half of `tmp-e2e-onboarding.ts` still not re-run to completion (stalls at the PAN upload malware-scan badge, before any Welcome code). (e) Not committed to a remote; nothing pushed.
+
+### 2026-11-14 (evening) — Welcome page: videos no longer staggered
+
+Branch `new`. Owner reported the two intro videos looked misaligned (second one lower). Cause: the earlier wireframe-style stagger (`sm:mt-10` on the 2nd card) plus a 2-column grid that put two 17rem-wide 9:16 cards far apart (~600px tall each, pushing "Next steps" below the fold).
+
+**Changed:** `welcome/page.tsx` + `loading.tsx`: flex row, `items-start`, shared top edge, vertical cards capped at `max-w-[15rem]` (~427px tall), no stagger. 16:9 videos (if ever added) cap at `max-w-md`. `tmp-e2e-onboarding.ts`: 3 new layout checks (same top edge, side by side with gap < 80px, thumbnails fit in a 900px viewport) + a screenshot hook (`WELCOME_SHOT`).
+
+**Verified:** `typecheck` clean, `lint` 0 errors (same 2 old warnings), `test` 340/340. `ONLY_WELCOME=1 npx tsx scripts/tmp-e2e-onboarding.ts` at 1440x900 passes all checks incl. the 3 new ones, 390px mobile has no horizontal overflow; screenshot reviewed by eye. Cleanup proof: `tmp-cleanup-onboarding-e2e.ts --count` all 0, `.local-uploads` empty, no stray Playwright browsers. That script also made one real Gemini call (the existing chat check).
+
+**Not verified / needs a human:** viewports between 390px and 1440px only checked via the no-overflow assertion, not by eye; 16:9 variant never rendered. Not committed.

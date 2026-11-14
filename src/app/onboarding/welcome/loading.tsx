@@ -11,9 +11,9 @@ export default function OnboardingWelcomeLoading() {
 
       <div className="space-y-3">
         <div className="h-4 w-24 rounded bg-muted" />
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="mx-auto aspect-[9/16] w-full max-w-[17rem] rounded-xl bg-muted" />
-          <div className="mx-auto aspect-[9/16] w-full max-w-[17rem] rounded-xl bg-muted sm:mt-10" />
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-8">
+          <div className="aspect-[9/16] w-full max-w-[15rem] rounded-xl bg-muted" />
+          <div className="aspect-[9/16] w-full max-w-[15rem] rounded-xl bg-muted" />
         </div>
       </div>
 
