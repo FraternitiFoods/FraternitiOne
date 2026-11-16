@@ -7,6 +7,9 @@ type AuditWriter = Pick<Prisma.TransactionClient, "auditEvent"> | typeof import(
 
 export type AuditEventInput = {
   actor: CurrentUser;
+  /// Set for anything that happened under a store onboarding (KYC, payment,
+  /// LOI, e-sign, files) so its timeline is a single indexed lookup.
+  onboardingId?: string | null;
   entityType: string;
   entityId: string;
   action: AuditAction;
@@ -31,6 +34,7 @@ export async function writeAuditEvent(
   const { actor, ...rest } = input;
   return client.auditEvent.create({
     data: {
+      onboardingId: rest.onboardingId ?? null,
       actorId: actor.id,
       actorEmail: actor.email,
       actorName: actor.name,

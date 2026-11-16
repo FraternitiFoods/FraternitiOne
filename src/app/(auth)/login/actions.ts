@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { verifyPassword, requireUser } from "@/lib/auth";
 import { createSession, deleteSession } from "@/lib/session";
 import { writeAuditEvent } from "@/lib/audit";
+import { isExternalRole, landingPathForRole } from "@/lib/role-access";
 
 const LoginSchema = z.object({
   email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
@@ -86,7 +87,9 @@ export async function login(
     action: "LOGIN",
   });
 
-  const destination = next && next.startsWith("/") ? next : "/site-boq";
+  // A franchisee's landing depends on their onboarding status, which login
+  // doesn't load — send them via `/` (RootPage knows it) instead of another query.
+  const destination = next && next.startsWith("/") ? next : isExternalRole(user.role) ? "/" : landingPathForRole(user.role);
   redirect(destination);
 }
 

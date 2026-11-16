@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { createSession } from "@/lib/session";
 import { writeAuditEvent } from "@/lib/audit";
+import { isExternalRole, landingPathForRole } from "@/lib/role-access";
 import {
   validatePasswordResetToken,
   consumePasswordResetToken,
@@ -71,5 +72,6 @@ export async function setPassword(
   // to /login to type the password they just chose.
   await createSession(updatedUser.id);
 
-  redirect("/site-boq");
+  // Franchisees go via `/` so RootPage can pick /onboarding vs /dashboard.
+  redirect(isExternalRole(updatedUser.role) ? "/" : landingPathForRole(updatedUser.role));
 }

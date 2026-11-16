@@ -211,7 +211,7 @@ async function main() {
 
     await adminPage.close();
 
-    // ================= Non-admin internal role: can edit, cannot delete evidence =================
+    // ================= Non-admin internal role (SALES, view-only since plan.md section 12): can open, cannot delete evidence =================
     const salesPage = await browser.newPage();
     await login(salesPage, SALES_EMAIL, THROWAWAY_PASSWORD);
     const salesPageResp = await salesPage.goto(`${BASE}/site-tracker`);

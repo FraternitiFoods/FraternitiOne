@@ -239,6 +239,7 @@ async function main() {
       check(`${path} still loads after a site was deleted`, r?.status() === 200 && (await admin.getByText(/something went wrong|application error/i).count()) === 0, r?.status());
     }
     const gone = await admin.goto(`${BASE}/dashboard/${encodeURIComponent(OK_SITE)}`, { timeout: 120000 });
+    await admin.waitForLoadState("networkidle"); // the 404 UI streams in after the (app)/loading.tsx placeholder
     check("the deleted site's URL is a 404", gone?.status() === 404 || (await admin.getByText(/not found|404/i).count()) > 0);
   } finally {
     await browser.close();

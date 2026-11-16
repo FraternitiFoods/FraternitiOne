@@ -16,7 +16,7 @@ export default async function UsersPage() {
   const user = await requireUser();
 
   if (!canManageUsers(user)) {
-    redirect("/site-boq");
+    redirect("/");
   }
 
   const users = await db.user.findMany({

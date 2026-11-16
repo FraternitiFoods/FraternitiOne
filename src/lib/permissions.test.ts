@@ -13,11 +13,25 @@ import {
   canCreateDashboardSite,
   canEditDashboardSite,
   canDeleteDashboardSite,
+  canAssignDashboardTasks,
+  canViewSiteTracker,
+  canEditSiteTracker,
   canViewOpsBoq,
   canEditOpsBoq,
+  canManageUsers,
+  canViewOnboardingModule,
+  canCreateOnboarding,
+  canReviewKyc,
+  canReviewPayment,
+  canPrepareLoi,
+  canCompanySign,
+  canManageOnboardingAdmin,
+  canViewOnboarding,
 } from "./permissions";
 
-const INTERNAL_ROLES: Role[] = [
+/** Every value of the Role enum — a new role must be added here and decided in plan.md section 12. */
+const ALL_ROLES: Role[] = [
+  "FRANCHISEE",
   "SALES",
   "LEGAL",
   "INTERIORS",
@@ -28,68 +42,95 @@ const INTERNAL_ROLES: Role[] = [
   "MARKETING",
   "OPERATIONS",
   "MANAGEMENT",
+  "ADMIN",
 ];
 
 function user(role: Role) {
   return { role };
 }
 
-/** plan.md section 5's role matrix, verified function-by-function. */
-describe("permissions — plan.md section 5 role matrix", () => {
-  it("View all Site BOQ screens: everyone except FRANCHISEE", () => {
-    expect(canViewSiteBoq(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canViewSiteBoq(user(role))).toBe(true);
-    expect(canViewSiteBoq(user("FRANCHISEE"))).toBe(false);
+/** Asserts `check` is true for exactly `allowed` and false for every other role. */
+function expectOnly(check: (u: { role: Role }) => boolean, allowed: Role[]) {
+  for (const role of ALL_ROLES) {
+    expect(check(user(role)), `${check.name} for ${role}`).toBe(allowed.includes(role));
+  }
+}
+
+/** plan.md section 12's role matrix, verified function-by-function against every role. */
+describe("permissions — plan.md section 12 role matrix", () => {
+  it("View Site BOQ + Operations BOQ: Admin, Operations, Project Manager, Interiors, Accounts, Management", () => {
+    const viewers: Role[] = ["ADMIN", "OPERATIONS", "PROJECT_MANAGER", "INTERIORS", "ACCOUNTS", "MANAGEMENT"];
+    expectOnly(canViewSiteBoq, viewers);
+    expectOnly(canViewOpsBoq, viewers);
   });
 
-  it("Edit qty/remark/order-tracking: Admin and every other internal role, not FRANCHISEE", () => {
-    expect(canEditSiteItemTracking(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canEditSiteItemTracking(user(role))).toBe(true);
-    expect(canEditSiteItemTracking(user("FRANCHISEE"))).toBe(false);
+  it("Edit qty/remark/order-tracking: Admin, Operations, Project Manager, Interiors (not Accounts/Management)", () => {
+    expectOnly(canEditSiteItemTracking, ["ADMIN", "OPERATIONS", "PROJECT_MANAGER", "INTERIORS"]);
   });
 
-  it("Edit items/vendor rates/final vendor/add items: Admin only", () => {
-    expect(canEditItems(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canEditItems(user(role))).toBe(false);
-    expect(canEditItems(user("FRANCHISEE"))).toBe(false);
+  it("Create/download POs: the BOQ editors plus Accounts (Management is view-only)", () => {
+    expectOnly(canCreatePo, ["ADMIN", "OPERATIONS", "PROJECT_MANAGER", "INTERIORS", "ACCOUNTS"]);
   });
 
-  it("Edit vendors/sites/settings/flip mode: Admin only", () => {
-    for (const check of [canEditVendors, canEditSites, canEditSettings, canFlipMode]) {
-      expect(check(user("ADMIN"))).toBe(true);
-      for (const role of INTERNAL_ROLES) expect(check(user(role))).toBe(false);
-      expect(check(user("FRANCHISEE"))).toBe(false);
+  it("Operations BOQ edits: Admin + Operations only", () => {
+    expectOnly(canEditOpsBoq, ["ADMIN", "OPERATIONS"]);
+  });
+
+  it("Site Tracker: every internal role views, only Admin/Operations/Project Manager/Interiors edit, FRANCHISEE nothing", () => {
+    expectOnly(canViewSiteTracker, ALL_ROLES.filter((r) => r !== "FRANCHISEE"));
+    expectOnly(canEditSiteTracker, ["ADMIN", "OPERATIONS", "PROJECT_MANAGER", "INTERIORS"]);
+  });
+
+  it("Admin-only: items/vendor rates, vendors, sites, settings, mode, audit log, users, Dashboard site CRUD, task assignment", () => {
+    for (const check of [
+      canEditItems,
+      canEditVendors,
+      canEditSites,
+      canEditSettings,
+      canFlipMode,
+      canViewAuditLog,
+      canManageUsers,
+      canCreateDashboardSite,
+      canEditDashboardSite,
+      canDeleteDashboardSite,
+      canAssignDashboardTasks,
+    ]) {
+      expectOnly(check, ["ADMIN"]);
     }
   });
+});
 
-  it("View the audit log: Admin only, same row as settings", () => {
-    expect(canViewAuditLog(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canViewAuditLog(user(role))).toBe(false);
-    expect(canViewAuditLog(user("FRANCHISEE"))).toBe(false);
+/** Store onboarding role mapping (plan.md section 13; existing roles reused, decided 2026-11-13). */
+describe("permissions — store onboarding role matrix", () => {
+  it("module visible: Admin, Sales, Legal, Accounts, Management", () => {
+    expectOnly(canViewOnboardingModule, ["ADMIN", "SALES", "LEGAL", "ACCOUNTS", "MANAGEMENT"]);
   });
 
-  it("Create/edit Dashboard sites: Admin only", () => {
-    for (const check of [canCreateDashboardSite, canEditDashboardSite, canDeleteDashboardSite]) {
-      expect(check(user("ADMIN"))).toBe(true);
-      for (const role of INTERNAL_ROLES) expect(check(user(role))).toBe(false);
-      expect(check(user("FRANCHISEE"))).toBe(false);
-    }
+  it("create: Sales + Admin", () => {
+    expectOnly(canCreateOnboarding, ["ADMIN", "SALES"]);
   });
 
-  it("Create/download POs: Admin and every other internal role, not FRANCHISEE", () => {
-    expect(canCreatePo(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canCreatePo(user(role))).toBe(true);
-    expect(canCreatePo(user("FRANCHISEE"))).toBe(false);
+  it("KYC review and LOI prepare/release: Legal + Admin", () => {
+    expectOnly(canReviewKyc, ["ADMIN", "LEGAL"]);
+    expectOnly(canPrepareLoi, ["ADMIN", "LEGAL"]);
   });
 
-  it("Operations BOQ: every internal role views, only Admin + OPERATIONS edit, FRANCHISEE nothing", () => {
-    expect(canViewOpsBoq(user("ADMIN"))).toBe(true);
-    for (const role of INTERNAL_ROLES) expect(canViewOpsBoq(user(role))).toBe(true);
-    expect(canViewOpsBoq(user("FRANCHISEE"))).toBe(false);
+  it("payment verification: Accounts + Admin", () => {
+    expectOnly(canReviewPayment, ["ADMIN", "ACCOUNTS"]);
+  });
 
-    expect(canEditOpsBoq(user("ADMIN"))).toBe(true);
-    expect(canEditOpsBoq(user("OPERATIONS"))).toBe(true);
-    for (const role of INTERNAL_ROLES.filter((r) => r !== "OPERATIONS")) expect(canEditOpsBoq(user(role))).toBe(false);
-    expect(canEditOpsBoq(user("FRANCHISEE"))).toBe(false);
+  it("company countersign: Management + Admin", () => {
+    expectOnly(canCompanySign, ["ADMIN", "MANAGEMENT"]);
+  });
+
+  it("Admin-only: delete, e-sign events/retry, email templates", () => {
+    expectOnly(canManageOnboardingAdmin, ["ADMIN"]);
+  });
+
+  it("a franchisee reaches only their own onboarding; staff roles in the module reach any", () => {
+    expect(canViewOnboarding({ role: "FRANCHISEE", id: "u1" }, { franchiseeUserId: "u1" })).toBe(true);
+    expect(canViewOnboarding({ role: "FRANCHISEE", id: "u1" }, { franchiseeUserId: "u2" })).toBe(false);
+    expect(canViewOnboarding({ role: "OPERATIONS", id: "x" }, { franchiseeUserId: "u1" })).toBe(false);
+    expect(canViewOnboarding({ role: "LEGAL", id: "x" }, { franchiseeUserId: "u1" })).toBe(true);
   });
 });

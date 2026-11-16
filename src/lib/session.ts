@@ -4,7 +4,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import type { Role } from "@prisma/client";
+import type { OnboardingStatus, Role } from "@prisma/client";
 
 const COOKIE_NAME = "fo_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -58,6 +58,10 @@ export type CurrentUser = {
   name: string;
   email: string;
   role: Role;
+  /// Only set for a FRANCHISEE who has a store onboarding record — folded into
+  /// the existing session query (one join, no extra round trip per navigation)
+  /// so the (app) layout / `/` can route them to the /onboarding portal.
+  onboardingStatus?: OnboardingStatus | null;
 };
 
 /**
@@ -78,7 +82,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(token) },
     relationLoadStrategy: "join",
-    include: { user: true },
+    include: { user: { include: { onboardingAsFranchisee: { select: { onboardingStatus: true } } } } },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -96,5 +100,6 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     name: session.user.name,
     email: session.user.email,
     role: session.user.role,
+    onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
   };
 });

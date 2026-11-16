@@ -8,7 +8,7 @@ export default async function NewUserPage() {
   const user = await requireUser();
 
   if (!canManageUsers(user)) {
-    redirect("/site-boq");
+    redirect("/");
   }
 
   return (

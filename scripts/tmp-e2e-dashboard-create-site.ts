@@ -70,6 +70,8 @@ async function cleanup() {
   const sites = await db.dashboardSite.findMany({ where: { name: { startsWith: "TMP E2E" } }, select: { id: true } });
   await db.auditEvent.deleteMany({ where: { OR: [{ actorEmail: { in: EMAILS } }, { entityId: { in: sites.map((s) => s.id) } }] } });
   await db.dashboardSite.deleteMany({ where: { name: { startsWith: "TMP E2E" } } }); // steps cascade
+  // createDashboardSite also creates the shared Site row (Site Tracker / Site BOQ / Operations BOQ); it is not linked by FK, so remove it by name too.
+  await db.site.deleteMany({ where: { name: { startsWith: "TMP E2E" }, sourceKey: { startsWith: "WEB-" } } });
   await db.user.deleteMany({ where: { email: { in: EMAILS } } });
 }
 

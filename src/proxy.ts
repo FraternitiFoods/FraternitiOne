@@ -36,7 +36,9 @@ export default function proxy(request: NextRequest) {
   const isResetPasswordRoute = pathname.startsWith("/reset-password/");
 
   if (isPublicRoute && hasSessionCookie && !isResetPasswordRoute) {
-    return NextResponse.redirect(new URL("/site-boq", request.url));
+    // "/" picks the landing page by role (src/app/page.tsx) — the cookie alone
+    // doesn't tell us the role, and not every role can open /site-boq.
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   // Forwarded so requireUser() (lib/auth.ts) can send the browser back to

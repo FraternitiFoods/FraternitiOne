@@ -14,37 +14,33 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ROLE_LABELS } from "@/lib/format";
+import { canSeeModule, type AppModule } from "@/lib/role-access";
 import type { Role } from "@prisma/client";
 
-type NavItem = { label: string; href: string | null };
+type NavItem = { label: string; href: string | null; module: AppModule };
 
 /**
- * Exactly 4 items (plan.md section 2). All four are live. (The "Coming soon"
- * rendering below stays for any future item added with `href: null`.) Dashboard is live
- * (dashboard-sheet-sync-plan.md section 6) and, unlike Site BOQ, is visible
- * to every role including franchisees — a franchisee is routed to their own
- * assigned site (see src/app/(app)/dashboard/page.tsx), not hidden from the
- * module entirely. Site BOQ is internal-only (plan.md section 2): an
- * external/franchisee-type role must not see it in the sidebar at all (it
- * still 403s server-side if reached directly — see
- * src/app/(app)/site-boq/page.tsx).
+ * 5 items (plan.md section 2, extended by section 13 with Store Onboarding). All live. (The "Coming soon"
+ * rendering below stays for any future item added with `href: null`.) Which
+ * ones a role sees is decided by `canSeeModule` (src/lib/role-access.ts,
+ * plan.md section 12) — the same sets the server-side permission checks use,
+ * so the menu can't disagree with the 403s. Dashboard is visible to every
+ * role including franchisees: a franchisee is routed to their own assigned
+ * site (see src/app/(app)/dashboard/page.tsx). A hidden module still 403s
+ * server-side if its URL is typed in directly.
  */
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Site Tracker", href: "/site-tracker" },
-  { label: "Site BOQ", href: "/site-boq" },
-  { label: "Operations BOQ", href: "/operations-boq" },
+  { label: "Dashboard", href: "/dashboard", module: "dashboard" },
+  { label: "Site Tracker", href: "/site-tracker", module: "site-tracker" },
+  { label: "Site BOQ", href: "/site-boq", module: "site-boq" },
+  { label: "Operations BOQ", href: "/operations-boq", module: "operations-boq" },
+  { label: "Store Onboarding", href: "/store-onboarding", module: "store-onboarding" },
 ];
 
-const EXTERNAL_ROLES: Role[] = ["FRANCHISEE"];
-
-/** Internal-only live modules (plan.md section 2, site-tracker-plan.md section 4 rule 6, operations-boq-handoff.md section 7) — hidden from the sidebar entirely for an external role, not just 403'd server-side. */
-const INTERNAL_ONLY_LABELS = ["Site BOQ", "Site Tracker", "Operations BOQ"];
-
 /**
- * "Manage users" lives here (not the 4-item sidebar — plan.md section 2 is
- * exact about that list) and is Admin-only; everyone else only ever sees
- * "Sign out".
+ * Admin-only links live here, not in the main nav: "Manage users", plus the
+ * onboarding admin pages ("E-sign events", "Email templates" — plan.md
+ * section 13). Everyone else only ever sees "Sign out".
  */
 function AccountMenuItems({ role }: { role: Role }) {
   return (
@@ -52,6 +48,8 @@ function AccountMenuItems({ role }: { role: Role }) {
       {role === "ADMIN" && (
         <>
           <DropdownMenuLinkItem render={<Link href="/users" />}>Manage users</DropdownMenuLinkItem>
+          <DropdownMenuLinkItem render={<Link href="/admin/esign-events" />}>E-sign events</DropdownMenuLinkItem>
+          <DropdownMenuLinkItem render={<Link href="/admin/email-templates" />}>Email templates</DropdownMenuLinkItem>
           <DropdownMenuSeparator />
         </>
       )}
@@ -64,8 +62,7 @@ function AccountMenuItems({ role }: { role: Role }) {
 
 export function AppSidebar({ name, role }: { name: string; role: Role }) {
   const pathname = usePathname();
-  const isExternal = EXTERNAL_ROLES.includes(role);
-  const navItems = NAV_ITEMS.filter((item) => !INTERNAL_ONLY_LABELS.includes(item.label) || !isExternal);
+  const navItems = NAV_ITEMS.filter((item) => canSeeModule(role, item.module));
 
   return (
     <>
