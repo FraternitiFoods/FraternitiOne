@@ -52,15 +52,15 @@ export function ChatShell({ children }: { children: ReactNode }) {
   return (
     <>
       {/* Conditional, not merged: two right-padding utilities on one element would fight. */}
-      <main className={cn("min-h-screen px-4 py-4 sm:py-8 sm:pl-[15rem]", autoOpen ? "sm:pr-[27rem]" : "sm:pr-8")}>
-        <div className="mx-auto max-w-4xl">{children}</div>
+      <main className={cn("relative min-h-screen overflow-x-clip px-4 py-4 sm:pt-12 sm:pb-28 sm:pl-[19.5rem]", autoOpen ? "sm:pr-[27rem]" : "sm:pr-10")}>
+        <div className="mx-auto max-w-6xl">{children}</div>
       </main>
 
       {mounted && (
         <aside
           aria-label="Assistant"
           className={cn(
-            "fixed z-50 overflow-hidden rounded-2xl bg-card shadow-xl ring-1 ring-foreground/10",
+            "fixed z-50 overflow-hidden rounded-3xl bg-card shadow-xl ring-1 ring-[var(--ob-green)]/15",
             "inset-x-2 top-16 bottom-2 sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 sm:h-[34rem] sm:w-[24rem]",
             open ? "flex flex-col" : "hidden"
           )}
@@ -74,11 +74,11 @@ export function ChatShell({ children }: { children: ReactNode }) {
         onClick={() => setChoice("open")}
         aria-label="Open assistant"
         className={cn(
-          "fixed right-4 bottom-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          "ob-focus fixed right-4 bottom-4 z-40 flex h-[52px] items-center gap-2.5 rounded-full bg-[var(--ob-green)] px-6 text-[15px] font-semibold text-[var(--ob-cream)] shadow-[0_14px_30px_-12px_rgb(15_51_36/0.6)] transition-transform hover:scale-105 sm:right-8 sm:bottom-8",
           open && "hidden"
         )}
       >
-        <MessageCircle className="size-4" aria-hidden />
+        <MessageCircle className="size-5 text-[var(--ob-saffron)]" aria-hidden />
         Ask assistant
       </button>
     </>

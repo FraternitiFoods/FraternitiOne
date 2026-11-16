@@ -57,7 +57,7 @@ export function currentWelcomeStepIndex(status: OnboardingStatus): number {
 export function welcomeAction(status: OnboardingStatus): { href: string; label: string } {
   switch (status) {
     case "AWAITING_KYC_PAYMENT":
-      return { href: "/onboarding/documents", label: "Upload your documents" };
+      return { href: "/onboarding/documents", label: "Upload KYC documents" };
     case "CORRECTIONS_REQUESTED":
       return { href: "/onboarding/documents", label: "Fix your documents" };
     case "READY_FOR_SIGNATURE":
@@ -68,4 +68,26 @@ export function welcomeAction(status: OnboardingStatus): { href: string; label: 
     case "LOI_COMPLETE":
       return { href: "/onboarding", label: "See your progress" };
   }
+}
+
+/**
+ * The redesigned Welcome page's 3-step journey (Welcome -> KYC & Documents ->
+ * LOI & E-Sign). A pure re-grouping of `currentWelcomeStepIndex` — no new
+ * state: Welcome is always done (the franchisee is on it); KYC is current until
+ * the submission goes to review, LOI is current once it is ready to sign.
+ * UNDER_REVIEW therefore has no "current" step: nothing is for them to do.
+ */
+export type JourneyStepState = "done" | "current" | "upcoming";
+
+export const JOURNEY_STEPS: readonly { key: string; title: string }[] = [
+  { key: "welcome", title: "Welcome" },
+  { key: "kyc", title: "KYC & Documents" },
+  { key: "loi", title: "LOI & E-Sign" },
+];
+
+export function welcomeJourney(status: OnboardingStatus): JourneyStepState[] {
+  const i = currentWelcomeStepIndex(status);
+  const kyc: JourneyStepState = i === 0 ? "current" : "done";
+  const loi: JourneyStepState = i >= WELCOME_STEPS.length ? "done" : i >= 2 ? "current" : "upcoming";
+  return ["done", kyc, loi];
 }

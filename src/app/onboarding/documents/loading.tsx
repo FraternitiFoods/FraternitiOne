@@ -1,37 +1,21 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ObCard } from "@/components/onboarding-ui/card";
 
 /** Streamed in immediately on navigation while the KYC/payment query resolves. */
 export default function OnboardingDocumentsLoading() {
   return (
-    <div className="animate-pulse space-y-6">
-      <div className="space-y-2">
-        <div className="h-6 w-40 rounded bg-muted" />
-        <div className="h-4 w-80 rounded bg-muted" />
+    <div className="animate-pulse space-y-9" aria-hidden>
+      <div className="space-y-3">
+        <div className="h-12 w-80 max-w-full rounded-xl bg-[var(--ob-track)]" />
+        <div className="h-5 w-72 max-w-full rounded bg-[var(--ob-track)]" />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="h-4 w-16 rounded bg-muted" />
-          <div className="h-5 w-24 rounded-full bg-muted" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="h-4 w-full rounded bg-muted" />
-          <div className="h-4 w-5/6 rounded bg-muted" />
-          <div className="h-9 w-40 rounded bg-muted" />
-        </CardContent>
-      </Card>
+      <ObCard className="space-y-3 p-8">
+        <div className="h-8 w-24 rounded bg-[var(--ob-track)]" />
+        <div className="h-20 rounded-[20px] bg-[var(--ob-bg)]" />
+        <div className="h-20 rounded-[20px] bg-[var(--ob-bg)]" />
+      </ObCard>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="h-4 w-32 rounded bg-muted" />
-          <div className="h-5 w-24 rounded-full bg-muted" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="h-4 w-full rounded bg-muted" />
-          <div className="h-4 w-2/3 rounded bg-muted" />
-          <div className="h-9 w-40 rounded bg-muted" />
-        </CardContent>
-      </Card>
+      <ObCard className="h-48" />
     </div>
   );
 }

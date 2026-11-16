@@ -1,36 +1,18 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-
 /** Streamed in immediately on navigation while the Welcome query resolves. */
 export default function OnboardingWelcomeLoading() {
   return (
-    <div className="animate-pulse space-y-8">
-      <div className="space-y-2">
-        <div className="h-6 w-64 rounded bg-muted" />
-        <div className="h-4 w-48 rounded bg-muted" />
+    <div className="animate-pulse space-y-12" aria-hidden>
+      <div className="space-y-5">
+        <div className="h-9 w-64 rounded-full bg-[var(--ob-track)]" />
+        <div className="h-16 w-full max-w-xl rounded-xl bg-[var(--ob-track)]" />
+        <div className="h-5 w-full max-w-md rounded bg-[var(--ob-track)]" />
       </div>
 
-      <div className="space-y-3">
-        <div className="h-4 w-24 rounded bg-muted" />
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-8">
-          <div className="aspect-[9/16] w-full max-w-[15rem] rounded-xl bg-muted" />
-          <div className="aspect-[9/16] w-full max-w-[15rem] rounded-xl bg-muted" />
-        </div>
+      <div className="flex flex-wrap items-stretch gap-6">
+        <div className="aspect-[2/3] w-full max-w-[300px] rounded-[28px] bg-white shadow-[var(--ob-card-shadow)]" />
+        <div className="aspect-[2/3] w-full max-w-[300px] rounded-[28px] bg-white shadow-[var(--ob-card-shadow)]" />
+        <div className="min-h-[24rem] flex-1 basis-[20rem] rounded-[28px] bg-[var(--ob-green)]/90" />
       </div>
-
-      <Card>
-        <CardHeader>
-          <div className="h-4 w-24 rounded bg-muted" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="h-4 w-72 rounded bg-muted" />
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex gap-3">
-              <div className="size-6 rounded-full bg-muted" />
-              <div className="h-4 w-80 max-w-full rounded bg-muted" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   );
 }

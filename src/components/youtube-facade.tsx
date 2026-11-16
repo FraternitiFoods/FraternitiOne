@@ -22,12 +22,13 @@ export function YoutubeFacade({
   vertical?: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
-  const aspect = vertical ? "aspect-[9/16]" : "aspect-video";
+  // Portrait tiles are a bit wider than 9:16 so the card is not taller than the screen; the thumbnail is scaled up (below) to fill them.
+  const aspect = vertical ? "aspect-[2/3]" : "aspect-video";
 
   if (!isValidYoutubeId(youtubeId)) {
     return (
       <div
-        className={`flex ${aspect} w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed bg-muted/50 text-muted-foreground`}
+        className={`flex ${aspect} w-full flex-col items-center justify-center gap-2 rounded-[20px] border border-dashed border-[var(--ob-green)]/25 bg-[var(--ob-bg)] text-[var(--ob-muted)]`}
       >
         <Play className="size-8 opacity-40" aria-hidden />
         <span className="text-xs">Video coming soon</span>
@@ -38,7 +39,7 @@ export function YoutubeFacade({
   if (playing) {
     return (
       <iframe
-        className={`${aspect} w-full rounded-xl`}
+        className={`${aspect} w-full rounded-[20px]`}
         src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0`}
         title={title}
         allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
@@ -52,7 +53,7 @@ export function YoutubeFacade({
       type="button"
       onClick={() => setPlaying(true)}
       aria-label={`Play video: ${title}`}
-      className={`group relative block ${aspect} w-full overflow-hidden rounded-xl bg-black outline-none focus-visible:ring-3 focus-visible:ring-ring/50`}
+      className={`group relative block ${aspect} w-full overflow-hidden rounded-[20px] bg-black outline-none ob-focus`}
     >
       {/* Plain <img>: a ~15KB third-party thumbnail; lazy so it never competes with first paint. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -61,11 +62,12 @@ export function YoutubeFacade({
         alt=""
         loading="lazy"
         decoding="async"
-        className="size-full object-cover opacity-90 transition-opacity group-hover:opacity-100"
+        // A Short's hqdefault is a 4:3 frame with the vertical video pillarboxed in the middle: scale it so the bars are cropped out.
+        className={`size-full object-cover transition-transform duration-300 ${vertical ? "scale-[1.25] group-hover:scale-[1.3]" : "group-hover:scale-105"}`}
       />
       <span className="absolute inset-0 flex items-center justify-center">
-        <span className="flex size-14 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition-transform group-hover:scale-105">
-          <Play className="size-6 translate-x-0.5 fill-current" aria-hidden />
+        <span className="flex size-[66px] items-center justify-center rounded-full bg-[var(--ob-saffron)] text-[var(--ob-green)] shadow-[0_0_0_9px_rgb(255_255_255/0.35)] transition-transform group-hover:scale-105">
+          <Play className="size-[26px] translate-x-[3px] fill-current" aria-hidden />
         </span>
       </span>
     </button>

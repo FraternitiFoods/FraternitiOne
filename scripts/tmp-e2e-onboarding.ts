@@ -85,8 +85,8 @@ async function welcomeAndChatChecks(frB: Page) {
   await frB.getByRole("button", { name: /^Play video/ }).first().click();
   const ytSrc = await frB.locator("iframe").first().getAttribute("src");
   check("Welcome: clicking play loads the youtube-nocookie embed", !!ytSrc && ytSrc.startsWith("https://www.youtube-nocookie.com/embed/"));
-  check("Welcome: Next steps lists 4 steps", (await frB.locator("ol > li").count()) === 4);
-  check("Welcome: Next steps button goes to documents", (await frB.locator("a", { hasText: "Upload your documents" }).getAttribute("href")) === "/onboarding/documents");
+  check("Welcome: Next steps lists the 3-step journey", (await frB.locator("ol > li").count()) === 3);
+  check("Welcome: Next steps button goes to documents", (await frB.locator("a", { hasText: "Upload KYC documents" }).getAttribute("href")) === "/onboarding/documents");
 
   // Docked chat panel on wide screens: visible, no floating button.
   const docked = frB.getByRole("complementary", { name: "Assistant" });

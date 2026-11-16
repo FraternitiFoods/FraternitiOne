@@ -2,8 +2,9 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { requiredKycFileKinds, FILE_KIND_LABELS, OPTIONAL_FILE_KINDS } from "@/lib/onboarding/kyc-requirements";
 import { REVIEW_STATUS_LABELS } from "@/lib/onboarding/format";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ObCard, ObCardTitle } from "@/components/onboarding-ui/card";
+import { Rangoli } from "@/components/onboarding-ui/decor";
+import { StatusPill, reviewStatusTone } from "@/components/onboarding-ui/status-pill";
 import { KycSection } from "./kyc-section";
 import { PaymentSection } from "./payment-section";
 import { ScanPoller } from "./scan-poller";
@@ -39,82 +40,90 @@ export default async function OnboardingDocumentsPage() {
   const hasScanPending = onboarding.files.some((f) => f.scanStatus === "PENDING");
 
   return (
-    <div className="space-y-6">
-      <ScanPoller pending={hasScanPending} />
-      <div>
-        <h1 className="text-2xl font-semibold">KYC &amp; Documents</h1>
-        <p className="text-sm text-muted-foreground">
-          Required documents: {requiredKinds.map((k) => FILE_KIND_LABELS[k]).join(", ")}.
-        </p>
+    <div className="relative">
+      <Rangoli />
+
+      <div className="relative z-10 space-y-9">
+        <ScanPoller pending={hasScanPending} />
+        <div>
+          <h1 className="ob-display text-[2.25rem] leading-[1.08] font-semibold tracking-[-0.02em] text-[var(--ob-green)] sm:text-[3.5rem]">
+            KYC &amp; Documents
+          </h1>
+          <p className="mt-3 text-lg leading-normal text-[var(--ob-text-2)]">
+            Required documents: {requiredKinds.map((k) => FILE_KIND_LABELS[k]).join(", ")}.
+          </p>
+        </div>
+
+        <ObCard className="p-5 sm:p-8">
+          <div className="flex items-center justify-between gap-4">
+            <ObCardTitle className="text-[28px]">KYC</ObCardTitle>
+            <StatusPill tone={reviewStatusTone(onboarding.kycStatus)}>{REVIEW_STATUS_LABELS[onboarding.kycStatus]}</StatusPill>
+          </div>
+          <div className="mt-[22px]">
+            {onboarding.kyc?.decisionReason && onboarding.kycStatus === "CHANGES_REQUESTED" && (
+              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200]">
+                <strong>Changes requested:</strong> {onboarding.kyc.decisionReason}
+              </p>
+            )}
+            <KycSection
+              entityType={onboarding.entityType}
+              requiredKinds={requiredKinds}
+              optionalKinds={OPTIONAL_FILE_KINDS}
+              files={kycFiles.map((f) => ({
+                kind: f.kind,
+                fileName: f.fileName,
+                version: f.version,
+                scanStatus: f.scanStatus,
+              }))}
+              kyc={
+                onboarding.kyc
+                  ? {
+                      panName: onboarding.kyc.panName,
+                      aadhaarHolderName: onboarding.kyc.aadhaarHolderName,
+                      aadhaarLast4: onboarding.kyc.aadhaarLast4,
+                      companyName: onboarding.kyc.companyName,
+                      companyPan: onboarding.kyc.companyPan,
+                      authorisedSignatoryName: onboarding.kyc.authorisedSignatoryName,
+                      hasPan: !!onboarding.kyc.panNumberEncrypted,
+                    }
+                  : null
+              }
+              editable={editable}
+            />
+          </div>
+        </ObCard>
+
+        <ObCard className="p-5 sm:p-8">
+          <div className="flex items-center justify-between gap-4">
+            <ObCardTitle className="text-[28px]">Payment receipt</ObCardTitle>
+            <StatusPill tone={reviewStatusTone(onboarding.paymentStatus)}>
+              {REVIEW_STATUS_LABELS[onboarding.paymentStatus]}
+            </StatusPill>
+          </div>
+          <div className="mt-[22px]">
+            {onboarding.payments[0]?.decisionReason && onboarding.paymentStatus === "CHANGES_REQUESTED" && (
+              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200]">
+                <strong>Changes requested:</strong> {onboarding.payments[0].decisionReason}
+              </p>
+            )}
+            <PaymentSection
+              expectedAmount={onboarding.expectedAmount}
+              totalVerifiedAmount={totalVerifiedAmount}
+              latestPayment={
+                onboarding.payments[0]
+                  ? {
+                      declaredAmount: onboarding.payments[0].declaredAmount,
+                      mode: onboarding.payments[0].mode,
+                      utr: onboarding.payments[0].utr,
+                      paymentDate: onboarding.payments[0].paymentDate.toISOString(),
+                    }
+                  : null
+              }
+              editable={paymentEditable}
+            />
+          </div>
+        </ObCard>
       </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">KYC</CardTitle>
-          <Badge variant="outline">{REVIEW_STATUS_LABELS[onboarding.kycStatus]}</Badge>
-        </CardHeader>
-        <CardContent>
-          {onboarding.kyc?.decisionReason && onboarding.kycStatus === "CHANGES_REQUESTED" && (
-            <p className="mb-4 rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              <strong>Changes requested:</strong> {onboarding.kyc.decisionReason}
-            </p>
-          )}
-          <KycSection
-            entityType={onboarding.entityType}
-            requiredKinds={requiredKinds}
-            optionalKinds={OPTIONAL_FILE_KINDS}
-            files={kycFiles.map((f) => ({
-              kind: f.kind,
-              fileName: f.fileName,
-              version: f.version,
-              scanStatus: f.scanStatus,
-            }))}
-            kyc={
-              onboarding.kyc
-                ? {
-                    panName: onboarding.kyc.panName,
-                    aadhaarHolderName: onboarding.kyc.aadhaarHolderName,
-                    aadhaarLast4: onboarding.kyc.aadhaarLast4,
-                    companyName: onboarding.kyc.companyName,
-                    companyPan: onboarding.kyc.companyPan,
-                    authorisedSignatoryName: onboarding.kyc.authorisedSignatoryName,
-                    hasPan: !!onboarding.kyc.panNumberEncrypted,
-                  }
-                : null
-            }
-            editable={editable}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Payment receipt</CardTitle>
-          <Badge variant="outline">{REVIEW_STATUS_LABELS[onboarding.paymentStatus]}</Badge>
-        </CardHeader>
-        <CardContent>
-          {onboarding.payments[0]?.decisionReason && onboarding.paymentStatus === "CHANGES_REQUESTED" && (
-            <p className="mb-4 rounded-md border border-amber-400/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              <strong>Changes requested:</strong> {onboarding.payments[0].decisionReason}
-            </p>
-          )}
-          <PaymentSection
-            expectedAmount={onboarding.expectedAmount}
-            totalVerifiedAmount={totalVerifiedAmount}
-            latestPayment={
-              onboarding.payments[0]
-                ? {
-                    declaredAmount: onboarding.payments[0].declaredAmount,
-                    mode: onboarding.payments[0].mode,
-                    utr: onboarding.payments[0].utr,
-                    paymentDate: onboarding.payments[0].paymentDate.toISOString(),
-                  }
-                : null
-            }
-            editable={paymentEditable}
-          />
-        </CardContent>
-      </Card>
     </div>
   );
 }

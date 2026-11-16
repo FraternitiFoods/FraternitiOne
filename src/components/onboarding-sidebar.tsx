@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BarChart3, FileText, Home, LogOut, PenLine, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 import { logout } from "@/app/(auth)/login/actions";
-import { Button } from "@/components/ui/button";
 
 /**
  * plan.md section 17: "Franchisee (sidebar exactly as wireframes 01-07:
@@ -13,96 +13,146 @@ import { Button } from "@/components/ui/button";
  * get its own page (receipts are uploaded from the documents page, same as
  * KYC files) — flagged as a simplification from the literal wireframe list.
  *
+ * Look: cream "Tulsi Warm" sidebar (design-reference/B-*.dc.html), styled with
+ * the `.ob-theme` tokens from globals.css.
+ *
  * Responsive by construction (not an afterthought — SRD: "same actions on
- * mobile"): a fixed left column on sm+ screens, a horizontally-scrollable
- * sticky top bar below sm. A fixed w-56 column with no mobile variant (the
- * naive version of this component) would overlap page content on a phone
- * viewport — this mirrors the /m shell's own mobile-first approach
- * (plan.md section 16) rather than reusing AppSidebar's desktop-only shape.
+ * mobile"): a fixed 280px left column on sm+ screens, a sticky top bar with a
+ * horizontally-scrollable nav below sm. A fixed column with no mobile variant
+ * would overlap page content on a phone viewport — this mirrors the /m shell's
+ * own mobile-first approach (plan.md section 16) rather than reusing
+ * AppSidebar's desktop-only shape.
  */
-const NAV_ITEMS = [
-  { label: "Welcome", href: "/onboarding/welcome" },
-  { label: "Progress", href: "/onboarding" },
-  { label: "KYC & Documents", href: "/onboarding/documents" },
-  { label: "LOI & E-Sign", href: "/onboarding/loi" },
+const NAV_ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
+  { label: "Welcome", href: "/onboarding/welcome", icon: Home },
+  { label: "Progress", href: "/onboarding", icon: BarChart3 },
+  { label: "KYC & Documents", href: "/onboarding/documents", icon: FileText },
+  { label: "LOI & E-Sign", href: "/onboarding/loi", icon: PenLine },
 ];
 
-export function OnboardingSidebar({ name }: { name: string }) {
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0]![0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? "") : (parts[0]![1] ?? "");
+  return (first + last).toUpperCase();
+}
+
+function Wordmark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div>
+      <div
+        className={cn(
+          "leading-[1.1] font-extrabold tracking-[0.02em] text-[var(--ob-green)]",
+          compact ? "text-base" : "text-2xl"
+        )}
+      >
+        FRATERNITI{compact ? " " : <br />}
+        <span className="text-[#a65a00]">ONE</span>
+      </div>
+      <div
+        className={cn(
+          "font-semibold tracking-[0.18em] text-[var(--ob-muted)] uppercase",
+          compact ? "mt-0.5 text-[10px]" : "mt-2.5 text-xs"
+        )}
+      >
+        Franchisee Portal
+      </div>
+    </div>
+  );
+}
+
+function SignOutButton({ className }: { className?: string }) {
+  return (
+    <form action={logout}>
+      <button
+        type="submit"
+        className={cn(
+          "ob-focus flex items-center gap-2.5 rounded-lg text-sm font-medium text-[var(--ob-nav)] transition-colors hover:text-[var(--ob-green)]",
+          className
+        )}
+      >
+        <LogOut className="size-[18px]" aria-hidden />
+        Sign out
+      </button>
+    </form>
+  );
+}
+
+export function OnboardingSidebar({ name, code }: { name: string; code: string | null }) {
   const pathname = usePathname();
 
   return (
     <>
       {/* Desktop: fixed left column. */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col bg-[#0b1220] sm:flex">
-        <div className="px-5 pt-6 pb-5">
-          <div className="text-lg leading-tight font-bold tracking-tight text-white">FRATERNITI</div>
-          <div className="text-lg leading-tight font-bold tracking-tight text-white">ONE</div>
-          <div className="mt-1 text-[10px] tracking-wide text-slate-500 uppercase">Franchisee Portal</div>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[17.5rem] flex-col gap-9 overflow-y-auto border-r border-[var(--ob-line)] bg-[var(--ob-sidebar)] px-6 pt-9 pb-7 sm:flex">
+        <div className="px-2">
+          <Wordmark />
         </div>
 
-        <nav className="flex-1 space-y-0.5 px-3">
+        <nav aria-label="Onboarding" className="flex flex-col gap-1.5">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
+            const Icon = item.icon;
             return (
               <Link
                 key={item.label}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "block rounded-lg px-3 py-2 text-sm transition-colors",
-                  active ? "bg-white/10 font-medium text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  "ob-focus flex h-12 items-center gap-3.5 rounded-xl px-4 text-[15px] transition-colors",
+                  active
+                    ? "bg-[var(--ob-green)] font-semibold text-[var(--ob-cream)]"
+                    : "font-medium text-[var(--ob-nav)] hover:bg-[var(--ob-green)]/8"
                 )}
               >
+                <Icon className={cn("size-5", active && "text-[var(--ob-saffron)]")} aria-hidden />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t border-white/10 px-6 py-4">
-          <div className="truncate text-sm font-medium text-white">{name}</div>
-          <form action={logout} className="mt-2">
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="h-7 w-full justify-start px-0 text-slate-400 hover:bg-white/5 hover:text-white"
+        <div className="mt-auto flex flex-col gap-2.5 border-t border-[var(--ob-green)]/15 pt-6">
+          <div className="flex items-center gap-3">
+            <div
+              aria-hidden
+              className="flex size-[42px] shrink-0 items-center justify-center rounded-full bg-[var(--ob-green)] text-[13px] font-bold text-[var(--ob-cream)]"
             >
-              Sign out
-            </Button>
-          </form>
+              {initials(name)}
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[15px] font-bold text-[var(--ob-green)]">{name}</div>
+              {code && <div className="text-xs text-[var(--ob-muted)]">{code}</div>}
+            </div>
+          </div>
+          <SignOutButton className="h-11 px-1" />
         </div>
       </aside>
 
       {/* Mobile: sticky top bar, horizontally scrollable nav. */}
-      <header className="sticky top-0 z-40 flex flex-col gap-2 border-b bg-[#0b1220] px-4 py-3 sm:hidden">
+      <header className="sticky top-0 z-40 flex flex-col gap-2 border-b border-[var(--ob-line)] bg-[var(--ob-sidebar)] px-4 py-3 sm:hidden">
         <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-bold tracking-tight text-white">FRATERNITI ONE</div>
-            <div className="text-[10px] tracking-wide text-slate-500 uppercase">Franchisee Portal</div>
-          </div>
-          <form action={logout}>
-            <Button
-              type="submit"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-slate-400 hover:bg-white/5 hover:text-white"
-            >
-              Sign out
-            </Button>
-          </form>
+          <Wordmark compact />
+          <SignOutButton className="h-9 px-2" />
         </div>
-        <nav className="flex min-w-0 gap-1 overflow-x-auto">
+        <nav aria-label="Onboarding" className="flex min-w-0 gap-1.5 overflow-x-auto pb-0.5">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
+            const Icon = item.icon;
             return (
               <Link
                 key={item.label}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "shrink-0 rounded-lg px-3 py-1.5 text-xs whitespace-nowrap transition-colors",
-                  active ? "bg-white/10 font-medium text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  "ob-focus flex h-9 shrink-0 items-center gap-2 rounded-xl px-3 text-xs whitespace-nowrap transition-colors",
+                  active
+                    ? "bg-[var(--ob-green)] font-semibold text-[var(--ob-cream)]"
+                    : "font-medium text-[var(--ob-nav)] hover:bg-[var(--ob-green)]/8"
                 )}
               >
+                <Icon className={cn("size-4", active && "text-[var(--ob-saffron)]")} aria-hidden />
                 {item.label}
               </Link>
             );
