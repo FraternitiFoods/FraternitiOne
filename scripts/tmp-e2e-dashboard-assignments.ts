@@ -51,7 +51,7 @@ async function login(ctx: BrowserContext, who: keyof typeof USERS): Promise<{ pa
   const page = await ctx.newPage();
   await page.goto(`${BASE}/login`);
   await page.getByLabel(/email/i).fill(USERS[who].email);
-  await page.getByLabel(/password/i).fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60000, waitUntil: "commit" });
   await page.waitForLoadState("networkidle");
