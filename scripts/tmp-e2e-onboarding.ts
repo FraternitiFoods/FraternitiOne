@@ -55,8 +55,10 @@ async function until(cond: () => Promise<boolean>, timeoutMs = 60000) {
 async function login(page: Page, email: string, password: string) {
   await page.goto(`${BASE}/login`);
   await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
+  // networkidle alone can return before the sign-in Server Action finishes: wait for the redirect off /login.
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 30000 });
   await page.waitForLoadState("networkidle");
 }
 
@@ -88,20 +90,23 @@ async function welcomeAndChatChecks(frB: Page) {
   check("Welcome: Next steps lists the 3-step journey", (await frB.locator("ol > li").count()) === 3);
   check("Welcome: Next steps button goes to documents", (await frB.locator("a", { hasText: "Upload KYC documents" }).getAttribute("href")) === "/onboarding/documents");
 
-  // Docked chat panel on wide screens: visible, no floating button.
+  // Assistant card: closed on arrival at 1440px (Welcome included), opened only by the floating button, floats over the page.
   const docked = frB.getByRole("complementary", { name: "Assistant" });
+  const openBtn = frB.getByRole("button", { name: "Open assistant" });
+  check("Chat: closed on arrival on Welcome at 1440px", !(await docked.isVisible()) && (await openBtn.isVisible()));
+  const mainBefore = await frB.locator("main > div").boundingBox();
+  await openBtn.click();
   await docked.getByText("Fraterniti Assistant").waitFor({ timeout: 20000 });
-  check("Chat: open by default on Welcome at 1440px", await docked.isVisible());
-  check("Chat: floating button hidden while the card is open", !(await frB.getByRole("button", { name: "Open assistant" }).isVisible()));
-  const panelBox = await docked.boundingBox();
-  const mainBox = await frB.locator("main > div").boundingBox();
-  check("Chat: open card does not overlap the page content", !!panelBox && !!mainBox && mainBox.x + mainBox.width <= panelBox.x + 1);
+  check("Chat: opens from the floating button", await docked.isVisible());
+  check("Chat: floating button hidden while the card is open", !(await openBtn.isVisible()));
+  const mainAfter = await frB.locator("main > div").boundingBox();
+  check("Chat: opening does not shift the page layout", !!mainBefore && !!mainAfter && Math.round(mainBefore.width) === Math.round(mainAfter.width) && Math.round(mainBefore.x) === Math.round(mainAfter.x));
 
   const cardBox = await docked.boundingBox();
   check("Chat: card is the standard 384x544 size (same as other pages)", !!cardBox && Math.round(cardBox.width) === 384 && Math.round(cardBox.height) === 544);
   await docked.getByRole("button", { name: "Close assistant" }).click();
-  check("Chat: can be closed on Welcome", !(await docked.isVisible()) && (await frB.getByRole("button", { name: "Open assistant" }).isVisible()));
-  await frB.getByRole("button", { name: "Open assistant" }).click();
+  check("Chat: can be closed on Welcome", !(await docked.isVisible()) && (await openBtn.isVisible()));
+  await openBtn.click();
   check("Chat: reopens from the floating button", await docked.isVisible());
 
   // Streaming UI, with the API mocked in the browser (no Gemini key needed): the reply arrives in pieces.

@@ -13,6 +13,7 @@ import fs from "node:fs";
 import { chromium, type Page } from "@playwright/test";
 import { PrismaClient, type OnboardingStatus, type ReviewStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { createHash, randomBytes } from "node:crypto";
 import { S3Client, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 const db = new PrismaClient();
@@ -50,8 +51,10 @@ async function settle(page: Page) {
 async function login(page: Page) {
   await page.goto(`${BASE}/login`);
   await page.getByLabel(/email/i).fill(FR_EMAIL);
-  await page.getByLabel(/password/i).fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
+  // networkidle alone can return before the sign-in Server Action finishes: wait for the redirect off /login.
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 30000 });
   await page.waitForLoadState("networkidle");
 }
 
@@ -59,7 +62,7 @@ async function shot(page: Page, route: string, name: string, width: number, heig
   await page.setViewportSize({ width, height });
   await page.goto(`${BASE}${route}`);
   await settle(page);
-  // The assistant card auto-opens on Welcome at xl+; close it so the page matches the mockup.
+  // The assistant card is closed on arrival everywhere; this only guards against it being open (e.g. a stale state).
   const close = page.getByRole("button", { name: "Close assistant" });
   if (await close.isVisible().catch(() => false)) {
     await close.click();
@@ -68,6 +71,45 @@ async function shot(page: Page, route: string, name: string, width: number, heig
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check(`${name} @${width}: no horizontal scroll (overflow ${overflow}px)`, overflow <= 0);
   await page.screenshot({ path: path.join(SHOT_DIR, `${name}-${width}.png`), fullPage: true });
+}
+
+/** Password show/hide toggle on the login page and both reset-password fields (no submit, so nothing changes). */
+async function passwordEyeChecks(page: Page, userId: string) {
+  await page.context().clearCookies();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE}/login`);
+  const pw = page.getByLabel("Password", { exact: true });
+  check("Login: password starts hidden", (await pw.getAttribute("type")) === "password");
+  await pw.fill("Secret-123");
+  await page.getByRole("button", { name: "Show password" }).click();
+  check("Login: Show password reveals the text and keeps the value", (await pw.getAttribute("type")) === "text" && (await pw.inputValue()) === "Secret-123");
+  check("Login: toggle label flips to Hide password", (await page.getByRole("button", { name: "Hide password" }).count()) === 1);
+  await page.screenshot({ path: path.join(SHOT_DIR, "login-eye-shown-1440.png") });
+  await page.getByRole("button", { name: "Hide password" }).click();
+  check("Login: Hide password hides again", (await pw.getAttribute("type")) === "password");
+  await pw.focus();
+  await page.keyboard.press("Tab");
+  check("Login: eye button is keyboard-reachable (Tab from the field)", await page.evaluate(() => (document.activeElement as HTMLElement | null)?.getAttribute("aria-label") === "Show password"));
+
+  // Reset-password page: real token row (same hashing as src/lib/password-reset-tokens.ts), deleted in finally.
+  const token = randomBytes(32).toString("hex");
+  await db.passwordResetToken.create({
+    data: { tokenHash: createHash("sha256").update(token).digest("hex"), userId, purpose: "RESET", expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+  });
+  await page.goto(`${BASE}/reset-password/${token}`);
+  const np = page.getByLabel("New password", { exact: true });
+  const cp = page.getByLabel("Confirm password", { exact: true });
+  await np.fill("Another-123");
+  await cp.fill("Another-123");
+  check("Reset: two independent toggles", (await page.getByRole("button", { name: "Show password" }).count()) === 2);
+  await page.getByRole("button", { name: "Show password" }).first().click();
+  check("Reset: first toggle reveals only the New password field", (await np.getAttribute("type")) === "text" && (await cp.getAttribute("type")) === "password");
+  await page.getByRole("button", { name: "Show password" }).click(); // the remaining one = Confirm
+  check("Reset: second toggle reveals the Confirm field", (await cp.getAttribute("type")) === "text");
+  await page.screenshot({ path: path.join(SHOT_DIR, "reset-eye-shown-1440.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: path.join(SHOT_DIR, "reset-eye-shown-390.png") });
+  await page.setViewportSize({ width: 1440, height: 900 });
 }
 
 async function setStatus(
@@ -102,6 +144,7 @@ async function main() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
+    await passwordEyeChecks(page, fr.id);
     await login(page);
 
     // ---- AWAITING_KYC_PAYMENT: the state the mockups show ----
@@ -127,6 +170,22 @@ async function main() {
     await page.getByRole("button", { name: /^Play video/ }).first().click();
     const src = await page.locator("iframe").first().getAttribute("src");
     check("Welcome: play still loads the youtube-nocookie embed", !!src && src.startsWith("https://www.youtube-nocookie.com/embed/"));
+
+    // Assistant: closed on arrival on Welcome at 1440px, opened only by the button, floats (no layout shift).
+    await page.goto(`${BASE}/onboarding/welcome`);
+    await settle(page);
+    const aside = page.getByRole("complementary", { name: "Assistant" });
+    const openBtn = page.getByRole("button", { name: "Open assistant" });
+    check("Welcome @1440: assistant closed on arrival, Ask assistant button visible", !(await aside.isVisible()) && (await openBtn.isVisible()));
+    const before = await page.locator("main > div").boundingBox();
+    await page.screenshot({ path: path.join(SHOT_DIR, "welcome-closed-1440.png") });
+    await openBtn.click();
+    await aside.getByText("Fraterniti Assistant").waitFor({ timeout: 20000 });
+    const after = await page.locator("main > div").boundingBox();
+    check("Welcome @1440: tapping the button opens it, page layout does not shift", (await aside.isVisible()) && !!before && !!after && Math.round(before.width) === Math.round(after.width));
+    await page.screenshot({ path: path.join(SHOT_DIR, "welcome-opened-1440.png") });
+    await aside.getByRole("button", { name: "Close assistant" }).click();
+    check("Welcome @1440: close works", !(await aside.isVisible()));
 
     // Real KYC upload still works (tiny PNG through presign -> PUT -> finalize).
     await page.goto(`${BASE}/onboarding/documents`);
@@ -175,6 +234,7 @@ async function main() {
     await browser.close();
     await db.paymentSubmission.deleteMany({ where: { onboardingId: ob.id } }).catch(() => {});
     await db.onboardingFile.deleteMany({ where: { onboardingId: ob.id } }).catch(() => {});
+    await db.passwordResetToken.deleteMany({ where: { userId: fr.id } }).catch(() => {});
     await db.kycSubmission.deleteMany({ where: { onboardingId: ob.id } }).catch(() => {});
     await db.notificationLog.deleteMany({ where: { onboardingId: ob.id } }).catch(() => {});
     await db.auditEvent.deleteMany({ where: { onboardingId: ob.id } }).catch(() => {});
