@@ -915,3 +915,11 @@ Branch `new`. Owner reported the two intro videos looked misaligned (second one 
 **Verified:** `typecheck` clean, `lint` 0 errors (same 2 old warnings), `test` 340/340. `ONLY_WELCOME=1 npx tsx scripts/tmp-e2e-onboarding.ts` at 1440x900 passes all checks incl. the 3 new ones, 390px mobile has no horizontal overflow; screenshot reviewed by eye. Cleanup proof: `tmp-cleanup-onboarding-e2e.ts --count` all 0, `.local-uploads` empty, no stray Playwright browsers. That script also made one real Gemini call (the existing chat check).
 
 **Not verified / needs a human:** viewports between 390px and 1440px only checked via the no-overflow assertion, not by eye; 16:9 variant never rendered. Not committed.
+
+### 2026-11-16 — Merge `new` → `new-main`, production migrations applied
+
+Merged `new` into `new-main` (conflict-free; `new-main` only had `.gitignore`, settings-untrack and progress-log extras) and pushed `new-main` (`11c4905..00b3618`). On the merged tree: `typecheck` clean, `lint` 0 errors (2 old warnings), `test` 340/340.
+
+Applied `20261113090000_dashboard_step_assignments` and `20261113120000_store_onboarding` to **production** with `prisma migrate deploy` (owner explicitly approved in chat). `migrate status` before: exactly those 2 pending; after: "Database schema is up to date" (12 migrations). Prod URL came from a Windows *user* env var (`PROD_DIRECT_URL`, set by the owner via `setx`; not in `.env`/any repo file), loaded into the process env for that one command only and unset afterwards. Preview DB (`.env`) already had both migrations.
+
+**Not verified / needs a human:** no browser pass on the merged tree; prod app behaviour after migration not checked; Vercel deploy of `new-main` not checked.
