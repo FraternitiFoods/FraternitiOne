@@ -37,7 +37,7 @@ async function login(context: BrowserContext, email: string): Promise<Page> {
   const page = await context.newPage();
   await page.goto(`${BASE}/login`);
   await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60000, waitUntil: "commit" });
   await page.waitForLoadState("networkidle");

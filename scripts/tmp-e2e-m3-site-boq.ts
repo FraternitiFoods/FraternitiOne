@@ -36,7 +36,7 @@ function check(label: string, cond: boolean) {
 async function login(page: Page, email: string, password: string) {
   await page.goto(`${BASE}/login`);
   await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10000, waitUntil: "commit" });
   await page.waitForLoadState("networkidle");

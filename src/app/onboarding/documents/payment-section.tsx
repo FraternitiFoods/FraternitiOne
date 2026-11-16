@@ -4,9 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPresignedOnboardingUpload, submitPaymentReceipt } from "./actions";
 import { formatMoney } from "@/lib/onboarding/format";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ObButton } from "@/components/onboarding-ui/buttons";
+import { OB_FILE_INPUT_CLASS, OB_INPUT_CLASS, OB_LABEL_CLASS } from "@/components/onboarding-ui/form-styles";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
@@ -95,16 +96,16 @@ export function PaymentSection({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">LOI fee amount: {formatMoney(expectedAmount)}</p>
+      <p className="text-[15px] text-[var(--ob-text-2)]">LOI fee amount: {formatMoney(expectedAmount)}</p>
       {totalVerifiedAmount > 0 && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-[15px] text-[var(--ob-text-2)]">
           Verified so far: {formatMoney(totalVerifiedAmount)}
           {remainingAmount > 0 && <> — {formatMoney(remainingAmount)} remaining</>}
         </p>
       )}
 
       {latestPayment && (
-        <div className="rounded-md border p-3 text-sm">
+        <div className="rounded-[20px] border border-[var(--ob-line)] bg-[var(--ob-bg)] px-5 py-4 text-[15px] text-[var(--ob-text-2)]">
           <div>Declared: {formatMoney(latestPayment.declaredAmount)}</div>
           <div>Mode: {latestPayment.mode}</div>
           <div>UTR: {latestPayment.utr}</div>
@@ -115,8 +116,9 @@ export function PaymentSection({
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="declaredAmountRupees">Amount paid (₹)</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="declaredAmountRupees">Amount paid (₹)</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="declaredAmountRupees"
                 type="number"
                 min="1"
@@ -125,8 +127,9 @@ export function PaymentSection({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="paymentDate">Payment date</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="paymentDate">Payment date</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="paymentDate"
                 type="date"
                 value={paymentDate}
@@ -134,8 +137,9 @@ export function PaymentSection({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="mode">Payment mode</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="mode">Payment mode</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="mode"
                 placeholder="NEFT / RTGS / UPI"
                 value={mode}
@@ -143,17 +147,18 @@ export function PaymentSection({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="utr">UTR / transaction reference</Label>
-              <Input id="utr" value={utr} onChange={(e) => setUtr(e.target.value)} />
+              <Label className={OB_LABEL_CLASS} htmlFor="utr">UTR / transaction reference</Label>
+              <Input className={OB_INPUT_CLASS} id="utr" value={utr} onChange={(e) => setUtr(e.target.value)} />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="receipt">Receipt file (PDF, JPG or PNG, max 10MB)</Label>
+            <Label className={OB_LABEL_CLASS} htmlFor="receipt">Receipt file (PDF, JPG or PNG, max 10MB)</Label>
             <input
               ref={fileInputRef}
               id="receipt"
               type="file"
+              className={OB_FILE_INPUT_CLASS}
               accept={ACCEPTED_TYPES.join(",")}
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -173,14 +178,14 @@ export function PaymentSection({
           </div>
 
           {error && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm font-medium text-[#8a1c14]" role="alert">
               {error}
             </p>
           )}
 
-          <Button onClick={handleSubmit} disabled={submitting}>
+          <ObButton variant="solid" onClick={handleSubmit} disabled={submitting}>
             {submitting ? "Submitting…" : "Submit payment receipt"}
-          </Button>
+          </ObButton>
         </div>
       )}
     </div>

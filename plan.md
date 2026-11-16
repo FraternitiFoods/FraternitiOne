@@ -923,3 +923,33 @@ Merged `new` into `new-main` (conflict-free; `new-main` only had `.gitignore`, s
 Applied `20261113090000_dashboard_step_assignments` and `20261113120000_store_onboarding` to **production** with `prisma migrate deploy` (owner explicitly approved in chat). `migrate status` before: exactly those 2 pending; after: "Database schema is up to date" (12 migrations). Prod URL came from a Windows *user* env var (`PROD_DIRECT_URL`, set by the owner via `setx`; not in `.env`/any repo file), loaded into the process env for that one command only and unset afterwards. Preview DB (`.env`) already had both migrations.
 
 **Not verified / needs a human:** no browser pass on the merged tree; prod app behaviour after migration not checked; Vercel deploy of `new-main` not checked.
+
+### 2026-11-16 — Franchisee portal reskin "Option B / Tulsi Warm" (Welcome, Progress, KYC & Documents)
+
+Branch `redesign/onboarding-b` (from `new`, not pushed). Reskin only: cream/green/saffron shell + Fraunces/Figtree, scoped to `/onboarding/*` via `.ob-theme` (globals.css) and fonts loaded in `onboarding/layout.tsx`; staff app and shadcn tokens untouched. New shared pieces in `src/components/onboarding-ui/` (card, status-pill, buttons, stage-stepper, upload-row, segment-bar, video-card, next-steps-card, emails-card, decor, form-styles). Reference: `design-reference/` (untracked).
+
+**Small non-visual edits (flag for review):** `session.ts` now also selects `StoreOnboarding.seq` in the existing join (`onboardingSeq`, for the "F1-0035" code in the sidebar; no extra query). `welcome-steps.ts`: `welcomeJourney()` + `JOURNEY_STEPS` (3-step journey derived from `currentWelcomeStepIndex`, unit-tested) and the AWAITING label is now "Upload KYC documents". `tmp-e2e-onboarding.ts` assertions updated for the 3-step list / new label.
+
+**Verified:** `typecheck` clean, `lint` 0 errors (2 old warnings), `test` all green. New `scripts/tmp-e2e-onboarding-ui.ts` (real Chromium, throwaway franchisee): 1440px + 390px screenshots of Welcome/Progress/KYC/LOI at AWAITING, plus CORRECTIONS_REQUESTED, UNDER_REVIEW, READY_FOR_SIGNATURE; no horizontal scroll anywhere; 3-step journey + CTA derive from status; video click-to-load iframe still works; real KYC upload (presign -> B2 -> finalize -> "Clean", Replace button) still works; keyboard focus outline visible; "See your progress" button hidden on Progress. `tmp-e2e-onboarding.ts`: Welcome/chat/mobile checks all OK and the franchisee KYC/payment steps passed on one run; that script then stops at an unrelated STAFF step (`getByLabel("Territory")` on `/store-onboarding/[id]/loi`, a page not touched here) and was flaky on login timing on a second run.
+
+**Cleanup proof:** count query after runs: `tmp-e2e%`/`ci-smoke%` users 0, test onboardings 0, sites/dashboard sites 0; B2 prefixes deleted in `finally`; `.local-uploads` absent; dev server stopped. No fixture-push scripts, `ci-smoke.ts` not run.
+
+**Not verified / needs a human:** LOI page only seen in its "not prepared yet" state (no real LOI content rendered in the new shell); viewports between 390 and 1440 not checked by eye; invented visual states (SUBMITTED/Scanning = amber, ACCEPTED/Clean = green, CHANGES_REQUESTED/Rejected = rose); `before-*.png` were not in `design-reference/`; the staff-side step in `tmp-e2e-onboarding.ts` needs a separate look.
+
+### 2026-11-16 (later) — Password show/hide eye + assistant closed by default on Welcome
+
+Branch `fix/auth-eye-chat-closed` (from `redesign/onboarding-b`, not pushed), two commits.
+
+**Changed:** (1) New `src/components/ui/password-input.tsx` (same `Input`, only `type` flips; real `<button type="button">`, label "Show password"/"Hide password", `aria-pressed`, Edge's native reveal icon hidden) used by the login form and both reset-password fields. The 15 Playwright scripts that did `getByLabel(/password/i)` now use `getByLabel("Password", { exact: true })` (the toggle's label would otherwise match too — strict-mode error), incl. `ci-smoke.ts`. (2) `onboarding-chat/chat-shell.tsx`: removed the Welcome-only auto-open (`autoOpen`, xl media query, 27rem right reserve); the assistant is closed on arrival on every page and opens only from "Ask assistant", floating over the page like everywhere else. Lazy mount + conversation persistence unchanged. `tmp-e2e-onboarding.ts` Welcome/chat assertions rewritten for the new behaviour; both onboarding scripts' `login()` now waits for the redirect off `/login` (networkidle alone returned before the sign-in Server Action finished and made the Welcome check flaky).
+
+**Verified:** `typecheck` clean, `lint` 0 errors (same 2 old warnings), `test` 341/341. `tmp-e2e-onboarding-ui.ts` (real Chromium, throwaway user + real reset token): login eye starts hidden, reveals + keeps value, label flips, hides again, reachable by Tab; reset page has two independent toggles (also at 390px); Welcome at 1440px has the card closed with the button visible, opens on tap with no layout shift, closes. `ONLY_WELCOME=1 tmp-e2e-onboarding.ts`: all 27 checks OK incl. the rewritten chat ones. `tmp-e2e-nav-reliability.ts` (changed selector) passes. Cleanup proof: `tmp-e2e%`/`ci-smoke%` users 0, onboardings 0, reset tokens 0, sessions 0, sites 0; `.local-uploads` absent; no fixture-push scripts, `ci-smoke.ts` not run.
+
+**Not verified / needs a human:** the other 12 scripts with the selector change were only edited mechanically (same one-liner) and not each run; `ci-smoke.ts` will first prove it in CI. Full `tmp-e2e-onboarding.ts` (non-WELCOME part) still stops at an unrelated staff LOI step (`getByLabel("Territory")`), as noted in the reskin entry. A pre-existing `pnpm dev` (not started by this session) was left running on :3000.
+
+### 2026-11-16 (night) — Reskin + eye toggle landed on `new`, `new` merged into `new-main`
+
+Branches `redesign/onboarding-b` and `fix/auth-eye-chat-closed` were fast-forwarded into `new` and deleted (the two entries above describe their work; "not pushed" there is now stale). `design-reference/` added to `.gitignore`. Pushed `new` (`37a03f6..2fcf386`). Merged `new` into `new-main` — one conflict, `plan.md` progress log only (both sides appended entries; kept both, no code conflict).
+
+**Verified:** on the merged `new-main` tree `typecheck` clean, `lint` 0 errors (same 2 old warnings), `test` 341/341. No DB/Playwright runs this session, so nothing to clean up.
+
+**Not verified / needs a human:** no browser pass on the merged tree; Vercel deploy of `new-main` not checked; no new prod migrations in this merge.

@@ -136,3 +136,46 @@
     @apply font-sans;
   }
 }
+
+/* Franchisee onboarding portal ("Option B / Tulsi Warm"). Scoped to the
+   `.ob-theme` wrapper in src/app/onboarding/layout.tsx so nothing here leaks
+   into the staff app; the shadcn tokens above are intentionally untouched
+   (the LOI page keeps using them inside the new shell). */
+.ob-theme {
+  --ob-bg: #faf5ea;
+  --ob-sidebar: #f0e8d6;
+  --ob-green: #0f3324;
+  --ob-saffron: #e58a1f;
+  --ob-cream: #faf5ea;
+  --ob-on-green-sub: #a9c2b3;
+  --ob-text: #1d2a22;
+  --ob-text-2: #3f5448;
+  --ob-muted: #4b5f54;
+  --ob-nav: #2e4538;
+  --ob-track: #e9dfc8;
+  --ob-line: rgb(15 51 36 / 0.1);
+  --ob-card-shadow: 0 22px 40px -28px rgb(15 51 36 / 0.4), 0 0 0 1px rgb(15 51 36 / 0.06);
+  --ob-font-display: var(--font-fraunces), Georgia, serif;
+  --ob-font-ui: var(--font-figtree), system-ui, sans-serif;
+
+  background: var(--ob-bg);
+  color: var(--ob-text);
+  font-family: var(--ob-font-ui);
+}
+
+.ob-theme .ob-display {
+  font-family: var(--ob-font-display);
+}
+
+/* Opt-in focus rings for the new onboarding components (not global, so the
+   LOI page / assistant panel keep their own shadcn focus styles). Green on the
+   cream page; saffron when the control sits on a dark-green card. */
+.ob-theme .ob-focus:focus-visible {
+  outline: 3px solid var(--ob-green);
+  outline-offset: 3px;
+}
+
+.ob-theme .ob-focus-dark:focus-visible {
+  outline: 3px solid var(--ob-saffron);
+  outline-offset: 3px;
+}

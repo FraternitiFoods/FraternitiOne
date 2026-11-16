@@ -1,7 +1,26 @@
 import { redirect } from "next/navigation";
+import { Fraunces, Figtree } from "next/font/google";
 import { requireUser } from "@/lib/auth";
 import { OnboardingSidebar } from "@/components/onboarding-sidebar";
+import { formatOnboardingCode } from "@/lib/onboarding/ids";
 import { ChatShell } from "@/components/onboarding-chat/chat-shell";
+
+// Loaded here (not in the root layout) so only /onboarding/* preloads them;
+// the staff app keeps Montserrat. Variables are consumed by `.ob-theme` in globals.css.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  axes: ["opsz"],
+  fallback: ["Georgia", "serif"],
+});
+
+const figtree = Figtree({
+  variable: "--font-figtree",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  fallback: ["system-ui", "sans-serif"],
+});
 
 /**
  * plan.md section 17 — franchisee-only portal. Structurally satisfies P1-03
@@ -29,8 +48,11 @@ export default async function OnboardingLayout({ children }: LayoutProps<"/">) {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <OnboardingSidebar name={user.name} />
+    <div className={`ob-theme ${fraunces.variable} ${figtree.variable} min-h-screen`}>
+      <OnboardingSidebar
+        name={user.name}
+        code={user.onboardingSeq != null ? formatOnboardingCode(user.onboardingSeq) : null}
+      />
       <ChatShell>{children}</ChatShell>
     </div>
   );

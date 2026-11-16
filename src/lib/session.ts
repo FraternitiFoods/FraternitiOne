@@ -62,6 +62,9 @@ export type CurrentUser = {
   /// the existing session query (one join, no extra round trip per navigation)
   /// so the (app) layout / `/` can route them to the /onboarding portal.
   onboardingStatus?: OnboardingStatus | null;
+  /// StoreOnboarding.seq (same joined row) — only used to show the franchise
+  /// code ("F1-0001") in the onboarding sidebar without a second query.
+  onboardingSeq?: number | null;
 };
 
 /**
@@ -82,7 +85,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await db.session.findUnique({
     where: { tokenHash: hashToken(token) },
     relationLoadStrategy: "join",
-    include: { user: { include: { onboardingAsFranchisee: { select: { onboardingStatus: true } } } } },
+    include: { user: { include: { onboardingAsFranchisee: { select: { onboardingStatus: true, seq: true } } } } },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -101,5 +104,6 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     email: session.user.email,
     role: session.user.role,
     onboardingStatus: session.user.onboardingAsFranchisee?.onboardingStatus ?? null,
+    onboardingSeq: session.user.onboardingAsFranchisee?.seq ?? null,
   };
 });

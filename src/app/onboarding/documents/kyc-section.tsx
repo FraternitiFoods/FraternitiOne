@@ -9,10 +9,27 @@ import {
   submitKycForReview,
 } from "./actions";
 import { FILE_KIND_LABELS } from "@/lib/onboarding/kyc-requirements";
-import { Button } from "@/components/ui/button";
+import {
+  Banknote,
+  Building2,
+  FileBadge,
+  FileCheck,
+  FileText,
+  IdCard,
+  Image as ImageIcon,
+  Landmark,
+  MapPin,
+  Paperclip,
+  Upload,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { ObButton } from "@/components/onboarding-ui/buttons";
+import { StatusPill, scanStatusTone } from "@/components/onboarding-ui/status-pill";
+import { UploadRow } from "@/components/onboarding-ui/upload-row";
+import { OB_INPUT_CLASS, OB_LABEL_CLASS } from "@/components/onboarding-ui/form-styles";
 import type { OnboardingEntityType, OnboardingFileKind, ScanStatus } from "@prisma/client";
 
 type FileInfo = { kind: OnboardingFileKind; fileName: string; version: number; scanStatus: ScanStatus };
@@ -29,20 +46,46 @@ type KycInfo = {
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 
+const SCAN_LABELS: Record<ScanStatus, string> = {
+  CLEAN: "Clean",
+  PENDING: "Scanning…",
+  INFECTED: "Rejected",
+  ERROR: "Scan error",
+};
+
 function scanBadge(status: ScanStatus) {
-  if (status === "CLEAN") return <Badge variant="default">Clean</Badge>;
-  if (status === "PENDING") return <Badge variant="outline">Scanning…</Badge>;
-  return <Badge variant="destructive">{status === "INFECTED" ? "Rejected" : "Scan error"}</Badge>;
+  return (
+    <StatusPill tone={scanStatusTone(status)} size="sm">
+      {SCAN_LABELS[status] ?? "Scan error"}
+    </StatusPill>
+  );
 }
+
+const KIND_ICONS: Record<OnboardingFileKind, LucideIcon> = {
+  PAN: IdCard,
+  AADHAAR: IdCard,
+  COMPANY_DOC: Building2,
+  SIGNATORY_PROOF: FileBadge,
+  PAYMENT_RECEIPT: FileText,
+  ADDRESS_PROOF: MapPin,
+  PHOTOGRAPH: ImageIcon,
+  BANK_STATEMENT: Landmark,
+  CANCELLED_CHEQUE: Banknote,
+  GST_CERT: FileCheck,
+  PARTNERSHIP_DEED: Users,
+  OTHER_SUPPORTING: Paperclip,
+};
 
 function FileUploader({
   kind,
   existing,
   editable,
+  required = false,
 }: {
   kind: OnboardingFileKind;
   existing: FileInfo | undefined;
   editable: boolean;
+  required?: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,51 +148,57 @@ function FileUploader({
     }
   }
 
+  const label = FILE_KIND_LABELS[kind];
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{FILE_KIND_LABELS[kind]}</div>
-        {existing ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="truncate">
+    <UploadRow
+      icon={KIND_ICONS[kind]}
+      title={label}
+      required={required}
+      status={
+        existing ? (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="min-w-0 break-all">
               {existing.fileName} (v{existing.version})
             </span>
             {scanBadge(existing.scanStatus)}
-          </div>
+          </span>
         ) : (
-          <div className="text-xs text-muted-foreground">Not uploaded yet</div>
-        )}
-        {error && (
-          <p className="text-xs text-destructive" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-      {editable && (
-        <>
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPTED_TYPES.join(",")}
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFile(file);
-              e.target.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={status === "uploading"}
-            onClick={() => inputRef.current?.click()}
-          >
-            {status === "uploading" ? "Uploading…" : existing ? "Replace" : "Upload"}
-          </Button>
-        </>
+          "Not uploaded yet"
+        )
+      }
+      action={
+        editable && (
+          <>
+            <input
+              ref={inputRef}
+              type="file"
+              accept={ACCEPTED_TYPES.join(",")}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFile(file);
+                e.target.value = "";
+              }}
+            />
+            <ObButton
+              variant={required ? "solid" : "outline"}
+              aria-label={`${existing ? "Replace" : "Upload"} ${label}`}
+              disabled={status === "uploading"}
+              onClick={() => inputRef.current?.click()}
+            >
+              <Upload className="size-[18px]" strokeWidth={2} aria-hidden />
+              {status === "uploading" ? "Uploading…" : existing ? "Replace" : "Upload"}
+            </ObButton>
+          </>
+        )
+      }
+    >
+      {error && (
+        <p className="mt-3 text-sm font-medium text-[#8a1c14]" role="alert">
+          {error}
+        </p>
       )}
-    </div>
+    </UploadRow>
   );
 }
 
@@ -187,42 +236,45 @@ export function KycSection({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className="space-y-5">
+      <div className="space-y-3">
         {requiredKinds.map((kind) => (
-          <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} />
+          <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} required />
         ))}
       </div>
 
       {optionalKinds.length > 0 && (
-        <div className="space-y-2 border-t pt-4">
-          <div className="text-sm font-medium">Additional documents (optional)</div>
-          <p className="text-xs text-muted-foreground">
+        <div className="mt-8 border-t border-[var(--ob-green)]/12 pt-7">
+          <h3 className="ob-display text-[22px] font-semibold text-[var(--ob-green)]">Additional documents (optional)</h3>
+          <p className="mt-2 text-[15px] leading-normal text-[var(--ob-text-2)]">
             Not required to submit your KYC, but upload any that apply — it can speed up review.
           </p>
-          {optionalKinds.map((kind) => (
-            <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} />
-          ))}
+          <div className="mt-5 space-y-3">
+            {optionalKinds.map((kind) => (
+              <FileUploader key={kind} kind={kind} existing={fileByKind.get(kind)} editable={editable} />
+            ))}
+          </div>
         </div>
       )}
 
-      <form action={detailsAction} className="space-y-4">
+      <form action={detailsAction} className="space-y-4 border-t border-[var(--ob-green)]/12 pt-7">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="panNumber">PAN number {kyc?.hasPan && "(on file — leave blank to keep)"}</Label>
-            <Input id="panNumber" name="panNumber" placeholder="ABCDE1234F" disabled={!editable} />
+            <Label className={OB_LABEL_CLASS} htmlFor="panNumber">PAN number {kyc?.hasPan && "(on file — leave blank to keep)"}</Label>
+            <Input className={OB_INPUT_CLASS} id="panNumber" name="panNumber" placeholder="ABCDE1234F" disabled={!editable} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="panName">Name on PAN</Label>
-            <Input id="panName" name="panName" defaultValue={kyc?.panName ?? ""} disabled={!editable} />
+            <Label className={OB_LABEL_CLASS} htmlFor="panName">Name on PAN</Label>
+            <Input className={OB_INPUT_CLASS} id="panName" name="panName" defaultValue={kyc?.panName ?? ""} disabled={!editable} />
           </div>
         </div>
 
         {entityType === "INDIVIDUAL" && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="aadhaarHolderName">Name on Aadhaar</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="aadhaarHolderName">Name on Aadhaar</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="aadhaarHolderName"
                 name="aadhaarHolderName"
                 defaultValue={kyc?.aadhaarHolderName ?? ""}
@@ -230,8 +282,9 @@ export function KycSection({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="aadhaarLast4">Aadhaar — last 4 digits only</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="aadhaarLast4">Aadhaar — last 4 digits only</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="aadhaarLast4"
                 name="aadhaarLast4"
                 maxLength={4}
@@ -239,7 +292,7 @@ export function KycSection({
                 defaultValue={kyc?.aadhaarLast4 ?? ""}
                 disabled={!editable}
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-[var(--ob-muted)]">
                 Never enter your full Aadhaar number — only the last 4 digits are stored.
               </p>
             </div>
@@ -249,16 +302,17 @@ export function KycSection({
         {entityType === "COMPANY" && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="companyName">Company name</Label>
-              <Input id="companyName" name="companyName" defaultValue={kyc?.companyName ?? ""} disabled={!editable} />
+              <Label className={OB_LABEL_CLASS} htmlFor="companyName">Company name</Label>
+              <Input className={OB_INPUT_CLASS} id="companyName" name="companyName" defaultValue={kyc?.companyName ?? ""} disabled={!editable} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="companyPan">Company PAN</Label>
-              <Input id="companyPan" name="companyPan" defaultValue={kyc?.companyPan ?? ""} disabled={!editable} />
+              <Label className={OB_LABEL_CLASS} htmlFor="companyPan">Company PAN</Label>
+              <Input className={OB_INPUT_CLASS} id="companyPan" name="companyPan" defaultValue={kyc?.companyPan ?? ""} disabled={!editable} />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="authorisedSignatoryName">Authorised signatory name</Label>
+              <Label className={OB_LABEL_CLASS} htmlFor="authorisedSignatoryName">Authorised signatory name</Label>
               <Input
+                className={OB_INPUT_CLASS}
                 id="authorisedSignatoryName"
                 name="authorisedSignatoryName"
                 defaultValue={kyc?.authorisedSignatoryName ?? ""}
@@ -269,29 +323,29 @@ export function KycSection({
         )}
 
         {detailsState?.error && (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm font-medium text-[#8a1c14]" role="alert">
             {detailsState.error}
           </p>
         )}
-        {detailsState?.success && <p className="text-sm text-emerald-600">Saved.</p>}
+        {detailsState?.success && <p className="text-sm font-medium text-[#1e5c3a]">Saved.</p>}
 
         {editable && (
-          <Button type="submit" variant="outline" disabled={detailsPending}>
+          <ObButton type="submit" variant="outline" disabled={detailsPending}>
             {detailsPending ? "Saving…" : "Save details"}
-          </Button>
+          </ObButton>
         )}
       </form>
 
       {editable && (
-        <div className="space-y-2 border-t pt-4">
+        <div className="space-y-3 border-t border-[var(--ob-green)]/12 pt-7">
           {submitError && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-sm font-medium text-[#8a1c14]" role="alert">
               {submitError}
             </p>
           )}
-          <Button onClick={handleSubmit} disabled={submitting}>
+          <ObButton variant="solid" onClick={handleSubmit} disabled={submitting}>
             {submitting ? "Submitting…" : "Submit for review"}
-          </Button>
+          </ObButton>
         </div>
       )}
     </div>
