@@ -51,3 +51,32 @@ export async function getOpsBoqRows(siteId: string): Promise<OpsBoqRowView[]> {
   });
   return rows.map(toOpsBoqRowView);
 }
+
+/**
+ * Sites for the Operations BOQ "Select Site" dropdown. Not just `usedInBoq`
+ * sites (what getActiveSites() returns): the unified sync's Site BOQ leg turns
+ * `usedInBoq` off for any site missing from the Rate Sheet, so a site that only
+ * exists in the Ops sheet (or whose ops rows were synced) would otherwise never
+ * appear here. Any active site that has Operations BOQ rows is listed too.
+ */
+export async function getOpsBoqSites() {
+  return db.site.findMany({
+    where: { isActive: true, OR: [{ usedInBoq: true }, { opsBoqRows: { some: {} } }] },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true },
+  });
+}
+
+/**
+ * When the unified sync last committed the Ops BOQ leg (ISO string, "" if never).
+ * OpsBoqTable keeps its rows in client state, so after a sync (router.refresh()
+ * delivers fresh `rows` props) it is re-keyed by this value to remount with them.
+ */
+export async function getOpsBoqSyncToken(): Promise<string> {
+  const leg = await db.syncLeg.findFirst({
+    where: { leg: "OPS_BOQ", status: "COMMITTED" },
+    orderBy: { finishedAt: "desc" },
+    select: { finishedAt: true },
+  });
+  return leg?.finishedAt ? leg.finishedAt.toISOString() : "";
+}

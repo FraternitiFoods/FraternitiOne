@@ -16,8 +16,8 @@ const VARIANTS: Record<ObButtonVariant, string> = {
 };
 
 const SIZES = {
-  md: "h-[46px] rounded-xl px-5 text-[15px]",
-  lg: "h-14 rounded-[14px] px-7 text-[15px]",
+  md: "h-[46px] rounded-xl px-5 text-[15px] sm:h-[40px] sm:text-sm",
+  lg: "h-14 rounded-[14px] px-7 text-[15px] sm:text-sm",
 } as const;
 
 export function obButtonClass(variant: ObButtonVariant = "solid", size: keyof typeof SIZES = "md", className?: string) {

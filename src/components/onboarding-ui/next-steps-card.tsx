@@ -18,8 +18,8 @@ export function NextStepsCard({
   action: { href: string; label: string };
 }) {
   return (
-    <ObCard tone="dark" className="flex min-w-0 flex-1 basis-[20rem] flex-col p-7 sm:p-9">
-      <LeafWatermark className="-right-12 -bottom-12 size-[260px]" />
+    <ObCard tone="dark" className="flex min-w-0 flex-1 basis-[20rem] flex-col p-7 sm:basis-[17rem] sm:p-9">
+      <LeafWatermark className="-right-12 -bottom-12 size-[260px] sm:size-[220px]" />
 
       <div className="relative text-xs font-bold tracking-[0.16em] text-[var(--ob-saffron)] uppercase">Next steps</div>
       <p className="ob-display relative mt-3.5 text-2xl leading-[1.3] font-medium">{message}</p>
@@ -39,7 +39,7 @@ export function NextStepsCard({
                     state === "upcoming" && "border-2 border-[var(--ob-cream)]/35 text-[var(--ob-on-green-sub)]"
                   )}
                 >
-                  {state === "done" ? <Check className="size-[18px]" strokeWidth={2.4} aria-hidden /> : i + 1}
+                  {state === "done" ? <Check className="size-[18px] sm:size-[15px]" strokeWidth={2.4} aria-hidden /> : i + 1}
                 </div>
                 {!last && (
                   <div
@@ -52,7 +52,7 @@ export function NextStepsCard({
                 )}
               </div>
               <div className={cn("pt-1.5", !last && "pb-4")}>
-                <div className="text-[15px] font-bold">
+                <div className="text-[15px] font-bold sm:text-sm">
                   {step.title}
                   {state === "done" && <span className="sr-only"> (done)</span>}
                 </div>
@@ -66,7 +66,7 @@ export function NextStepsCard({
       <div className="relative mt-auto pt-8">
         <ObLinkButton href={action.href} variant="saffron" size="lg" className="w-full gap-2.5">
           {action.label}
-          <ArrowRight className="size-[18px]" strokeWidth={2.2} aria-hidden />
+          <ArrowRight className="size-[18px] sm:size-[16px]" strokeWidth={2.2} aria-hidden />
         </ObLinkButton>
       </div>
     </ObCard>

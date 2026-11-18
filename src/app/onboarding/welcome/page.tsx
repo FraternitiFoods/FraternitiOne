@@ -76,14 +76,14 @@ export default async function OnboardingWelcomePage() {
               </svg>
             </span>
           </h1>
-          <p className="mt-7 max-w-[35rem] text-lg leading-relaxed text-[var(--ob-text-2)]">
+          <p className="mt-7 max-w-[35rem] text-lg sm:max-w-[30rem] leading-relaxed text-[var(--ob-text-2)]">
             We&apos;re glad to have you with us. Everything you need to begin your franchise journey is right here.
           </p>
         </section>
 
         <section aria-labelledby="intro-videos">
           <div className="flex items-center gap-4">
-            <h2 id="intro-videos" className="ob-display text-[26px] font-semibold text-[var(--ob-green)]">
+            <h2 id="intro-videos" className="ob-display text-[26px] font-semibold sm:text-[22px] text-[var(--ob-green)]">
               Get started
             </h2>
             <div aria-hidden className="h-px flex-1 bg-[var(--ob-green)]/18" />

@@ -2,6 +2,7 @@ import { requireSiteTrackerUser } from "@/lib/site-tracker-access";
 import { canEditSiteTracker } from "@/lib/permissions";
 import { getAllSitesProgress, getSiteTrackerSummary, type SiteTrackerSummary } from "@/lib/tracker-data";
 import { PageHeader } from "@/components/page-header";
+import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { SiteTrackerApp } from "./_components/site-tracker-app";
 import type { SiteSummary } from "./_components/types";
 
@@ -32,7 +33,12 @@ export default async function SiteTrackerPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Site Tracker" subtitle="Construction progress by site." isFranchisee={false} />
+      <PageHeader
+        title="Site Tracker"
+        subtitle="Construction progress by site."
+        isFranchisee={false}
+        action={<UnifiedSyncSlot user={user} />}
+      />
       <SiteTrackerApp
         currentUserName={user.name}
         canEdit={canEditSiteTracker(user)}

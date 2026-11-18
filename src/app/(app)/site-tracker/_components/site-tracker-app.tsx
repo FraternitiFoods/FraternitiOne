@@ -1,5 +1,6 @@
 "use client";
 
+import { SYNC_DONE_EVENT } from "@/components/sync/unified-sync-button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
@@ -44,7 +45,7 @@ export function SiteTrackerApp({
   initialSummary: SiteSummary | null;
 }) {
   const [tab, setTab] = useState<"tracker" | "all">("tracker");
-  const [sites] = useState<SiteProgressRow[]>(initialSites);
+  const [sites, setSites] = useState<SiteProgressRow[]>(initialSites);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(initialSites[0]?.site.id ?? null);
   const [summary, setSummary] = useState<SiteSummary | null>(initialSummary);
   const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(
@@ -96,6 +97,31 @@ export function SiteTrackerApp({
       cancelled = true;
     };
   }, [selectedSiteId]);
+
+  // A unified sync (the header Sync button) changed the data underneath us. This page keeps its
+  // own client state (selection, tab, filters, open sections), so router.refresh() alone would not
+  // update it: refetch the sites list and the OPEN site's tracker in place, leaving everything the
+  // user has set up alone. Silent on failure — router.refresh() already refreshed the server side.
+  const selectedSiteIdRef = useRef(selectedSiteId);
+  useEffect(() => {
+    selectedSiteIdRef.current = selectedSiteId;
+  }, [selectedSiteId]);
+  useEffect(() => {
+    async function refetchAfterSync() {
+      try {
+        const [listRes, summaryRes] = await Promise.all([
+          fetch("/api/tracker/sites", { cache: "no-store" }),
+          selectedSiteIdRef.current ? fetch(`/api/tracker/sites/${selectedSiteIdRef.current}`, { cache: "no-store" }) : null,
+        ]);
+        if (listRes.ok) setSites(((await listRes.json()) as { sites: SiteProgressRow[] }).sites);
+        if (summaryRes?.ok) setSummary((await summaryRes.json()) as SiteSummary);
+      } catch {
+        /* keep what is on screen */
+      }
+    }
+    window.addEventListener(SYNC_DONE_EVENT, refetchAfterSync);
+    return () => window.removeEventListener(SYNC_DONE_EVENT, refetchAfterSync);
+  }, []);
 
   // "All sites" tab and the site selector both show the currently open site's live counts/progress rather than the possibly-stale numbers from the initial sites-list fetch — a derived value, not a second piece of state kept in sync via an effect.
   const displaySites = useMemo(() => {

@@ -3,6 +3,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { isWebsiteSourceKey, resolveOrCreateSites, type ResolvedSite } from "@/lib/site-resolve";
+import { commitHashes } from "@/lib/sync-batch/hash";
 import { SyncError } from "./errors";
 import type { ChunkTab, SiteStartInput } from "./schema";
 
@@ -17,7 +19,12 @@ export type CommitCounts = {
   siteItems: number;
   deactivatedSites: number;
   deactivatedItems: number;
+  /** Unified sync: tabs listed in the manifest whose hash was unchanged (not rewritten). */
+  unchangedTabs: number;
 };
+
+/** Stored with the tab hashes: the website-locked-sites fingerprint (see run.ts planTabs). */
+const LOCKED_CTX_KEY = "__locked";
 
 /** Batch size for the bulk VALUES-list upserts — large enough to cut round
  * trips dramatically (a 680-item/3000-site-entry run goes from thousands of
@@ -102,30 +109,47 @@ type SiteRef = { id: string; isLocked: boolean };
  * previously synced but no longer in sites[]. sheetLocked is the sheet's own
  * "order delivered/locked" flag — distinct from the website-native isLocked,
  * which this never touches.
+ *
+ * Unified sync scoping (owner decision 7): a website-created (`WEB-`) site is
+ * never adopted, renamed, updated or archived — it is skipped with a warning
+ * and left out of the result so none of its SiteItems are touched either.
+ * `resolved` (from resolveOrCreateSites) lets a sheet spelling that matched a
+ * SiteAlias land on the real site instead of creating a duplicate; such a site
+ * keeps its own name.
  */
-async function upsertSites(
+export async function upsertSites(
   tx: Tx,
   runId: string,
   sites: SiteStartInput[],
   lockedSiteNames: string[],
-  warnings: string[]
-): Promise<{ byNormName: Map<string, SiteRef>; archivedCount: number }> {
+  warnings: string[],
+  resolved?: ReadonlyMap<string, ResolvedSite>
+): Promise<{ byNormName: Map<string, SiteRef>; archivedCount: number; createdNames: string[] }> {
   const lockedSet = new Set(lockedSiteNames.map(normalizeName));
   const existing = await tx.site.findMany();
   const byNormName = new Map(existing.map((s) => [normalizeName(s.name), s]));
+  const byId = new Map(existing.map((s) => [s.id, s]));
 
   const result = new Map<string, SiteRef>();
+  const createdNames: string[] = [];
   for (const input of sites) {
     const norm = normalizeName(input.name);
     const sheetLocked = lockedSet.has(norm);
     const openingDate = parseDateOrWarn(`Site "${input.name}"`, input.openingDate, warnings);
-    const current = byNormName.get(norm);
+    const viaAlias = resolved?.get(norm);
+    const current = byNormName.get(norm) ?? (viaAlias ? byId.get(viaAlias.id) : undefined);
+
+    if (current && isWebsiteSourceKey(current.sourceKey)) {
+      warnings.push(`Skipped site "${input.name.trim()}": a site with this name was created on the website, so the sheet's copy was ignored.`);
+      continue;
+    }
 
     if (current) {
       await tx.site.update({
         where: { id: current.id },
         data: {
-          name: input.name.trim(),
+          // A site matched through an alias keeps its own name (don't rename it to the alias spelling).
+          name: byNormName.has(norm) ? input.name.trim() : current.name,
           shortCode: trimOrNull(input.shortCode),
           note: trimOrNull(input.note) ?? current.note,
           openingDate,
@@ -151,16 +175,20 @@ async function upsertSites(
         },
       });
       result.set(norm, { id: created.id, isLocked: false });
+      createdNames.push(created.name);
     }
   }
 
   const seenIds = new Set([...result.values()].map((v) => v.id));
-  const toArchive = existing.filter((s) => s.usedInBoq && s.lastSeenRunId !== null && !seenIds.has(s.id));
+  // Website-created sites are never archived by the sheet, even though they are absent from it.
+  const toArchive = existing.filter(
+    (s) => s.usedInBoq && s.lastSeenRunId !== null && !seenIds.has(s.id) && !isWebsiteSourceKey(s.sourceKey)
+  );
   if (toArchive.length > 0) {
     await tx.site.updateMany({ where: { id: { in: toArchive.map((s) => s.id) } }, data: { usedInBoq: false } });
   }
 
-  return { byNormName: result, archivedCount: toArchive.length };
+  return { byNormName: result, archivedCount: toArchive.length, createdNames };
 }
 
 /**
@@ -328,7 +356,9 @@ async function bulkUpsertSiteItems(tx: Tx, rows: SiteItemRow[]): Promise<void> {
 async function deleteStaleSiteItems(tx: Tx, itemIds: string[], keepPairs: { siteId: string; itemId: string }[]): Promise<number> {
   if (itemIds.length === 0) return 0;
 
-  const eligibleSitesClause = Prisma.sql`"siteId" IN (SELECT id FROM "Site" WHERE "isLocked" = false AND "usedInBoq" = true)`;
+  // `sourceKey NOT LIKE 'WEB-%'`: a website-created site is not "missing from
+  // the sheet", it was never in it — its SiteItems must never be cleared by a sync.
+  const eligibleSitesClause = Prisma.sql`"siteId" IN (SELECT id FROM "Site" WHERE "isLocked" = false AND "usedInBoq" = true AND "sourceKey" NOT LIKE 'WEB-%')`;
 
   if (keepPairs.length === 0) {
     const result = await tx.$executeRaw(Prisma.sql`
@@ -361,14 +391,25 @@ async function processCategoryChunk(
   siteByNormName: Map<string, SiteRef>,
   warnings: string[]
 ): Promise<{ items: number; vendorRates: number; siteItems: number; staleDeleted: number }> {
-  for (const vendorName of tab.vendors) {
-    const vendor = vendorByName.get(vendorName.trim());
-    if (!vendor) continue;
-    await tx.categoryVendor.upsert({
-      where: { categoryId_vendorId: { categoryId: category.id, vendorId: vendor.id } },
-      update: {},
-      create: { categoryId: category.id, vendorId: vendor.id },
-    });
+  // One statement per tab (was one upsert round trip per vendor per tab).
+  const categoryVendorRows = [
+    ...new Set(
+      tab.vendors.flatMap((vendorName) => {
+        const vendor = vendorByName.get(vendorName.trim());
+        return vendor ? [vendor.id] : [];
+      })
+    ),
+  ].map((vendorId) => ({ categoryId: category.id, vendorId }));
+  if (categoryVendorRows.length > 0) {
+    await tx.categoryVendor.createMany({ data: categoryVendorRows, skipDuplicates: true });
+  }
+
+  // A website-created item (sourceKey `WEB-…`) can never come from the sheet: if a
+  // payload carries such a key it is ignored rather than overwriting that item.
+  const websiteKeyed = tab.items.filter((item) => item.itemKey.trim().startsWith("WEB-"));
+  if (websiteKeyed.length > 0) {
+    warnings.push(`Category "${tab.category}": ${websiteKeyed.length} item(s) with a website-only key (WEB-…) were ignored.`);
+    tab = { ...tab, items: tab.items.filter((item) => !item.itemKey.trim().startsWith("WEB-")) };
   }
 
   const nameCounts = new Map<string, number>();
@@ -460,7 +501,15 @@ async function processCategoryChunk(
   return { items: tab.items.length, vendorRates: vendorRateRows.length, siteItems: siteItemRows.length, staleDeleted };
 }
 
-export type CommitResult = { counts: CommitCounts; warnings: string[] };
+export type CommitResult = {
+  counts: CommitCounts;
+  warnings: string[];
+  /** Sites auto-created for sheet names that matched nothing (duplicate-spelling check). */
+  createdSites: string[];
+};
+
+/** What run.ts planTabs() stored on ImportRun.tabManifest for a unified-sync run. */
+type StoredTabManifest = { tabs: { category: string; hash: string }[]; ctx: string; ctxChanged: boolean };
 
 /**
  * Handoff section 0/3: "finish = one DB transaction: replace live Site-BOQ
@@ -494,16 +543,27 @@ export async function commitRun(runId: string, expected: { tabs: number; items: 
   }
 
   const warnings: string[] = [];
+  const manifest = (run.tabManifest as StoredTabManifest | null) ?? null;
+
+  // Unified sync: resolve/create this sheet's sites BEFORE the big transaction,
+  // under the short advisory lock, so the three parallel legs can't both create
+  // the same new site (unique(name) would fail one of them). A sheet spelling
+  // that matches a SiteAlias lands on the real site. Old-style runs skip this.
+  const resolution = manifest
+    ? await resolveOrCreateSites(
+        db,
+        sitesPayload.sites.map((s) => s.name),
+        { newSite: { usedInBoq: true, usedInTracker: false } }
+      )
+    : null;
 
   return db.$transaction(
     async (tx) => {
-      const { byNormName: siteByNormName, archivedCount: deactivatedSites } = await upsertSites(
-        tx,
-        runId,
-        sitesPayload.sites,
-        sitesPayload.lockedSites,
-        warnings
-      );
+      const {
+        byNormName: siteByNormName,
+        archivedCount: deactivatedSites,
+        createdNames,
+      } = await upsertSites(tx, runId, sitesPayload.sites, sitesPayload.lockedSites, warnings, resolution?.byNorm);
 
       const categories = await tx.category.findMany();
       const categoryByName = new Map(categories.map((c) => [c.name, c]));
@@ -515,6 +575,7 @@ export async function commitRun(runId: string, expected: { tabs: number; items: 
       let vendorRates = 0;
       let siteItems = 0;
       let categoriesProcessed = 0;
+      const processedCategories: string[] = [];
 
       for (const chunk of run.stagingChunks) {
         const tab = chunk.payload as ChunkTab;
@@ -528,6 +589,19 @@ export async function commitRun(runId: string, expected: { tabs: number; items: 
         vendorRates += result.vendorRates;
         siteItems += result.siteItems;
         categoriesProcessed += 1;
+        processedCategories.push(tab.category);
+      }
+
+      // Unified sync: a tab whose hash was unchanged was not chunked, but its items
+      // are still "seen" — without this the sweep below would deactivate them.
+      const stagedCategories = new Set(tabs.map((t) => t.category));
+      const unchangedCategories = manifest ? manifest.tabs.map((t) => t.category).filter((c) => !stagedCategories.has(c)) : [];
+      const unchangedCategoryIds = unchangedCategories.flatMap((name) => categoryByName.get(name)?.id ?? []);
+      if (unchangedCategoryIds.length > 0) {
+        await tx.item.updateMany({
+          where: { categoryId: { in: unchangedCategoryIds }, isActive: true, lastSeenRunId: { not: null } },
+          data: { lastSeenRunId: runId },
+        });
       }
 
       // Items that previously synced from the sheet but weren't in this run
@@ -541,6 +615,20 @@ export async function commitRun(runId: string, expected: { tabs: number; items: 
         data: { isActive: false },
       });
 
+      // Same transaction as the data: a hash is only recorded for a tab that was really written.
+      if (manifest) {
+        const hashByCategory = new Map(manifest.tabs.map((t) => [t.category, t.hash]));
+        const entries = processedCategories.flatMap((category) => {
+          const hash = hashByCategory.get(category);
+          return hash ? [{ key: category, hash }] : [];
+        });
+        // The locked-sites fingerprint is only trusted once every tab was re-synced under it.
+        if (!manifest.ctxChanged || processedCategories.length === manifest.tabs.length) {
+          entries.push({ key: LOCKED_CTX_KEY, hash: manifest.ctx });
+        }
+        await commitHashes(tx, "SITE_BOQ", entries);
+      }
+
       return {
         counts: {
           sites: sitesPayload.sites.length,
@@ -551,8 +639,10 @@ export async function commitRun(runId: string, expected: { tabs: number; items: 
           siteItems,
           deactivatedSites,
           deactivatedItems: deactivatedItemsResult.count,
+          unchangedTabs: unchangedCategories.length,
         },
         warnings,
+        createdSites: [...new Set([...(resolution?.created ?? []), ...createdNames])],
       };
     },
     { timeout: 180_000, maxWait: 30_000 }

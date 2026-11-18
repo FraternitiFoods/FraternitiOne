@@ -103,6 +103,16 @@ export function canTriggerSheetSync(user: Pick<CurrentUser, "role">): boolean {
 }
 
 /**
+ * The unified "Sync" button (Dashboard, Site Tracker, Site BOQ, Operations
+ * BOQ): refreshes all four pages from the three Google Sheets at once, and can
+ * overwrite sheet-origin data — so Admin only, button only (owner decision 4).
+ * The old per-sheet triggers above are retired (their /request routes are 410).
+ */
+export function canTriggerUnifiedSync(user: Pick<CurrentUser, "role">): boolean {
+  return user.role === "ADMIN";
+}
+
+/**
  * SiteItem.rateOverride — the per-site rate override plan.md section 3 called
  * out as "the UI/data model must support a site-specific override later."
  * Admin only, same actor as canEditItems but kept as its own function since

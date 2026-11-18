@@ -13,7 +13,7 @@ export function ObCard({
   return (
     <section
       className={cn(
-        "relative min-w-0 rounded-[28px]",
+        "relative min-w-0 rounded-[28px] sm:rounded-[24px]",
         tone === "light"
           ? "bg-white shadow-[var(--ob-card-shadow)]"
           : "overflow-hidden bg-[var(--ob-green)] text-[var(--ob-cream)]",
@@ -36,5 +36,5 @@ export function ObEyebrow({ className, ...props }: ComponentProps<"div">) {
 
 /** Card heading in the display serif. */
 export function ObCardTitle({ className, ...props }: ComponentProps<"h2">) {
-  return <h2 className={cn("ob-display text-[22px] font-semibold text-[var(--ob-green)]", className)} {...props} />;
+  return <h2 className={cn("ob-display text-[22px] font-semibold sm:text-[19px] text-[var(--ob-green)]", className)} {...props} />;
 }

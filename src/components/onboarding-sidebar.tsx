@@ -17,7 +17,8 @@ import { logout } from "@/app/(auth)/login/actions";
  * the `.ob-theme` tokens from globals.css.
  *
  * Responsive by construction (not an afterthought — SRD: "same actions on
- * mobile"): a fixed 280px left column on sm+ screens, a sticky top bar with a
+ * mobile"): a fixed left column on sm+ screens (width = --ob-sidebar-w in
+ * globals.css, 238px on desktop), a sticky top bar with a
  * horizontally-scrollable nav below sm. A fixed column with no mobile variant
  * would overlap page content on a phone viewport — this mirrors the /m shell's
  * own mobile-first approach (plan.md section 16) rather than reusing
@@ -72,7 +73,7 @@ function SignOutButton({ className }: { className?: string }) {
           className
         )}
       >
-        <LogOut className="size-[18px]" aria-hidden />
+        <LogOut className="size-[18px] sm:size-[16px]" aria-hidden />
         Sign out
       </button>
     </form>
@@ -85,7 +86,7 @@ export function OnboardingSidebar({ name, code }: { name: string; code: string |
   return (
     <>
       {/* Desktop: fixed left column. */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[17.5rem] flex-col gap-9 overflow-y-auto border-r border-[var(--ob-line)] bg-[var(--ob-sidebar)] px-6 pt-9 pb-7 sm:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[var(--ob-sidebar-w)] flex-col gap-9 overflow-y-auto border-r border-[var(--ob-line)] bg-[var(--ob-sidebar)] px-6 pt-9 pb-7 sm:flex">
         <div className="px-2">
           <Wordmark />
         </div>
@@ -100,7 +101,7 @@ export function OnboardingSidebar({ name, code }: { name: string; code: string |
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "ob-focus flex h-12 items-center gap-3.5 rounded-xl px-4 text-[15px] transition-colors",
+                  "ob-focus flex h-12 items-center gap-3.5 rounded-xl px-4 text-sm transition-colors",
                   active
                     ? "bg-[var(--ob-green)] font-semibold text-[var(--ob-cream)]"
                     : "font-medium text-[var(--ob-nav)] hover:bg-[var(--ob-green)]/8"
@@ -117,12 +118,12 @@ export function OnboardingSidebar({ name, code }: { name: string; code: string |
           <div className="flex items-center gap-3">
             <div
               aria-hidden
-              className="flex size-[42px] shrink-0 items-center justify-center rounded-full bg-[var(--ob-green)] text-[13px] font-bold text-[var(--ob-cream)]"
+              className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-[var(--ob-green)] text-xs font-bold text-[var(--ob-cream)]"
             >
               {initials(name)}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-[15px] font-bold text-[var(--ob-green)]">{name}</div>
+              <div className="truncate text-sm font-bold text-[var(--ob-green)]">{name}</div>
               {code && <div className="text-xs text-[var(--ob-muted)]">{code}</div>}
             </div>
           </div>

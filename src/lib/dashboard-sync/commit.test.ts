@@ -44,4 +44,24 @@ describe("upsertSites — website-created sites are protected from the sheet syn
     expect(result.skippedWebsiteSites).toEqual([]);
     expect(result.byNormName.size).toBe(2);
   });
+
+  it("unified sync: a site listed in the manifest but not chunked (unchanged) is kept active, not rewritten, not archived", async () => {
+    const { tx, update, create, updateMany } = fakeTx([sheet]);
+    const result = await upsertSites(tx, "run-4", [], ["  tulsi   INDORE "]);
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(result.archivedCount).toBe(0);
+    expect(result.byNormName.get("tulsi indore")).toEqual({ id: "s1", name: "Tulsi Indore" });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["s1"] } },
+      data: { isActive: true, lastSeenRunId: "run-4", lastSyncedAt: expect.any(Date) },
+    });
+  });
+
+  it("unified sync: a website site named in the manifest-only list is still never touched", async () => {
+    const { tx, updateMany } = fakeTx([web]);
+    const result = await upsertSites(tx, "run-5", [], ["Tulsi Pune"]);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(result.byNormName.size).toBe(0);
+  });
 });

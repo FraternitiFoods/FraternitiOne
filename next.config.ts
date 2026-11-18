@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Don't advertise the framework in responses.
   poweredByHeader: false,
+  // Dev-only: lets `pnpm dev` be reached through an ngrok tunnel (demos).
+  // Ignored by `next build`/`next start`.
+  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.app", "*.ngrok.dev"],
   async headers() {
     return [
       {

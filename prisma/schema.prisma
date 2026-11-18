@@ -267,6 +267,84 @@ model Site {
   purchaseOrders   PurchaseOrder[]
   trackerSiteSteps TrackerSiteStep[]
   opsBoqRows       OpsBoqRow[]
+  aliases          SiteAlias[]
+}
+
+/// Alternate spellings of a site's name used by the sheets (e.g. "Tulsi Hissar"
+/// vs "Tulsi Hisar"). Keyed by the NORMALISED alias (src/lib/site-resolve.ts
+/// normalizeSiteName) so the unified sync resolves a sheet name to the right
+/// shared Site before it would otherwise auto-create a duplicate.
+model SiteAlias {
+  aliasNorm String   @id
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([siteId])
+}
+
+enum SyncLegKind {
+  STAGES
+  SITE_BOQ
+  OPS_BOQ
+}
+
+enum SyncLegStatus {
+  RUNNING
+  COMMITTED
+  FAILED
+}
+
+/// One press of the unified "Sync" button. Holds up to three legs (one per
+/// Google Sheet). finishedAt is set when no leg is RUNNING any more
+/// (src/lib/sync-batch/legs.ts). triggeredById is a plain column (no relation)
+/// so a deleted user never blocks history.
+model SyncBatch {
+  id            String    @id @default(cuid())
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  triggeredById String?
+  /// Re-sync every unit even if its content hash is unchanged.
+  force         Boolean   @default(false)
+
+  legs SyncLeg[]
+
+  @@index([startedAt])
+}
+
+/// One sheet's part of a SyncBatch. runId points at ImportRun.id (SITE_BOQ) or
+/// DashboardSyncRun.id (STAGES); null for OPS_BOQ, which commits in one call.
+model SyncLeg {
+  id           String        @id @default(cuid())
+  batchId      String
+  batch        SyncBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  leg          SyncLegKind
+  status       SyncLegStatus @default(RUNNING)
+  startedAt    DateTime      @default(now())
+  finishedAt   DateTime?
+  runId        String?
+  /// {units, changed, skipped, rows, trackerRows, ...} — shape is per leg.
+  counts       Json?
+  warnings     Json?
+  /// string[] of site names this leg auto-created (duplicate-spelling check).
+  createdSites Json?
+  errorMessage String?
+
+  @@unique([batchId, leg])
+  @@index([leg, startedAt])
+}
+
+/// Last committed content hash per sync unit (dashboard: site; site BOQ: tab
+/// category; ops BOQ: tab). A unit whose hash is unchanged is not rewritten.
+/// hash is stored as "<SERVER_SYNC_VERSION>:<scriptHash>" so bumping the
+/// server version invalidates every stored hash at once.
+model SyncContentHash {
+  leg       SyncLegKind
+  unitKey   String
+  hash      String
+  updatedAt DateTime    @updatedAt
+
+  @@id([leg, unitKey])
 }
 
 model Category {
@@ -494,6 +572,10 @@ model ImportRun {
   /// the run rather than chunked into staging since finish only needs it
   /// once, unlike the 21 per-category chunks below.
   sitesPayload Json?
+  /// Unified sync: per-tab {category, hash} list the script sent at start.
+  /// Tabs whose hash is unchanged are not chunked; finish needs the full set
+  /// to keep their items active.
+  tabManifest  Json?
 
   stagingChunks BoqSyncStagingChunk[]
 }
@@ -657,6 +739,10 @@ model DashboardSyncRun {
   /// sitesPayload: a transaction can't span the separate start/chunk/finish
   /// HTTP calls, so anything finish needs rides on the run row itself.
   deptLinksPayload Json?
+  /// Unified sync: per-site {name, hash} list the script sent at start. Only
+  /// changed sites are chunked, but finish needs every seen site name so
+  /// unchanged ones are kept active (not archived).
+  manifestPayload  Json?
 
   stagingChunks DashboardSyncStagingChunk[]
 }
@@ -806,7 +892,9 @@ model DashboardSiteAssignment {
 // Operations BOQ (operations-boq-handoff.md). Website-owned procurement
 // tracker: 11 fixed rows per site (src/lib/ops-boq-seed.ts, created by
 // ensureOpsBoqRows when a site is created) plus user-added rows for that site
-// only. No sheet sync; "Link" columns are plain pasted URLs, not Site BOQ links.
+// only. Website-owned; the unified Sync button (src/lib/ops-boq-sync/) refreshes
+// SHEET-origin sites from Suraj's "OPERATIONAL BOQ STATUS LIST" (fromSheet marks
+// rows it added). "Link" columns are plain pasted URLs, not Site BOQ links.
 // Pending Amount is never stored (amount - advanceGiven, computed on read).
 // ---------------------------------------------------------------------------
 
@@ -823,6 +911,10 @@ model OpsBoqRow {
   sno             String
   name            String
   isFixed         Boolean      @default(false)
+  /// Added row created by the unified sync (not by a website user). Only these
+  /// are removed when they disappear from the sheet; website-added rows
+  /// (false) are never deleted by a sync.
+  fromSheet       Boolean      @default(false)
   /// Stable key of a seeded row (src/lib/ops-boq-seed.ts); null for user-added
   /// rows. The unique index below makes ensureOpsBoqRows idempotent and
   /// race-safe (Postgres allows many NULLs, so added rows are unconstrained).

@@ -96,16 +96,16 @@ export function PaymentSection({
 
   return (
     <div className="space-y-4">
-      <p className="text-[15px] text-[var(--ob-text-2)]">LOI fee amount: {formatMoney(expectedAmount)}</p>
+      <p className="text-[15px] text-[var(--ob-text-2)] sm:text-sm">LOI fee amount: {formatMoney(expectedAmount)}</p>
       {totalVerifiedAmount > 0 && (
-        <p className="text-[15px] text-[var(--ob-text-2)]">
+        <p className="text-[15px] text-[var(--ob-text-2)] sm:text-sm">
           Verified so far: {formatMoney(totalVerifiedAmount)}
           {remainingAmount > 0 && <> — {formatMoney(remainingAmount)} remaining</>}
         </p>
       )}
 
       {latestPayment && (
-        <div className="rounded-[20px] border border-[var(--ob-line)] bg-[var(--ob-bg)] px-5 py-4 text-[15px] text-[var(--ob-text-2)]">
+        <div className="rounded-[20px] border border-[var(--ob-line)] bg-[var(--ob-bg)] px-5 py-4 text-[15px] text-[var(--ob-text-2)] sm:rounded-[17px] sm:text-sm">
           <div>Declared: {formatMoney(latestPayment.declaredAmount)}</div>
           <div>Mode: {latestPayment.mode}</div>
           <div>UTR: {latestPayment.utr}</div>

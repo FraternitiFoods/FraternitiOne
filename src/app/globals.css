@@ -157,10 +157,37 @@
   --ob-card-shadow: 0 22px 40px -28px rgb(15 51 36 / 0.4), 0 0 0 1px rgb(15 51 36 / 0.06);
   --ob-font-display: var(--font-fraunces), Georgia, serif;
   --ob-font-ui: var(--font-figtree), system-ui, sans-serif;
+  /* Desktop sidebar width. The sidebar and <main>'s left padding both read this
+     so they can never drift apart. */
+  --ob-sidebar-w: 17.5rem;
 
   background: var(--ob-bg);
   color: var(--ob-text);
   font-family: var(--ob-font-ui);
+}
+
+/* Desktop (sm+) scale: the design mock is a 1440px canvas, so the portal read
+   ~33% too large on a 1920px screen. Tailwind v4 builds every spacing-scale
+   utility (px-6, gap-6, h-12, size-10 ...) from `--spacing` and every named
+   text size from `--text-*`, so redefining them here, inside the onboarding
+   wrapper only, rescales all of those (~85%) in one place. Arbitrary values
+   (text-[15px], h-[46px], rounded-[28px] ...) do NOT follow these and carry
+   their own `sm:` override in the component. Below 640px nothing changes.
+   text-sm / text-base are left alone on purpose: they are the 14px body and
+   12-14px label floor. */
+@media (min-width: 640px) {
+  .ob-theme {
+    --ob-sidebar-w: 14.875rem;
+    --spacing: 0.2125rem;
+    --text-lg: 1rem;
+    --text-xl: 1.0625rem;
+    --text-2xl: 1.275rem;
+    --text-3xl: 1.594rem;
+    --text-4xl: 1.9125rem;
+    --text-5xl: 2.55rem;
+    --text-6xl: 3.1875rem;
+    --text-7xl: 3.825rem;
+  }
 }
 
 .ob-theme .ob-display {

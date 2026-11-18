@@ -148,8 +148,8 @@ async function main() {
     await login(page);
 
     // ---- AWAITING_KYC_PAYMENT: the state the mockups show ----
-    for (const w of [1440, 390]) {
-      const h = w === 1440 ? 900 : 844;
+    for (const w of [1920, 1440, 390]) {
+      const h = w === 1920 ? 1080 : w === 1440 ? 900 : 844;
       await shot(page, "/onboarding/welcome", "welcome", w, h);
       await shot(page, "/onboarding", "progress", w, h);
       await shot(page, "/onboarding/documents", "kyc", w, h);

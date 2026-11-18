@@ -7,7 +7,9 @@ import { startRun } from "@/lib/sheet-sync/run";
 export async function POST(request: NextRequest) {
   return withSheetSyncSecret(request, async (body) => {
     const parsed = startBodySchema.parse(body);
-    const { runId } = await startRun(parsed);
-    return NextResponse.json({ runId });
+    const { runId, changed } = await startRun(parsed);
+    // `changed` only when the script sent a tabManifest (unified sync): the
+    // categories whose content differs and so must be chunked.
+    return NextResponse.json(changed ? { runId, changed } : { runId });
   });
 }
