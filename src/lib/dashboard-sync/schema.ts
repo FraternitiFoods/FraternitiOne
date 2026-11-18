@@ -77,6 +77,13 @@ export const deptLinkInputSchema = z.object({
 });
 export type DeptLinkInput = z.infer<typeof deptLinkInputSchema>;
 
+/** Unified sync: one entry per site the script extracted, with a SHA-256 of that site's payload. */
+export const manifestEntrySchema = z.object({
+  name: z.string().trim().min(1),
+  hash: z.string().trim().min(1),
+});
+export type ManifestEntryInput = z.infer<typeof manifestEntrySchema>;
+
 export const startBodySchema = z.object({
   requestId: z.string().trim().min(1).nullable(),
   trigger: triggerSchema,
@@ -84,6 +91,14 @@ export const startBodySchema = z.object({
   sheetId: z.string().trim().min(1),
   siteCount: z.number().int().min(0),
   deptLinks: z.array(deptLinkInputSchema).default([]),
+  /**
+   * Unified sync (optional — an old-style run omits both and behaves exactly as
+   * before: every site is chunked and rewritten). With a manifest the response
+   * lists the sites that CHANGED; the script then chunks only those and
+   * finish's `expected.sites` is that count.
+   */
+  batchId: z.string().trim().min(1).optional(),
+  manifest: z.array(manifestEntrySchema).optional(),
 });
 export type StartBody = z.infer<typeof startBodySchema>;
 

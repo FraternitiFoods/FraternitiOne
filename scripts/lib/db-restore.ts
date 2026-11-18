@@ -47,6 +47,13 @@ export const RESTORE_TABLES = [
   "DashboardSite",
   "DashboardStep",
   "DashboardDeptLink",
+  // Unified sync (parents first: SiteAlias after Site, SyncLeg after SyncBatch).
+  // Without these a sync test leaves aliases/hashes behind and the next run
+  // would wrongly "skip unchanged" units.
+  "SiteAlias",
+  "SyncBatch",
+  "SyncLeg",
+  "SyncContentHash",
 ] as const;
 
 const TX_OPTIONS = { timeout: 120_000, maxWait: 30_000 } as const;

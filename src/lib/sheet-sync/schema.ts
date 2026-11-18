@@ -39,6 +39,14 @@ export const startBodySchema = z.object({
   // stable per-site key.
   lockedSites: z.array(z.string().trim()).default([]),
   tabCount: z.number().int().min(0),
+  /**
+   * Unified sync (optional — an old-style run omits both and chunks every tab):
+   * a SHA-256 per `RM - <Category>` tab. The response lists the categories that
+   * CHANGED; the script then chunks only those, and finish's expected.tabs /
+   * expected.items count only the chunked ones. expected.sites stays the full count.
+   */
+  batchId: z.string().trim().min(1).optional(),
+  tabManifest: z.array(z.object({ category: z.string().trim().min(1), hash: z.string().trim().min(1) })).optional(),
 });
 export type StartBody = z.infer<typeof startBodySchema>;
 

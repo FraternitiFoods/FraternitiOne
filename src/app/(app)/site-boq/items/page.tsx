@@ -4,6 +4,7 @@ import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq
 import { getAppSettings } from "@/lib/app-settings";
 import { canEditItems, canEditSiteItemTracking, canEditRateOverride } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
+import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -44,7 +45,12 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
   if (sites.length === 0 || categories.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
+        <PageHeader
+          title="Site BOQ"
+          subtitle="Rate sheet, quantities and purchase orders."
+          isFranchisee={false}
+          action={<UnifiedSyncSlot user={user} />}
+        />
         <SiteBoqSubNav active="items" />
         <div className="rounded-xl bg-card p-8 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
           No sites or categories yet — import from the sheet first.
@@ -97,7 +103,12 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
+      <PageHeader
+          title="Site BOQ"
+          subtitle="Rate sheet, quantities and purchase orders."
+          isFranchisee={false}
+          action={<UnifiedSyncSlot user={user} />}
+        />
       <SiteBoqSubNav active="items" />
 
       <div className="flex flex-wrap items-center gap-2">

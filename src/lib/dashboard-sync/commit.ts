@@ -4,19 +4,33 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { computeSiteStats, type LeafStepLike } from "@/lib/dashboard-calc";
+import { resolveOrCreateSites } from "@/lib/site-resolve";
+import { commitHashes } from "@/lib/sync-batch/hash";
 import { DashboardSyncError } from "./errors";
-import type { DeptLinkInput, SheetSummary, SiteInput, StepInput } from "./schema";
+import type { DeptLinkInput, ManifestEntryInput, SheetSummary, SiteInput, StepInput } from "./schema";
+import { applyTrackerRows, deriveTrackerRows, type TrackerTarget } from "./tracker-derive";
 
 type Tx = Prisma.TransactionClient;
 
 export type CommitCounts = {
+  /** Sites rewritten this run (the changed ones when a unified-sync manifest was sent). */
   sites: number;
   steps: number;
   deptLinks: number;
   deactivatedSites: number;
+  /** Unified sync: sites the script listed but whose content hash was unchanged (not rewritten). */
+  unchangedSites: number;
+  /** Unified sync: Site Tracker rows inserted/updated from Stage 7. */
+  trackerRows: number;
 };
 
-export type CommitResult = { counts: CommitCounts; warnings: string[]; mismatches: Record<string, unknown> };
+export type CommitResult = {
+  counts: CommitCounts;
+  warnings: string[];
+  mismatches: Record<string, unknown>;
+  /** Shared Site rows auto-created for sheet names that matched nothing (duplicate-spelling check). */
+  createdSites: string[];
+};
 
 function normalizeName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
@@ -53,7 +67,13 @@ type SiteRef = { id: string; name: string };
 export async function upsertSites(
   tx: Tx,
   runId: string,
-  sites: SiteInput[]
+  sites: SiteInput[],
+  /**
+   * Unified sync: names the script listed in its manifest but did NOT chunk
+   * (content unchanged). They are not rewritten, but they ARE "seen" — kept
+   * active (never archived) and resolvable for dept-link siteIds.
+   */
+  seenOnlyNames: readonly string[] = []
 ): Promise<{ byNormName: Map<string, SiteRef>; archivedCount: number; skippedWebsiteSites: string[] }> {
   const existing = await tx.dashboardSite.findMany();
   const byNormName = new Map(existing.map((s) => [normalizeName(s.name), s]));
@@ -101,6 +121,21 @@ export async function upsertSites(
       });
       result.set(norm, { id: created.id, name: created.name });
     }
+  }
+
+  const unchangedIds: string[] = [];
+  for (const name of seenOnlyNames) {
+    const norm = normalizeName(name);
+    const current = byNormName.get(norm);
+    if (!current || current.origin !== "SHEET" || result.has(norm)) continue;
+    unchangedIds.push(current.id);
+    result.set(norm, { id: current.id, name: current.name });
+  }
+  if (unchangedIds.length > 0) {
+    await tx.dashboardSite.updateMany({
+      where: { id: { in: unchangedIds } },
+      data: { isActive: true, lastSeenRunId: runId, lastSyncedAt: now },
+    });
   }
 
   const seenIds = new Set([...result.values()].map((v) => v.id));
@@ -228,24 +263,57 @@ export async function commitRun(
     );
   }
 
-  const warnings: string[] = [];
+  // Warnings recorded at /start (e.g. website-owned sites left out of the manifest) are kept.
+  const warnings: string[] = Array.isArray(run.warnings) ? [...(run.warnings as string[])] : [];
   const mismatches: Record<string, unknown>[] = [];
   const deptLinks = (run.deptLinksPayload as DeptLinkInput[] | null) ?? [];
+  const manifest = (run.manifestPayload as ManifestEntryInput[] | null) ?? null;
+  const siteInputs = run.stagingChunks.map((c) => c.payload as unknown as SiteInput);
+
+  const stagedNorms = new Set(siteInputs.map((s) => normalizeName(s.name)));
+  const seenOnlyNames = manifest ? manifest.filter((m) => !stagedNorms.has(normalizeName(m.name))).map((m) => m.name) : [];
+
+  // Shared Site rows for the Site Tracker (Stage 7). Resolved/created BEFORE the
+  // big transaction — resolution takes a short advisory lock so the three
+  // parallel legs can't create the same site twice. Website-created dashboard
+  // sites are never given tracker data by the sheet, so they're left out.
+  // Only for a unified-sync run (it sent a manifest): an old-style run (fixtures,
+  // tmp-e2e scripts) must not start creating shared Sites or tracker rows.
+  const unified = manifest !== null;
+  const websiteNames = new Set(
+    (await db.dashboardSite.findMany({ where: { origin: "WEBSITE" }, select: { name: true } })).map((s) => normalizeName(s.name))
+  );
+  const resolution = unified
+    ? await resolveOrCreateSites(
+        db,
+        siteInputs.filter((s) => !websiteNames.has(normalizeName(s.name))).map((s) => s.name),
+        { newSite: { usedInBoq: false, usedInTracker: true }, ensureUsedInTracker: true }
+      )
+    : { byNorm: new Map<string, { id: string; name: string; websiteOwned: boolean; created: boolean }>(), created: [] as string[] };
 
   const result = await db.$transaction(
     async (tx) => {
-      const siteInputs = run.stagingChunks.map((c) => c.payload as unknown as SiteInput);
-
-      const { byNormName, archivedCount, skippedWebsiteSites } = await upsertSites(tx, runId, siteInputs);
+      const { byNormName, archivedCount, skippedWebsiteSites } = await upsertSites(tx, runId, siteInputs, seenOnlyNames);
       for (const name of skippedWebsiteSites) {
         warnings.push(`Skipped "${name}": a site with this name was created on the website, so the sheet's copy was ignored.`);
       }
 
       let steps = 0;
+      const trackerTargets: TrackerTarget[] = [];
+      const writtenNorms: string[] = [];
       for (const input of siteInputs) {
-        const site = byNormName.get(normalizeName(input.name));
-        if (!site) continue;
+        const norm = normalizeName(input.name);
+        const site = byNormName.get(norm);
+        if (!site || !stagedNorms.has(norm) || websiteNames.has(norm)) continue;
         steps += await replaceSiteSteps(tx, site, input);
+        writtenNorms.push(norm);
+
+        const shared = resolution.byNorm.get(norm);
+        if (shared && !shared.websiteOwned) {
+          trackerTargets.push({ siteId: shared.id, rows: deriveTrackerRows(input) });
+        } else if (shared?.websiteOwned) {
+          warnings.push(`Tracker: "${input.name}" matches a website-created site, so its tracker rows were not touched.`);
+        }
 
         const leaves: LeafStepLike[] = input.stages.flatMap((stage) =>
           stage.steps
@@ -264,12 +332,34 @@ export async function commitRun(
 
       const deptLinksCount = await replaceDeptLinks(tx, deptLinks, byNormName);
 
+      // Same transaction as the data: a hash is only ever recorded for a unit that was really written.
+      let trackerRows = 0;
+      if (unified) {
+        trackerRows = await applyTrackerRows(tx, trackerTargets);
+        const hashByNorm = new Map(manifest.map((m) => [normalizeName(m.name), m.hash]));
+        await commitHashes(
+          tx,
+          "STAGES",
+          writtenNorms.flatMap((norm) => {
+            const hash = hashByNorm.get(norm);
+            return hash ? [{ key: norm, hash }] : [];
+          })
+        );
+      }
+
       return {
-        counts: { sites: siteInputs.length, steps, deptLinks: deptLinksCount, deactivatedSites: archivedCount },
+        counts: {
+          sites: siteInputs.length, // staged count, as before (includes website sites skipped with a warning)
+          steps,
+          deptLinks: deptLinksCount,
+          deactivatedSites: archivedCount,
+          unchangedSites: seenOnlyNames.length,
+          trackerRows,
+        },
       };
     },
     { timeout: 120_000, maxWait: 30_000 }
   );
 
-  return { counts: result.counts, warnings, mismatches: { entries: mismatches } };
+  return { counts: result.counts, warnings, mismatches: { entries: mismatches }, createdSites: resolution.created };
 }

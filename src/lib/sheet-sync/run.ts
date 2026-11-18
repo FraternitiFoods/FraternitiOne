@@ -1,8 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
-import { getImportMode } from "@/lib/app-settings";
 import { sendSheetSyncFailureEmail } from "@/lib/email";
+import { loadStoredHashes, splitChanged, stampHash } from "@/lib/sync-batch/hash";
+import { attachRun, completeLeg, failLeg, findBatchForRun } from "@/lib/sync-batch/legs";
 import { SyncError } from "./errors";
 import { commitRun } from "./commit";
 import {
@@ -59,6 +61,11 @@ async function failRunInternal(runId: string, message: string): Promise<void> {
 
   const durationSec = Math.round((Date.now() - run.startedAt.getTime()) / 1000);
   await markFailed({ trigger: (run.trigger as SyncTrigger) ?? null, tabs: 0, items: 0, sites: 0, durationSec, error: message });
+
+  // Unified sync: the leg shows the failure (and offers Retry) in the UI.
+  const batchId = await findBatchForRun(db, "SITE_BOQ", runId);
+  if (batchId) await failLeg(db, batchId, "SITE_BOQ", message);
+
   await notifyFailure(run.trigger, message);
 }
 
@@ -84,28 +91,17 @@ export async function checkStuckRequestAlert(): Promise<void> {
 }
 
 /**
- * POST /api/sheet-sync/request (admin session, see route file) — user's
- * condition 1: only usable in SHEET_LIVE mode, clear rejection message
- * otherwise.
+ * POST /api/sheet-sync/request (admin session, see route file) — retired (the
+ * route answers 410). Kept so the old request-state plumbing still type-checks;
+ * the unified Sync button uses /api/sync/run instead.
  */
 export async function requestSync(): Promise<{ requestId: string; created: boolean }> {
-  const mode = await getImportMode();
-  if (mode === "WEBSITE_LIVE") {
-    throw new SyncError(403, "Sheet sync is disabled: Site BOQ is in WEBSITE_LIVE mode.");
-  }
   return claimRequest("button");
 }
 
-/**
- * GET /api/sheet-sync/pending — user's condition 1: WEBSITE_LIVE mode
- * returns {pending:false} (not 403), so the script's once-a-minute poll
- * degrades quietly instead of erroring.
- */
+/** GET /api/sheet-sync/pending — the old poll model; nothing queues a request any more (/request is 410), so this is {pending:false} in practice. */
 export async function checkPending(): Promise<{ pending: boolean; requestId?: string; trigger?: SyncTrigger }> {
   await reapStaleRuns();
-
-  const mode = await getImportMode();
-  if (mode === "WEBSITE_LIVE") return { pending: false };
 
   await checkStuckRequestAlert();
 
@@ -119,13 +115,46 @@ export async function checkPending(): Promise<{ pending: boolean; requestId?: st
   return { pending: true, requestId: state.requestId ?? undefined, trigger: state.trigger ?? undefined };
 }
 
-/** POST /api/sheet-sync/start. Mode-gated like the old importer (403) — user's condition 1 only special-cases /pending and /request. */
-export async function startRun(body: StartBody): Promise<{ runId: string }> {
-  const mode = await getImportMode();
-  if (mode === "WEBSITE_LIVE") {
-    throw new SyncError(403, "Sheet sync is disabled: Site BOQ is in WEBSITE_LIVE mode.");
-  }
+/** Unit key under which the website-locked-sites fingerprint is stored (see planTabs). */
+const LOCKED_CTX_KEY = "__locked";
 
+/**
+ * Unified sync: compare the script's per-tab hashes with the stored ones.
+ *
+ * Besides each tab's own hash there is one piece of server-side context that
+ * changes what a tab's commit does without changing the tab itself: which
+ * sites are website-locked (a locked site's qty/tracking is skipped by the
+ * commit). If that set changed since the last sync, every tab is re-synced —
+ * otherwise a site unlocked on the website would stay stale until its tab
+ * happened to change in the sheet.
+ */
+async function planTabs(
+  manifest: NonNullable<StartBody["tabManifest"]>,
+  batchId: string | undefined
+): Promise<{ changed: string[]; stored: { tabs: { category: string; hash: string }[]; ctx: string; ctxChanged: boolean } }> {
+  const byCategory = new Map<string, string>();
+  for (const m of manifest) if (!byCategory.has(m.category)) byCategory.set(m.category, m.hash);
+  const entries = [...byCategory].map(([category, hash]) => ({ category, hash }));
+
+  const lockedRows = await db.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Site" WHERE "isLocked" = true ORDER BY "id"`;
+  const ctx = createHash("sha256").update(lockedRows.map((r) => r.id).join(",")).digest("hex");
+
+  const [stored, batch] = await Promise.all([
+    loadStoredHashes(db, "SITE_BOQ", [...byCategory.keys(), LOCKED_CTX_KEY]),
+    batchId ? db.syncBatch.findUnique({ where: { id: batchId }, select: { force: true } }) : null,
+  ]);
+  const ctxChanged = stored.get(LOCKED_CTX_KEY) !== stampHash(ctx);
+
+  const { changed } = splitChanged(
+    entries.map((e) => ({ key: e.category, hash: e.hash })),
+    stored,
+    { force: batch?.force === true || ctxChanged }
+  );
+  return { changed, stored: { tabs: entries, ctx, ctxChanged } };
+}
+
+/** POST /api/sheet-sync/start. */
+export async function startRun(body: StartBody): Promise<{ runId: string; changed?: string[] }> {
   await reapStaleRuns();
 
   const activeRun = await db.importRun.findFirst({
@@ -136,27 +165,26 @@ export async function startRun(body: StartBody): Promise<{ runId: string }> {
     throw new SyncError(409, `Another sync run ("${activeRun.id}") is already in progress.`);
   }
 
+  const plan = body.tabManifest ? await planTabs(body.tabManifest, body.batchId) : null;
+
   const run = await db.importRun.create({
     data: {
       status: "IN_PROGRESS",
       trigger: body.trigger,
       requestId: body.requestId,
       sitesPayload: { sites: body.sites, lockedSites: body.lockedSites },
+      tabManifest: plan ? (plan.stored as unknown as object) : undefined,
       warnings: [],
     },
   });
 
+  if (body.batchId) await attachRun(db, body.batchId, "SITE_BOQ", run.id);
   await markRunning(run.id, body.trigger);
-  return { runId: run.id };
+  return plan ? { runId: run.id, changed: plan.changed } : { runId: run.id };
 }
 
 /** POST /api/sheet-sync/chunk. Idempotent by (runId, category) — a retried chunk upsert replaces, never duplicates. */
 export async function storeChunk(body: ChunkBody): Promise<{ warnings: string[] }> {
-  const mode = await getImportMode();
-  if (mode === "WEBSITE_LIVE") {
-    throw new SyncError(403, "Sheet sync is disabled: Site BOQ is in WEBSITE_LIVE mode.");
-  }
-
   const run = await db.importRun.findUnique({ where: { id: body.runId } });
   if (!run) throw new SyncError(404, `Unknown runId "${body.runId}".`);
   if (run.status !== "IN_PROGRESS") {
@@ -173,24 +201,16 @@ export async function storeChunk(body: ChunkBody): Promise<{ warnings: string[] 
 }
 
 /**
- * POST /api/sheet-sync/finish — user's condition 1: mode is re-checked here
- * too (not just at /start), since the script's whole push can take minutes
- * and an Admin could flip the switch mid-run. If so, the run fails exactly
- * like any other validation failure: nothing commits, live data stays
- * untouched, the alert email goes out.
+ * POST /api/sheet-sync/finish. The old SHEET_LIVE/WEBSITE_LIVE mode gate is
+ * gone (owner decision 7): instead the commit itself only ever touches
+ * sheet-origin data (see src/lib/sheet-sync/commit.ts — WEB- sites and items
+ * are never adopted, overwritten, deleted or deactivated).
  */
 export async function finishRun(body: FinishBody) {
   const run = await db.importRun.findUnique({ where: { id: body.runId } });
   if (!run) throw new SyncError(404, `Unknown runId "${body.runId}".`);
   if (run.status !== "IN_PROGRESS") {
     throw new SyncError(400, `Run "${body.runId}" is not in progress (status: ${run.status}).`);
-  }
-
-  const mode = await getImportMode();
-  if (mode === "WEBSITE_LIVE") {
-    const message = "Site BOQ mode changed to WEBSITE_LIVE during the sync — aborted, live data untouched.";
-    await failRunInternal(body.runId, message);
-    throw new SyncError(403, message);
   }
 
   let result: Awaited<ReturnType<typeof commitRun>>;
@@ -218,6 +238,15 @@ export async function finishRun(body: FinishBody) {
     sites: result.counts.sites,
     durationSec,
   });
+
+  const batchId = await findBatchForRun(db, "SITE_BOQ", body.runId);
+  if (batchId) {
+    await completeLeg(db, batchId, "SITE_BOQ", {
+      counts: result.counts,
+      warnings: result.warnings,
+      createdSites: result.createdSites,
+    });
+  }
 
   return { runId: body.runId, ...result };
 }

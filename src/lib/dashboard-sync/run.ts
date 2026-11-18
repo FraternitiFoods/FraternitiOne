@@ -1,7 +1,10 @@
 import "server-only";
 
 import { db } from "@/lib/db";
+import { normalizeSiteName } from "@/lib/dashboard-site-input";
 import { sendDashboardSyncFailureEmail } from "@/lib/email";
+import { loadStoredHashes, splitChanged } from "@/lib/sync-batch/hash";
+import { attachRun, completeLeg, failLeg, findBatchForRun } from "@/lib/sync-batch/legs";
 import { DashboardSyncError } from "./errors";
 import { commitRun } from "./commit";
 import {
@@ -13,7 +16,7 @@ import {
   markStuckAlertSent,
   markSuccess,
 } from "./request-state";
-import type { ChunkBody, DashboardSyncTrigger, FailBody, FinishBody, StartBody } from "./schema";
+import type { ChunkBody, DashboardSyncTrigger, FailBody, FinishBody, ManifestEntryInput, StartBody } from "./schema";
 
 /** Mirrors src/lib/sheet-sync/run.ts's timers exactly — same reasoning (dashboard-sheet-sync-plan.md section 6/0 of the handoff doc this was patterned from). */
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -49,6 +52,11 @@ async function failRunInternal(runId: string, message: string): Promise<void> {
 
   const durationSec = Math.round((Date.now() - run.startedAt.getTime()) / 1000);
   await markFailed({ trigger: (run.trigger as DashboardSyncTrigger) ?? null, sites: 0, durationSec, error: message });
+
+  // Unified sync: the leg shows the failure (and offers Retry) in the UI.
+  const batchId = await findBatchForRun(db, "STAGES", runId);
+  if (batchId) await failLeg(db, batchId, "STAGES", message);
+
   await notifyFailure(run.trigger, message);
 }
 
@@ -91,8 +99,56 @@ export async function checkPending(): Promise<{ pending: boolean; requestId?: st
   return { pending: true, requestId: state.requestId ?? undefined, trigger: state.trigger ?? undefined };
 }
 
+/**
+ * Unified sync: compare the script's per-site manifest against the stored
+ * hashes. Returns which site names must be chunked (`changed`), the manifest
+ * entries worth remembering for finish, and warnings for skipped sites.
+ * Website-created dashboard sites are left out entirely (the sheet never
+ * writes them), and a site that is missing/archived on the website side is
+ * always "changed" even if the sheet itself did not change.
+ */
+async function planManifest(
+  manifest: ManifestEntryInput[],
+  batchId: string | undefined
+): Promise<{ changed: string[]; entries: ManifestEntryInput[]; warnings: string[] }> {
+  const byKey = new Map<string, ManifestEntryInput>();
+  for (const m of manifest) {
+    const key = normalizeSiteName(m.name);
+    if (!byKey.has(key)) byKey.set(key, { name: m.name.trim(), hash: m.hash });
+  }
+  const keys = [...byKey.keys()];
+
+  const [sites, stored, batch] = await Promise.all([
+    db.dashboardSite.findMany({ select: { name: true, origin: true, isActive: true } }),
+    loadStoredHashes(db, "STAGES", keys),
+    batchId ? db.syncBatch.findUnique({ where: { id: batchId }, select: { force: true } }) : null,
+  ]);
+  const siteByKey = new Map(sites.map((s) => [normalizeSiteName(s.name), s]));
+
+  const warnings: string[] = [];
+  const syncable: { key: string; hash: string }[] = [];
+  const mustRewrite = new Set<string>();
+  for (const [key, entry] of byKey) {
+    const existing = siteByKey.get(key);
+    if (existing?.origin === "WEBSITE") {
+      warnings.push(`Skipped "${existing.name}": a site with this name was created on the website, so the sheet's copy was ignored.`);
+      byKey.delete(key);
+      continue;
+    }
+    if (!existing || !existing.isActive) mustRewrite.add(key);
+    syncable.push({ key, hash: entry.hash });
+  }
+
+  const { changed } = splitChanged(syncable, stored, { force: batch?.force === true, mustRewrite });
+  return {
+    changed: changed.map((key) => byKey.get(key)!.name),
+    entries: [...byKey.values()],
+    warnings,
+  };
+}
+
 /** POST /api/dashboard-sync/start. */
-export async function startRun(body: StartBody): Promise<{ runId: string }> {
+export async function startRun(body: StartBody): Promise<{ runId: string; changed?: string[] }> {
   await reapStaleRuns();
 
   const activeRun = await db.dashboardSyncRun.findFirst({ where: { status: "IN_PROGRESS" }, orderBy: { startedAt: "desc" } });
@@ -100,18 +156,22 @@ export async function startRun(body: StartBody): Promise<{ runId: string }> {
     throw new DashboardSyncError(409, `Another sync run ("${activeRun.id}") is already in progress.`);
   }
 
+  const plan = body.manifest ? await planManifest(body.manifest, body.batchId) : null;
+
   const run = await db.dashboardSyncRun.create({
     data: {
       status: "IN_PROGRESS",
       trigger: body.trigger,
       requestId: body.requestId,
       deptLinksPayload: body.deptLinks as unknown as object,
-      warnings: [],
+      manifestPayload: plan ? (plan.entries as unknown as object) : undefined,
+      warnings: plan ? plan.warnings : [],
     },
   });
 
+  if (body.batchId) await attachRun(db, body.batchId, "STAGES", run.id);
   await markRunning(run.id, body.trigger);
-  return { runId: run.id };
+  return plan ? { runId: run.id, changed: plan.changed } : { runId: run.id };
 }
 
 /** POST /api/dashboard-sync/chunk. Idempotent by (runId, siteName) — a retried chunk upsert replaces, never duplicates. */
@@ -168,6 +228,15 @@ export async function finishRun(body: FinishBody) {
     sites: result.counts.sites,
     durationSec,
   });
+
+  const batchId = await findBatchForRun(db, "STAGES", body.runId);
+  if (batchId) {
+    await completeLeg(db, batchId, "STAGES", {
+      counts: result.counts,
+      warnings: result.warnings,
+      createdSites: result.createdSites,
+    });
+  }
 
   return { runId: body.runId, ...result };
 }

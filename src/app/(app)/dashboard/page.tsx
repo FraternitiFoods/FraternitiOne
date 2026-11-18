@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { canViewAllDashboardSites, canCreateDashboardSite } from "@/lib/permissions";
 import { getDashboardRanking, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
+import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,7 +40,12 @@ export default async function DashboardHomePage() {
         title="Dashboard"
         subtitle="Site-wise progress across all 13 stages."
         isFranchisee={isFranchisee}
-        action={canCreate ? <CreateSiteDialog trigger={<Button size="sm">New site</Button>} /> : undefined}
+        action={
+          <>
+            {canCreate && <CreateSiteDialog trigger={<Button size="sm">New site</Button>} />}
+            <UnifiedSyncSlot user={user} />
+          </>
+        }
       />
 
       {ranking.length === 0 && (
