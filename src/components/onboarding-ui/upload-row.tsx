@@ -22,14 +22,14 @@ export function UploadRow({
   children?: ReactNode;
 }) {
   return (
-    <div className="rounded-[20px] border border-[var(--ob-line)] bg-[var(--ob-bg)] px-4 py-4 sm:px-5">
+    <div className="rounded-[20px] border border-[var(--ob-line)] bg-[var(--ob-bg)] px-4 py-4 sm:rounded-[17px] sm:px-5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--ob-line)] bg-white text-[var(--ob-green)]">
-          <Icon className="size-[22px]" strokeWidth={1.8} aria-hidden />
+          <Icon className="size-[22px] sm:size-[19px]" strokeWidth={1.8} aria-hidden />
         </div>
         <div className="min-w-[9rem] flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-[17px] font-bold text-[var(--ob-green)]">{title}</span>
+            <span className="text-[17px] font-bold sm:text-[15px] text-[var(--ob-green)]">{title}</span>
             {required && (
               <span className="rounded-full bg-[#fbe6c8] px-2.5 py-[3px] text-xs font-bold text-[#7a4200]">Required</span>
             )}

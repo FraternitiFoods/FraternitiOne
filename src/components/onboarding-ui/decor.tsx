@@ -8,7 +8,7 @@ export function Rangoli({ className }: { className?: string }) {
       fill="none"
       aria-hidden="true"
       className={cn(
-        "pointer-events-none absolute -top-16 -right-16 z-0 size-56 sm:-top-[70px] sm:-right-[70px] sm:size-[300px]",
+        "pointer-events-none absolute -top-16 -right-16 z-0 size-56 sm:-top-[60px] sm:-right-[60px] sm:size-[255px]",
         className
       )}
     >

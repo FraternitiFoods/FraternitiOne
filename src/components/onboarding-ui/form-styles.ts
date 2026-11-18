@@ -4,7 +4,7 @@
  * staff app's inputs are untouched.
  */
 export const OB_INPUT_CLASS =
-  "h-11 rounded-xl border-[var(--ob-green)]/25 bg-white px-3.5 text-[15px] text-[var(--ob-text)] placeholder:text-[var(--ob-muted)] focus-visible:border-[var(--ob-green)] focus-visible:ring-[var(--ob-saffron)]/40 disabled:bg-[var(--ob-bg)] disabled:opacity-70 md:text-[15px]";
+  "h-11 rounded-xl border-[var(--ob-green)]/25 bg-white px-3.5 text-[15px] sm:text-sm text-[var(--ob-text)] placeholder:text-[var(--ob-muted)] focus-visible:border-[var(--ob-green)] focus-visible:ring-[var(--ob-saffron)]/40 disabled:bg-[var(--ob-bg)] disabled:opacity-70 md:text-sm";
 
 export const OB_LABEL_CLASS = "text-sm font-semibold text-[var(--ob-green)]";
 

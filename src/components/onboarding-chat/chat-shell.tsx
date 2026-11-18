@@ -29,8 +29,8 @@ export function ChatShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <main className="relative min-h-screen overflow-x-clip px-4 py-4 sm:pt-12 sm:pr-10 sm:pb-28 sm:pl-[19.5rem]">
-        <div className="mx-auto max-w-6xl">{children}</div>
+      <main className="relative min-h-screen overflow-x-clip px-4 py-4 sm:pt-12 sm:pr-10 sm:pb-28 sm:pl-[calc(var(--ob-sidebar-w)+1.7rem)]">
+        <div className="mx-auto max-w-[61rem]">{children}</div>
       </main>
 
       {mounted && (
@@ -38,7 +38,7 @@ export function ChatShell({ children }: { children: ReactNode }) {
           aria-label="Assistant"
           className={cn(
             "fixed z-50 overflow-hidden rounded-3xl bg-card shadow-xl ring-1 ring-[var(--ob-green)]/15",
-            "inset-x-2 top-16 bottom-2 sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 sm:h-[34rem] sm:w-[24rem]",
+            "inset-x-2 top-16 bottom-2 sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 sm:h-[29rem] sm:w-[20.5rem]",
             open ? "flex flex-col" : "hidden"
           )}
         >
@@ -54,7 +54,7 @@ export function ChatShell({ children }: { children: ReactNode }) {
         }}
         aria-label="Open assistant"
         className={cn(
-          "ob-focus fixed right-4 bottom-4 z-40 flex h-[52px] items-center gap-2.5 rounded-full bg-[var(--ob-green)] px-6 text-[15px] font-semibold text-[var(--ob-cream)] shadow-[0_14px_30px_-12px_rgb(15_51_36/0.6)] transition-transform hover:scale-105 sm:right-8 sm:bottom-8",
+          "ob-focus fixed right-4 bottom-4 z-40 flex h-[52px] items-center gap-2.5 rounded-full bg-[var(--ob-green)] px-6 text-[15px] font-semibold sm:h-[44px] sm:text-sm text-[var(--ob-cream)] shadow-[0_14px_30px_-12px_rgb(15_51_36/0.6)] transition-transform hover:scale-105 sm:right-8 sm:bottom-8",
           open && "hidden"
         )}
       >

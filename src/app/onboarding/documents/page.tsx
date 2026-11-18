@@ -46,7 +46,7 @@ export default async function OnboardingDocumentsPage() {
       <div className="relative z-10 space-y-9">
         <ScanPoller pending={hasScanPending} />
         <div>
-          <h1 className="ob-display text-[2.25rem] leading-[1.08] font-semibold tracking-[-0.02em] text-[var(--ob-green)] sm:text-[3.5rem]">
+          <h1 className="ob-display text-[2.25rem] leading-[1.08] font-semibold tracking-[-0.02em] text-[var(--ob-green)] sm:text-[3rem]">
             KYC &amp; Documents
           </h1>
           <p className="mt-3 text-lg leading-normal text-[var(--ob-text-2)]">
@@ -56,12 +56,12 @@ export default async function OnboardingDocumentsPage() {
 
         <ObCard className="p-5 sm:p-8">
           <div className="flex items-center justify-between gap-4">
-            <ObCardTitle className="text-[28px]">KYC</ObCardTitle>
+            <ObCardTitle className="text-[28px] sm:text-[24px]">KYC</ObCardTitle>
             <StatusPill tone={reviewStatusTone(onboarding.kycStatus)}>{REVIEW_STATUS_LABELS[onboarding.kycStatus]}</StatusPill>
           </div>
-          <div className="mt-[22px]">
+          <div className="mt-[22px] sm:mt-[19px]">
             {onboarding.kyc?.decisionReason && onboarding.kycStatus === "CHANGES_REQUESTED" && (
-              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200]">
+              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200] sm:rounded-[17px] sm:text-sm">
                 <strong>Changes requested:</strong> {onboarding.kyc.decisionReason}
               </p>
             )}
@@ -95,14 +95,14 @@ export default async function OnboardingDocumentsPage() {
 
         <ObCard className="p-5 sm:p-8">
           <div className="flex items-center justify-between gap-4">
-            <ObCardTitle className="text-[28px]">Payment receipt</ObCardTitle>
+            <ObCardTitle className="text-[28px] sm:text-[24px]">Payment receipt</ObCardTitle>
             <StatusPill tone={reviewStatusTone(onboarding.paymentStatus)}>
               {REVIEW_STATUS_LABELS[onboarding.paymentStatus]}
             </StatusPill>
           </div>
-          <div className="mt-[22px]">
+          <div className="mt-[22px] sm:mt-[19px]">
             {onboarding.payments[0]?.decisionReason && onboarding.paymentStatus === "CHANGES_REQUESTED" && (
-              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200]">
+              <p className="mb-5 rounded-[20px] border border-[#e58a1f]/40 bg-[#fbe6c8] px-5 py-4 text-[15px] text-[#7a4200] sm:rounded-[17px] sm:text-sm">
                 <strong>Changes requested:</strong> {onboarding.payments[0].decisionReason}
               </p>
             )}

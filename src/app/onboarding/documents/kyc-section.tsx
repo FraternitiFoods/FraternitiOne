@@ -186,7 +186,7 @@ function FileUploader({
               disabled={status === "uploading"}
               onClick={() => inputRef.current?.click()}
             >
-              <Upload className="size-[18px]" strokeWidth={2} aria-hidden />
+              <Upload className="size-[18px] sm:size-[16px]" strokeWidth={2} aria-hidden />
               {status === "uploading" ? "Uploading…" : existing ? "Replace" : "Upload"}
             </ObButton>
           </>
@@ -245,8 +245,8 @@ export function KycSection({
 
       {optionalKinds.length > 0 && (
         <div className="mt-8 border-t border-[var(--ob-green)]/12 pt-7">
-          <h3 className="ob-display text-[22px] font-semibold text-[var(--ob-green)]">Additional documents (optional)</h3>
-          <p className="mt-2 text-[15px] leading-normal text-[var(--ob-text-2)]">
+          <h3 className="ob-display text-[22px] font-semibold text-[var(--ob-green)] sm:text-[19px]">Additional documents (optional)</h3>
+          <p className="mt-2 text-[15px] leading-normal sm:text-sm text-[var(--ob-text-2)]">
             Not required to submit your KYC, but upload any that apply — it can speed up review.
           </p>
           <div className="mt-5 space-y-3">

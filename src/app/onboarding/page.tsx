@@ -77,7 +77,7 @@ export default async function OnboardingHomePage() {
       <div className="relative z-10 space-y-6">
         <section>
           <CodeChip>{formatOnboardingCode(onboarding.seq)}</CodeChip>
-          <h1 className="ob-display mt-[22px] text-[2.25rem] leading-[1.08] font-semibold tracking-[-0.02em] text-[var(--ob-green)] sm:text-[3.5rem]">
+          <h1 className="ob-display mt-[22px] text-[2.25rem] leading-[1.08] font-semibold tracking-[-0.02em] text-[var(--ob-green)] sm:mt-[19px] sm:text-[3rem]">
             {onboarding.brand} {onboarding.proposedLocation}
           </h1>
           <p className="mt-3 text-lg text-[var(--ob-text-2)]">Welcome, {user.name}.</p>
@@ -88,17 +88,17 @@ export default async function OnboardingHomePage() {
         </div>
 
         <ObCard tone="dark" className="flex flex-wrap items-center gap-x-10 gap-y-6 px-7 py-8 sm:px-9">
-          <LeafWatermark className="-bottom-[70px] right-[200px] size-60 opacity-10" />
+          <LeafWatermark className="-bottom-[70px] right-[200px] size-60 opacity-10 sm:-bottom-[60px] sm:right-[170px]" />
           <div className="relative min-w-0 flex-[1_1_20rem]">
             <div className="text-xs font-bold tracking-[0.16em] text-[var(--ob-saffron)] uppercase">Next action</div>
-            <p className="ob-display mt-3 text-2xl leading-[1.3] font-medium sm:text-[26px]">
+            <p className="ob-display mt-3 text-2xl leading-[1.3] font-medium sm:text-[22px]">
               {nextActionLabel(onboarding)}
             </p>
           </div>
           {showAction && (
             <ObLinkButton href={action.href} variant="saffron" size="lg" className="relative max-sm:w-full">
               {action.label}
-              <ArrowRight className="size-[18px]" strokeWidth={2.2} aria-hidden />
+              <ArrowRight className="size-[18px] sm:size-[16px]" strokeWidth={2.2} aria-hidden />
             </ObLinkButton>
           )}
         </ObCard>
@@ -107,7 +107,7 @@ export default async function OnboardingHomePage() {
           <ObCard className="flex flex-col gap-4 px-7 py-7 sm:px-8">
             <div className="flex items-center justify-between gap-3">
               <ObCardTitle>KYC status</ObCardTitle>
-              <FileText className="size-[22px] text-[var(--ob-muted)]" strokeWidth={1.8} aria-hidden />
+              <FileText className="size-[22px] text-[var(--ob-muted)] sm:size-[19px]" strokeWidth={1.8} aria-hidden />
             </div>
             <StatusPill tone={reviewStatusTone(onboarding.kycStatus)} className="self-start">
               {REVIEW_STATUS_LABELS[onboarding.kycStatus]}
@@ -117,30 +117,30 @@ export default async function OnboardingHomePage() {
           <ObCard className="flex flex-col gap-4 px-7 py-7 sm:px-8">
             <div className="flex items-center justify-between gap-3">
               <ObCardTitle>Payment status</ObCardTitle>
-              <CreditCard className="size-[22px] text-[var(--ob-muted)]" strokeWidth={1.8} aria-hidden />
+              <CreditCard className="size-[22px] text-[var(--ob-muted)] sm:size-[19px]" strokeWidth={1.8} aria-hidden />
             </div>
             <StatusPill tone={reviewStatusTone(onboarding.paymentStatus)} className="self-start">
               {REVIEW_STATUS_LABELS[onboarding.paymentStatus]}
             </StatusPill>
-            <p className="text-[15px] text-[var(--ob-text-2)]">
+            <p className="text-[15px] text-[var(--ob-text-2)] sm:text-sm">
               LOI fee: <strong className="text-[var(--ob-green)]">{formatMoney(onboarding.expectedAmount)}</strong>
             </p>
           </ObCard>
 
           <ObCard className="px-7 py-7 sm:px-8">
             <ObEyebrow>Onboarding Completion</ObEyebrow>
-            <div className="ob-display mt-2.5 text-[4rem] leading-none font-semibold tracking-[-0.02em] text-[var(--ob-green)]">
+            <div className="ob-display mt-2.5 text-[4rem] leading-none sm:text-[3.375rem] font-semibold tracking-[-0.02em] text-[var(--ob-green)]">
               {completion.completed}/{completion.total}
             </div>
-            <p className="mt-3 text-[15px] text-[var(--ob-text-2)]">Required items submitted</p>
-            <div className="mt-[18px]">
+            <p className="mt-3 text-[15px] text-[var(--ob-text-2)] sm:text-sm">Required items submitted</p>
+            <div className="mt-[18px] sm:mt-[15px]">
               <SegmentBar total={completion.total} filled={completion.completed} />
             </div>
           </ObCard>
 
           <ObCard className="px-7 py-7 sm:px-8">
             <ObEyebrow>LOI Status</ObEyebrow>
-            <div className="ob-display mt-3.5 max-w-[16rem] text-4xl leading-[1.15] font-semibold tracking-[-0.01em] text-[var(--ob-green)]">
+            <div className="ob-display mt-3.5 max-w-[16rem] text-4xl sm:max-w-[14rem] leading-[1.15] font-semibold tracking-[-0.01em] text-[var(--ob-green)]">
               {onboarding.currentLoiVersion
                 ? LOI_VERSION_STATUS_LABELS[onboarding.currentLoiVersion.status]
                 : "Not yet generated"}
@@ -156,7 +156,7 @@ export default async function OnboardingHomePage() {
 
         <ObEmailsCard emails={recentEmails} title="Latest emails sent" />
 
-        <div className="inline-flex items-center gap-2.5 rounded-full bg-[var(--ob-sidebar)] px-[18px] py-2.5 text-sm text-[var(--ob-nav)]">
+        <div className="inline-flex items-center gap-2.5 rounded-full bg-[var(--ob-sidebar)] px-[18px] py-2.5 text-sm text-[var(--ob-nav)] sm:px-[15px]">
           <span aria-hidden className="size-[9px] rounded-full bg-[var(--ob-saffron)]" />
           <span>
             Overall status:{" "}

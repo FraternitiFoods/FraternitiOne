@@ -28,7 +28,7 @@ export function YoutubeFacade({
   if (!isValidYoutubeId(youtubeId)) {
     return (
       <div
-        className={`flex ${aspect} w-full flex-col items-center justify-center gap-2 rounded-[20px] border border-dashed border-[var(--ob-green)]/25 bg-[var(--ob-bg)] text-[var(--ob-muted)]`}
+        className={`flex ${aspect} w-full flex-col items-center justify-center gap-2 rounded-[20px] sm:rounded-[17px] border border-dashed border-[var(--ob-green)]/25 bg-[var(--ob-bg)] text-[var(--ob-muted)]`}
       >
         <Play className="size-8 opacity-40" aria-hidden />
         <span className="text-xs">Video coming soon</span>
@@ -39,7 +39,7 @@ export function YoutubeFacade({
   if (playing) {
     return (
       <iframe
-        className={`${aspect} w-full rounded-[20px]`}
+        className={`${aspect} w-full rounded-[20px] sm:rounded-[17px]`}
         src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0`}
         title={title}
         allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
@@ -53,7 +53,7 @@ export function YoutubeFacade({
       type="button"
       onClick={() => setPlaying(true)}
       aria-label={`Play video: ${title}`}
-      className={`group relative block ${aspect} w-full overflow-hidden rounded-[20px] bg-black outline-none ob-focus`}
+      className={`group relative block ${aspect} w-full overflow-hidden rounded-[20px] sm:rounded-[17px] bg-black outline-none ob-focus`}
     >
       {/* Plain <img>: a ~15KB third-party thumbnail; lazy so it never competes with first paint. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -66,8 +66,8 @@ export function YoutubeFacade({
         className={`size-full object-cover transition-transform duration-300 ${vertical ? "scale-[1.25] group-hover:scale-[1.3]" : "group-hover:scale-105"}`}
       />
       <span className="absolute inset-0 flex items-center justify-center">
-        <span className="flex size-[66px] items-center justify-center rounded-full bg-[var(--ob-saffron)] text-[var(--ob-green)] shadow-[0_0_0_9px_rgb(255_255_255/0.35)] transition-transform group-hover:scale-105">
-          <Play className="size-[26px] translate-x-[3px] fill-current" aria-hidden />
+        <span className="flex size-[66px] sm:size-[56px] items-center justify-center rounded-full bg-[var(--ob-saffron)] text-[var(--ob-green)] shadow-[0_0_0_9px_rgb(255_255_255/0.35)] transition-transform group-hover:scale-105">
+          <Play className="size-[26px] sm:size-[22px] translate-x-[3px] fill-current" aria-hidden />
         </span>
       </span>
     </button>

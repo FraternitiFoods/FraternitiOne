@@ -27,14 +27,14 @@ export function StageStepper({
               <div className="flex items-center gap-2.5 lg:pr-2.5">
                 <div
                   className={cn(
-                    "flex size-10 shrink-0 items-center justify-center rounded-full text-[15px]",
+                    "flex size-10 shrink-0 items-center justify-center rounded-full text-[15px] sm:text-sm",
                     done && "bg-[var(--ob-green)] text-[var(--ob-cream)]",
                     current &&
                       "bg-[var(--ob-saffron)] font-extrabold text-[var(--ob-green)] shadow-[0_0_0_6px_rgb(229_138_31/0.22)]",
                     !done && !current && "border-2 border-[var(--ob-green)]/25 font-bold text-[var(--ob-muted)]"
                   )}
                 >
-                  {done ? <Check className="size-[18px]" strokeWidth={2.4} aria-hidden /> : i + 1}
+                  {done ? <Check className="size-[18px] sm:size-[15px]" strokeWidth={2.4} aria-hidden /> : i + 1}
                 </div>
                 {!last && (
                   <div
@@ -46,7 +46,7 @@ export function StageStepper({
               <div className="lg:mt-3.5">
                 <div
                   className={cn(
-                    "text-[15px]",
+                    "text-[15px] sm:text-sm",
                     current || done ? "font-bold text-[var(--ob-green)]" : "font-semibold text-[var(--ob-muted)]"
                   )}
                 >
