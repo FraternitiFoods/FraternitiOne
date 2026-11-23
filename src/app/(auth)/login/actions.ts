@@ -9,7 +9,7 @@ import { writeAuditEvent } from "@/lib/audit";
 import { isExternalRole, landingPathForRole } from "@/lib/role-access";
 
 const LoginSchema = z.object({
-  email: z.string().trim().toLowerCase().email({ message: "Enter a valid email." }),
+  identifier: z.string().trim().toLowerCase().min(1, { message: "Enter your email or username." }),
   password: z.string().min(1, { message: "Password is required." }),
   next: z.string().optional(),
 });
@@ -28,7 +28,7 @@ export async function login(
   formData: FormData
 ): Promise<LoginState> {
   const parsed = LoginSchema.safeParse({
-    email: formData.get("email"),
+    identifier: formData.get("identifier"),
     password: formData.get("password"),
     next: formData.get("next") ?? undefined,
   });
@@ -37,9 +37,9 @@ export async function login(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const { email, password, next } = parsed.data;
+  const { identifier, password, next } = parsed.data;
 
-  const user = await db.user.findUnique({ where: { email } });
+  const user = await db.user.findFirst({ where: { OR: [{ email: identifier }, { username: identifier }] } });
 
   if (user && user.loginLockedUntil && user.loginLockedUntil > new Date()) {
     return {
@@ -70,7 +70,7 @@ export async function login(
         });
       }
     }
-    return { error: "Incorrect email or password." };
+    return { error: "Incorrect email/username or password." };
   }
 
   await db.user.update({

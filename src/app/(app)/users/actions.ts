@@ -21,6 +21,14 @@ const CreateUserSchema = z.object({
     .toLowerCase()
     .email({ message: "Enter a valid email." })
     .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
+  // Lets this user sign in with a username instead of email.
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_]{3,30}$/, "Lowercase letters, numbers, underscores only (3-30 characters).")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type ActionState = { error?: string } | undefined;
@@ -45,6 +53,7 @@ export async function createUser(
     name: formData.get("name"),
     email: formData.get("email"),
     role: formData.get("role"),
+    username: formData.get("username") || undefined,
   });
 
   if (!parsed.success) {
@@ -53,32 +62,51 @@ export async function createUser(
 
   const data = parsed.data;
 
-  const existing = await db.user.findUnique({ where: { email: data.email } });
+  const [existing, existingByUsername] = await Promise.all([
+    db.user.findUnique({ where: { email: data.email } }),
+    data.username ? db.user.findUnique({ where: { username: data.username } }) : null,
+  ]);
   if (existing) {
     return { error: "A user with this email already exists." };
   }
+  if (existingByUsername) {
+    return { error: "A user with this username already exists." };
+  }
 
-  const user = await db.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        // No passwordHash — set via the invite link below.
-      },
+  let user;
+  try {
+    user = await db.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          username: data.username,
+          role: data.role,
+          // No passwordHash — set via the invite link below.
+        },
+      });
+
+      await writeAuditEvent(tx, {
+        actor: admin,
+        entityType: "User",
+        entityId: created.id,
+        action: "CREATE",
+        newValue: { name: created.name, email: created.email, role: created.role },
+        reference: "Created via admin user management",
+      });
+
+      return created;
     });
-
-    await writeAuditEvent(tx, {
-      actor: admin,
-      entityType: "User",
-      entityId: created.id,
-      action: "CREATE",
-      newValue: { name: created.name, email: created.email, role: created.role },
-      reference: "Created via admin user management",
-    });
-
-    return created;
-  });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = err.meta?.target;
+      if (Array.isArray(target) && target.includes("username")) {
+        return { error: "A user with this username already exists." };
+      }
+      return { error: "A user with this email already exists." };
+    }
+    throw err;
+  }
 
   const token = await createPasswordResetToken(user.id, "INVITE");
   try {

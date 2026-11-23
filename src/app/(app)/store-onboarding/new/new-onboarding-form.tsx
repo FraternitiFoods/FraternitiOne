@@ -133,6 +133,18 @@ export function NewOnboardingForm({
               Canonical login for this franchisee — one Workspace email per store (P1-01).
             </p>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="username">Username (optional)</Label>
+            <Input
+              id="username"
+              name="username"
+              placeholder="e.g. rahulrishi"
+            />
+            <p className="text-xs text-muted-foreground">
+              Lets them sign in with a username instead of email.
+            </p>
+          </div>
         </>
       ) : (
         <div className="space-y-2">

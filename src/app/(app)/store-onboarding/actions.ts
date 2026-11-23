@@ -23,6 +23,17 @@ const BaseOnboardingFields = {
   expectedAmountRupees: z.coerce.number().positive("Fee amount must be greater than zero."),
 };
 
+// Lets the franchisee sign in with a short username instead of their email —
+// optional, only meaningful for accountMode "new" (an "existing" account's
+// username, if any, was already set when that account was first created).
+const UsernameField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9_]{3,30}$/, "Lowercase letters, numbers, underscores only (3-30 characters).")
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
 // "new" mints a fresh franchisee User + sends the invite, same as before.
 // "existing" attaches an already-created, not-yet-linked FRANCHISEE user
 // (e.g. provisioned ahead of time via /users/new) — no second account, no
@@ -40,6 +51,7 @@ const CreateOnboardingSchema = z.discriminatedUnion("accountMode", [
       .toLowerCase()
       .email({ message: "Enter a valid Workspace email." })
       .refine(isApprovedEmailDomain, { message: INVALID_EMAIL_DOMAIN_MESSAGE }),
+    username: UsernameField,
   }),
   z.object({
     accountMode: z.literal("existing"),
@@ -81,6 +93,7 @@ export async function createOnboarding(
     contactPhone: formData.get("contactPhone"),
     franchiseeName: formData.get("franchiseeName"),
     workspaceEmail: formData.get("workspaceEmail"),
+    username: formData.get("username") || undefined,
     existingUserId: formData.get("existingUserId"),
     salesOwnerId: formData.get("salesOwnerId"),
     expectedAmountRupees: formData.get("expectedAmountRupees"),
@@ -127,14 +140,22 @@ export async function createOnboarding(
     workspaceEmail = data.workspaceEmail;
   }
 
-  const [existingOnboarding, existingUserByEmail] = await Promise.all([
+  // Only meaningful for "new" mode — narrowing on data.accountMode doesn't
+  // survive into the closure below, so resolve it to a plain variable here.
+  const username = data.accountMode === "new" ? data.username : undefined;
+
+  const [existingOnboarding, existingUserByEmail, existingUserByUsername] = await Promise.all([
     db.storeOnboarding.findUnique({ where: { workspaceEmail } }),
     // Only relevant for "new" mode — "existing" mode's user is expected to
     // already exist under this email, that's the whole point.
     data.accountMode === "new" ? db.user.findUnique({ where: { email: workspaceEmail } }) : null,
+    username ? db.user.findUnique({ where: { username } }) : null,
   ]);
   if (existingOnboarding || existingUserByEmail) {
     return { error: "A store or user with this Workspace email already exists." };
+  }
+  if (existingUserByUsername) {
+    return { error: "A user with this username already exists." };
   }
 
   let onboardingId: string;
@@ -147,6 +168,7 @@ export async function createOnboarding(
               data: {
                 name: franchiseeName,
                 email: workspaceEmail,
+                username,
                 role: "FRANCHISEE",
               },
             });
@@ -209,6 +231,10 @@ export async function createOnboarding(
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = err.meta?.target;
+      if (Array.isArray(target) && target.includes("username")) {
+        return { error: "A user with this username already exists." };
+      }
       return { error: "A store or user with this Workspace email already exists." };
     }
     throw err;

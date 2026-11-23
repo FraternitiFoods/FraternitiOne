@@ -33,6 +33,14 @@ export function NewUserForm() {
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="username">Username (optional)</Label>
+        <Input id="username" name="username" placeholder="e.g. rahulrishi" />
+        <p className="text-xs text-muted-foreground">
+          Lets them sign in with a username instead of email.
+        </p>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="role">Role</Label>
         <Select name="role" required>
           <SelectTrigger id="role" className="w-full">
