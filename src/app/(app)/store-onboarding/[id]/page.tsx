@@ -32,7 +32,7 @@ export default async function StoreOnboardingDetailPage({
     db.storeOnboarding.findUnique({
       where: { id },
       include: {
-        franchisee: { select: { id: true, name: true, email: true } },
+        franchisee: { select: { id: true, name: true, email: true, username: true } },
         salesOwner: { select: { id: true, name: true, email: true } },
         kyc: true,
         payments: { orderBy: { createdAt: "desc" } },
@@ -125,6 +125,12 @@ export default async function StoreOnboardingDetailPage({
               <span className="text-muted-foreground">Franchisee:</span> {onboarding.franchisee.name} (
               {onboarding.franchisee.email})
             </div>
+            {onboarding.franchisee.username && (
+              <div>
+                <span className="text-muted-foreground">Login username:</span>{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono">{onboarding.franchisee.username}</code>
+              </div>
+            )}
             <div>
               <span className="text-muted-foreground">Workspace email:</span> {onboarding.workspaceEmail}
             </div>

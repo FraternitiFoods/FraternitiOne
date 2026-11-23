@@ -33,7 +33,7 @@ export default async function StoreOnboardingListPage() {
         kycStatus: true,
         paymentStatus: true,
         expectedAmount: true,
-        franchisee: { select: { name: true, email: true } },
+        franchisee: { select: { name: true, email: true, username: true } },
         salesOwner: { select: { name: true } },
         currentLoiVersion: { select: { status: true } },
         dashboardSite: { select: { name: true } },

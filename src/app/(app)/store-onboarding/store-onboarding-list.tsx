@@ -36,7 +36,7 @@ type OnboardingRow = {
   loiStatus: LoiVersionStatus | null;
   expectedAmount: number;
   siteName: string | null;
-  franchisee: { name: string; email: string | null };
+  franchisee: { name: string; email: string | null; username: string | null };
   salesOwner: { name: string };
 };
 
@@ -87,7 +87,15 @@ export function StoreOnboardingList({
         if (rowLoiStatus !== loiStatusFilter) return false;
       }
       if (!q) return true;
-      const haystack = [o.code, o.brand, o.proposedLocation, o.franchisee.name, o.franchisee.email, o.salesOwner.name]
+      const haystack = [
+        o.code,
+        o.brand,
+        o.proposedLocation,
+        o.franchisee.name,
+        o.franchisee.email,
+        o.franchisee.username,
+        o.salesOwner.name,
+      ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(q);
@@ -202,6 +210,14 @@ export function StoreOnboardingList({
                     <TableCell>
                       <div>{o.franchisee.name}</div>
                       <div className="text-xs text-muted-foreground">{o.franchisee.email}</div>
+                      {o.franchisee.username && (
+                        <div className="text-xs text-muted-foreground">
+                          Login:{" "}
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono">
+                            {o.franchisee.username}
+                          </code>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>{o.salesOwner.name}</TableCell>
                     <TableCell>
