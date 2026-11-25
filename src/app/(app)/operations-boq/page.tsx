@@ -1,9 +1,8 @@
 import { requireOpsBoqUser } from "@/lib/ops-boq-access";
 import { canEditOpsBoq } from "@/lib/permissions";
-import { getOpsBoqRows, getOpsBoqSites, getOpsBoqSyncToken } from "@/lib/ops-boq-data";
+import { getOpsBoqRows, getOpsBoqSites } from "@/lib/ops-boq-data";
 import { todayIsoIST } from "@/lib/ops-boq-calc";
 import { PageHeader } from "@/components/page-header";
-import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { OpsBoqApp } from "./_components/ops-boq-app";
 
 /**
@@ -18,7 +17,7 @@ export default async function OperationsBoqPage(props: { searchParams: Promise<R
   const siteParam = (await props.searchParams).site;
   const requestedSiteId = typeof siteParam === "string" ? siteParam : null;
 
-  const [sites, syncToken] = await Promise.all([getOpsBoqSites(), getOpsBoqSyncToken()]);
+  const sites = await getOpsBoqSites();
   const selected = requestedSiteId ? sites.find((s) => s.id === requestedSiteId) : undefined;
   const rows = selected ? await getOpsBoqRows(selected.id) : [];
 
@@ -28,7 +27,6 @@ export default async function OperationsBoqPage(props: { searchParams: Promise<R
         title="Operations BOQ"
         subtitle="Procurement status, vendors and payments for each site."
         isFranchisee={false}
-        action={<UnifiedSyncSlot user={user} />}
       />
       <OpsBoqApp
         sites={sites.map((s) => ({ id: s.id, name: s.name }))}
@@ -36,7 +34,6 @@ export default async function OperationsBoqPage(props: { searchParams: Promise<R
         rows={rows}
         canEdit={canEditOpsBoq(user)}
         todayIso={todayIsoIST()}
-        syncToken={syncToken}
       />
     </div>
   );

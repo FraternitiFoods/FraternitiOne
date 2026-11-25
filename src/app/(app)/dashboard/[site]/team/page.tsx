@@ -36,7 +36,7 @@ export default async function DashboardTeamPage(props: PageProps<"/dashboard/[si
       {team.site.origin !== "WEBSITE" ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Tasks can only be assigned on website-created sites. This site is synced from the sheet, so its tasks are read-only here.
+            Tasks can only be assigned on website-created sites. This site came from the old sheet, so its tasks are read-only here.
           </CardContent>
         </Card>
       ) : (

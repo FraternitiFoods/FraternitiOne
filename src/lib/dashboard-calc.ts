@@ -1,10 +1,8 @@
 /**
  * Pure percentage rules (dashboard-sheet-sync-plan.md section 5): "per stage
  * = Completed / (leaf rows - Not required); per site overall = same over all
- * stages (leaf rows only, parents excluded)." Shared by the sync commit's
- * sheet-vs-computed mismatch check (src/lib/dashboard-sync/commit.ts) and,
- * later, every Dashboard read page — one place this rule lives, so it can't
- * drift between the two.
+ * stages (leaf rows only, parents excluded)." Used by every Dashboard read
+ * page — one place this rule lives, so it can't drift.
  */
 
 export type LeafStepLike = {

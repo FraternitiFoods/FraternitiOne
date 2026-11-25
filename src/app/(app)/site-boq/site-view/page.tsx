@@ -58,7 +58,7 @@ export default async function SiteViewPage(props: PageProps<"/site-boq/site-view
         <PageHeader title="Site BOQ" subtitle="Rate sheet, quantities and purchase orders." isFranchisee={false} />
         <SiteBoqSubNav active="site-view" />
         <div className="rounded-xl bg-card p-8 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
-          No sites yet — import from the sheet first.
+          No sites yet.
         </div>
       </div>
     );

@@ -21,9 +21,9 @@ const MODE_LABEL: Record<ImportMode, string> = {
 
 const SWITCH_EXPLANATION: Record<ImportMode, string> = {
   WEBSITE_LIVE:
-    "The sheet's push will stop working — every /api/import/boq/* request will get 403 — and editing turns on here, following each role's permissions (plan.md section 5). Vendor contact details, Settings and Purchase Orders already work in either mode.",
+    "Editing turns on here, following each role's permissions (plan.md section 5). Vendor contact details, Settings and Purchase Orders already work in either mode.",
   SHEET_LIVE:
-    "Editing turns off for everyone here (except vendor contact details, Settings and Purchase Orders), and the sheet's push resumes — its next run will overwrite BOQ data on the website again.",
+    "Editing turns off for everyone here (except vendor contact details, Settings and Purchase Orders).",
 };
 
 /**

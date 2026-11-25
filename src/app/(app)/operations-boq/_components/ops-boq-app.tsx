@@ -57,15 +57,12 @@ export function OpsBoqApp({
   rows,
   canEdit,
   todayIso,
-  syncToken,
 }: {
   sites: SiteOption[];
   selectedSiteId: string | null;
   rows: OpsBoqRowView[];
   canEdit: boolean;
   todayIso: string;
-  /** Last Ops BOQ sync commit time; changes after a sync so the table remounts with the refreshed `rows`. */
-  syncToken: string;
 }) {
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
@@ -119,7 +116,7 @@ export function OpsBoqApp({
       )}
       {selectedSite && rows.length > 0 && (
         // key: switching site remounts the table so its local edit state can never leak across sites.
-        <OpsBoqTable key={`${selectedSite.id}:${syncToken}`} siteId={selectedSite.id} initialRows={rows} canEdit={canEdit} todayIso={todayIso} />
+        <OpsBoqTable key={selectedSite.id} siteId={selectedSite.id} initialRows={rows} canEdit={canEdit} todayIso={todayIso} />
       )}
     </div>
   );

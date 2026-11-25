@@ -38,7 +38,6 @@ export type SiteRanking = {
   pct: number;
   completed: number;
   total: number;
-  lastSyncedAt: Date | null;
   origin: "SHEET" | "WEBSITE";
 };
 
@@ -63,7 +62,6 @@ export async function getDashboardRanking(): Promise<SiteRanking[]> {
         pct: stats.pct,
         completed: stats.completed,
         total: stats.total,
-        lastSyncedAt: site.lastSyncedAt,
         origin: site.origin,
       };
     })
@@ -78,16 +76,13 @@ export type SiteDetail = {
   origin: "SHEET" | "WEBSITE";
   deptLinksText: string | null;
   driveFolderUrl: string | null;
-  lastSyncedAt: Date | null;
   overall: SiteStats;
   stages: StageSummary[];
-  deptLinks: { department: string; stageFolderName: string; url: string }[];
 };
 
 export async function getSiteDetail(siteName: string): Promise<SiteDetail | null> {
   const site = await db.dashboardSite.findFirst({
     where: { name: siteName, isActive: true },
-    include: { deptLinks: { orderBy: { stageFolderName: "asc" } } },
   });
   if (!site) return null;
 
@@ -113,10 +108,8 @@ export async function getSiteDetail(siteName: string): Promise<SiteDetail | null
     origin: site.origin,
     deptLinksText: site.deptLinksText,
     driveFolderUrl: site.driveFolderUrl,
-    lastSyncedAt: site.lastSyncedAt,
     overall,
     stages,
-    deptLinks: site.deptLinks.map((d) => ({ department: d.department, stageFolderName: d.stageFolderName, url: d.url })),
   };
 }
 

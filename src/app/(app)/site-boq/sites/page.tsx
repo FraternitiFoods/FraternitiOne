@@ -37,7 +37,7 @@ export default async function SitesPage(props: PageProps<"/site-boq/sites">) {
 
       {settings.mode === "SHEET_LIVE" && (
         <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Sheet is live — sites are read-only here until an Admin switches the mode in Settings.
+          Sites are read-only here (SHEET_LIVE mode) until an Admin switches the mode in Settings.
         </p>
       )}
 

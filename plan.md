@@ -41,6 +41,8 @@ This is controlled by one setting, `mode`:
 
 Only an Admin can flip `mode`, from Settings, with a confirmation dialog explaining it is a one-way switch in practice.
 
+**Update 2026-11-25:** the import/push endpoint and the sheet syncs are gone. `mode` now only gates website writes (`SHEET_LIVE` = Site BOQ read-only, `WEBSITE_LIVE` = editable per role); the "Import/push endpoint" column above is historical.
+
 ---
 
 ## 2. Scope of this branch
@@ -58,7 +60,7 @@ Only an Admin can flip `mode`, from Settings, with a confirmation dialog explain
 ### Database
 - `new` uses its **own, separate Postgres database**. Never point it at the dev database.
 - Start a fresh migration history for this database: one baseline migration with the auth/users/roles tables plus the new BOQ tables below.
-- Env vars needed (ask the human for values, do not invent): `DATABASE_URL` (new DB), `IMPORT_SECRET` (shared secret for the sheet push), and storage credentials for photos if the repo does not already have storage set up.
+- Env vars needed (ask the human for values, do not invent): `DATABASE_URL` (new DB), and storage credentials for photos if the repo does not already have storage set up.
 
 ### Sidebar (exactly 4 items, in this order)
 1. **Dashboard** — "Coming soon", not clickable.
@@ -101,7 +103,7 @@ Use the repo's ORM conventions. Money in `numeric(14,2)`. Quantities in `numeric
 
 **app_settings** (key/value): `mode` (`SHEET_LIVE` default), company_name, company_address, company_gstin, company_phone, company_email, signatory_name, default_gst_percent (18), default_payment_terms ("50% advance, balance within 7 days after delivery"), default_delivery_days (7), po_terms (4 lines, see section 6.6), urgent_days (7), soon_days (30).
 
-**import_runs**: id, status, started_at, finished_at, counts (jsonb), warnings (jsonb), dry_run.
+**import_runs**: dropped 2026-11-25 (migration `20261125120000_remove_sync`).
 
 ### Rate rules
 - `final_rate(item)` = the rate of `item.final_vendor` in `vendor_rates`. No final vendor, or rate empty/0 → rate is **missing** (store null, never treat 0 as a real price).
@@ -157,7 +159,7 @@ List grouped by category. Vendor detail: name, address, GSTIN, phone, email (the
 List, add, rename, opening date, short code, hide. In `SHEET_LIVE`, site names and opening dates come from the sheet; show them read-only there, with a note.
 
 ### 4.7 Settings (Admin)
-Company details for PO header, PO defaults and terms, urgency thresholds, **mode switch**, and the **Import status** panel (last run time, counts, warnings, button to view warnings).
+Company details for PO header, PO defaults and terms, urgency thresholds, **mode switch**. (The Import status panel was removed 2026-11-25.)
 
 ---
 
@@ -196,53 +198,9 @@ Add a lightweight audit log for edits in `WEBSITE_LIVE` (who, when, what field, 
 
 ---
 
-## 7. Import from the sheet (push model)
+## 7. Import from the sheet (push model) — REMOVED 2026-11-25
 
-An Apps Script in the sheet (written by Abhishek, see his brief) pushes data to the website. The whole workbook is too large to export in one go, so the push is **chunked and idempotent**.
-
-All requests: `Authorization: Bearer <IMPORT_SECRET>`, JSON, HTTPS only. Reject with 403 when `mode = WEBSITE_LIVE`. Reject wrong/missing secret with 401. No user session involved.
-
-### Endpoints
-1. `POST /api/import/boq/begin` body `{ "dryRun": false }` → `{ "runId": "..." }`.
-2. `POST /api/import/boq/chunk` body `{ "runId", "type", "data" }` where `type` is one of:
-   - `sites`: `[ { siteKey, name, shortCode, openingDate } ]`
-   - `vendors`: `[ { name, categories: ["Uniforms", ...] } ]`
-   - `category`: one category per request:
-     ```json
-     {
-       "category": "Kitchen Smallware",
-       "group": "operating",
-       "vendors": ["Gogia"],
-       "items": [
-         {
-           "itemKey": "ITM-0001",
-           "name": "GN PAN 1X2X6 WITH LID",
-           "note": "",
-           "finalVendor": "Gogia",
-           "rates": { "Gogia": 605 },
-           "sites": [
-             { "siteKey": "S-001", "qty": 8, "remarkSize": "", "poAmount": null,
-               "boqLink": "", "poLink": "", "approvedVia": "", "link": "",
-               "advanceGiven": null, "stage": "", "followUp": "", "remarks": "" }
-           ]
-         }
-       ]
-     }
-     ```
-3. `POST /api/import/boq/photo` body `{ "runId", "itemKey", "index", "mimeType", "dataBase64" }` — one photo per request, store and link. Replace the item's photos on re-push (idempotent by `itemKey + index`).
-4. `POST /api/import/boq/finish` body `{ "runId" }` → commits, soft-deactivates items/sites that were not seen in this run (`is_active = false`), writes `import_runs` with counts and warnings, returns the summary.
-
-### Rules
-- **Upsert by `itemKey` and `siteKey`** (stable IDs added to the sheet by Abhishek: a hidden Item ID column in every RM tab, a Site ID column in Sites). If an item arrives without `itemKey`, fall back to `category + name + occurrence index` and add a warning.
-- The sheet does not hold vendor contact details; import must **never overwrite** vendor address/GSTIN/phone/email, or PO data.
-- Treat rate 0 or empty as missing (null).
-- Do not auto-merge duplicates; emit warnings (for example the same item name twice in one category, or the same name in two categories with different rates). Examples known today: "Japanese Cocktail Glass" ×3 in Glassware; "Cream Siphon" in both Kitchen Smallware (₹1,680) and FOH & Bar (₹2,400).
-- Vendor names are imported as given, including entries that are really quotes (for example "Greenhouse – Mohali quote (16-Jul-26)", "Sharma Gas Service (Q-398, 21-Jul-26)") or placeholders ("Vendor 1 (confirm name)"); add a warning for names containing "confirm" or a quote/date pattern.
-- A whole `finish` is one transaction per category chunk at minimum; a failed run must leave previous data intact.
-- Photos: the sheet has in-cell images. Whether Apps Script can read them (e.g. via the cell image content URL) has to be verified in a spike (section 10, M4). If it works, push via the photo endpoint; if not, items import without photos and photos are uploaded in the UI by Admin. Photo storage: reuse the repo's existing storage helper if there is one; otherwise ask the human which storage to use.
-
-### Import status UI
-Settings → Import status: last run, duration, counts (sites, categories, items, rates, site_items, photos), warnings table.
+The sheet -> website import (`/api/import/boq/*`, `/api/import/tracker`, `IMPORT_SECRET`, the Settings "Import status" panel, `ImportRun` / staging tables) no longer exists. The website is the source of truth. What it used to do, and how it was verified, is kept in the progress log below (2026-10-30 M1+M2 and later entries) as history.
 
 ---
 
@@ -306,15 +264,13 @@ Throughout: after every milestone, run lint/typecheck/build and report what a hu
 
 ---
 
-## 11. Dashboard ("Site Drawing Updates" sheet sync)
+## 11. Dashboard ("Site Drawing Updates")
 
-A separate module, own plan document: **`dashboard-sheet-sync-plan.md`**. Read that file for the full spec — sites, stages, steps, percentages, screens, build order (A-F), acceptance checks.
+A separate module, own plan document: **`dashboard-sheet-sync-plan.md`** (sites, stages, steps, percentages, screens). **The sheet sync part of that document was removed on 2026-11-25** (no `/api/dashboard-sync/*`, no Apps Script push, no `DashboardSyncRun` / `DashboardDeptLink`); the percentage rules, step tree and screens are still what the website implements.
 
-Quick orientation (detail lives in the other file, not duplicated here):
-- Separate Google Sheet ("Site Drawing Updates" copy, own Apps Script project, own `WebsiteSync.gs`) from this file's Site BOQ ("TULSI Rate Sheet"). Fully read-only — no `SHEET_LIVE`/`WEBSITE_LIVE` mode, no edit path.
-- Own Prisma models (`DashboardSite`, `DashboardStep`, `DashboardDeptLink`, `DashboardSiteAssignment`, `DashboardSyncRun`, `DashboardSyncStagingChunk`) — deliberately not sharing Site BOQ's `Site`/`ImportRun`/`BoqSyncStagingChunk` tables, so a bug in one sync can't touch the other's rows.
-- Sync mechanics mirror section 7/the `docs/sheet-sync/` sheet-sync pattern (poll model: Apps Script polls `/api/dashboard-sync/pending` every ~1 min, never the other way — no web-app deployment needed), under its own `/api/dashboard-sync/*` routes, `src/lib/dashboard-sync/`, and `DASHBOARD_SYNC_SECRET`/`DASHBOARD_SYNC_ALERT_EMAIL` env vars, kept separate from Site BOQ's `SHEET_SYNC_SECRET`.
-- Percentage rules live in `src/lib/dashboard-calc.ts` (pure, unit-tested in `dashboard-calc.test.ts`) — the one place "per stage = Completed / (leaf rows - Not required)" is implemented, reused by both the sync's sheet-vs-computed mismatch check and the eventual Dashboard UI.
+Quick orientation:
+- Own Prisma models (`DashboardSite`, `DashboardStep`, `DashboardSiteAssignment`, `DashboardStepAssignment`); `DashboardSite.origin` is `SHEET` (loaded from the old sheet, read-only) or `WEBSITE` (created on the website, editable).
+- Percentage rules live in `src/lib/dashboard-calc.ts` (pure, unit-tested in `dashboard-calc.test.ts`) — the one place "per stage = Completed / (leaf rows - Not required)" is implemented.
 
 ---
 
@@ -1021,3 +977,15 @@ Against the *real* prod DB: connected fine (confirming the quota error really wa
 **Verified.** `pnpm run typecheck`/`lint`/`test` all clean (396/396, same 2 pre-existing warnings). Real Playwright pass (throwaway admin via `scripts/lib/throwaway-admin.ts`) against `pnpm dev`: confirmed "Login:" + `yashika` visible on both the list and detail pages. Re-ran `seed-sales-demo-users.ts` against **both** preview and production — each of the 7 accounts now has a distinct, correctly-formatted site name (e.g. prod: Yashika → TULSI Goa, Sonali → TULSI New Jersey, Himanshu → Pavitra Aurangabad, KM → Pavitra Trivandrum, Rahul Rishi → TULSI Los Angeles, Jyotsana → Pavitra Chennai, KP → TULSI Kolkata), no duplication, confirmed via the script's own console output.
 
 **Not verified / needs a human.** (1) Not committed/pushed yet at time of writing. (2) No visual/browser check of the fixed site names on the actual production `/store-onboarding` page (only confirmed via the seed script's DB-level output) — worth a quick look.
+
+### 2026-11-25 — Removed all sheet <-> website sync/import code and schema (branch `new`)
+
+**What.** The website is the only source of truth, so everything sheet-related was removed: Unified Sync (Sync button, `/api/sync/*`, `lib/sync-batch`, `lib/ops-boq-sync`, `/api/ops-boq-sync/*`, `lib/site-resolve.ts`), the older `/api/sheet-sync/*` + `/api/dashboard-sync/*` (+ `lib/sheet-sync`, `lib/dashboard-sync`, Stage 7 tracker derive), and the M2 push import (`/api/import/boq/*`, `/api/import/tracker`, `lib/import`, `IMPORT_SECRET`, the Settings "Import status" card, `buildItemPhotoKey`). Also gone: `canTrigger*Sync` permissions, the two sync failure emails, `docs/sheet-sync/`, `push-*-fixture` / `tmp-e2e-sheet-sync` / `tmp-e2e-unified-sync` scripts, `scripts/db-restore.ts` + `require-fixture-opt-in` (+ CLAUDE.md rules 3/4 rewritten), the "Not synced with sheet" / "Last synced" UI and the sheet-sourced Department Links list. Kept on purpose: the `SHEET_LIVE`/`WEBSITE_LIVE` mode gate (owner decision; only its copy changed), `DashboardSite.origin` (SHEET sites stay read-only), `deptLinksText`, `ItemPhoto`, `sourceKey`, `dashboard-sheet-sync-plan.md` (still the Dashboard design doc).
+
+**DB.** New migration `20261125120000_remove_sync` drops `SyncBatch`, `SyncLeg`, `SyncContentHash`, `SiteAlias`, `ImportRun`, `BoqSyncStagingChunk`, `DashboardSyncRun`, `DashboardSyncStagingChunk`, `DashboardDeptLink`, enums `ImportRunStatus`/`SyncLegKind`/`SyncLegStatus`, columns `Site.sheetLocked/lastSeenRunId`, `Item.lastSeenRunId`, `DashboardSite.lastSeenRunId/lastSyncedAt/sheetSummary`, `OpsBoqRow.fromSheet`, and deletes the three sync `AppSetting` keys. SQL generated by diffing the old vs new `schema.prisma` (not against the DB: the preview DB also holds migrations that are only in the stashes). **Applied to the PREVIEW DB only.** Row counts dropped there: SyncBatch 7, SyncLeg 17, SyncContentHash 37, ImportRun 4, DashboardSyncRun 5, DashboardDeptLink 391, `DashboardSite.sheetSummary/lastSyncedAt` set on 24 sites, `OpsBoqRow.fromSheet` 5. NOT applied to production.
+
+**Tests/scripts.** `tmp-e2e-m3/m5-edit/m5-lock/m6` used to seed through the import API, which deactivated real data. They now call `scripts/lib/boq-fixture.ts` (direct Prisma, `createMany`, only `S-FIX-*` / `ITM-FIX-*` / `… FIXTURE` rows and, if the DB has none, `FIX-CAT-*` categories), remove it (plus its POs/audit events) in `finally`, and restore the `AppSetting`s they touch. Global-total asserts were dropped (they assumed the fixture was the only data). `ci-smoke.ts` lost its import checks; `tmp-e2e-nav-reliability.ts` gained "no Sync button + removed routes 404" checks.
+
+**Verified.** `pnpm run typecheck` clean, `lint` 0 errors (same 2 old warnings), `test` 338/338 (was 396: the removed sync tests), `pnpm build` passes. Real Chromium runs against a **production build** (`next start`, DB URL passed via env from `.env` because `.env.production.local` holds a placeholder) on the preview DB: `tmp-e2e-m3-site-boq`, `m5-site-boq-edit`, `m5-site-lock`, `m6-purchase-orders`, `dashboard-create-site`, `dashboard-assignments`, `ops-boq`, `nav-reliability` all ALL CHECKS PASSED. Cleanup proof (count query after the runs): `tmp-e2e-%`/`ci-smoke-%` users 0, `TMP E2E` dashboard sites/sites 0, `S-FIX-`/`Fixture` sites 0, `ITM-FIX-` items 0, `… FIXTURE` vendors 0, `FIX-CAT-` categories 0, purchase orders 0, AppSetting rows 0 (mode restored to "absent"). No `next` process left running; stale `.next` fetch caches deleted.
+
+**Not verified / needs a human.** (1) **Production**: nothing deployed or migrated. Order when you do it: deploy this code first (prod still runs Unified Sync code that reads the dropped columns), THEN run `20261125120000_remove_sync` on prod (irreversible: sync history and the sheet-sourced dept links are lost). (2) Apps Script copies in `D:\AppsScript` (outside the repo) still point at routes that now 404: disable their triggers/menus. Local `.env` and Vercel env still hold the old `SHEET_SYNC_*`, `DASHBOARD_SYNC_*`, `OPS_BOQ_SYNC_SECRET`, `SYNC_*_WEBAPP_URL`, `IMPORT_SECRET` values (unused now; `IMPORT_SECRET` is no longer required at boot). (3) `tmp-e2e-dashboard-delete-site`, `tmp-e2e-dashboard-tracker-link` and `tmp-e2e-site-tracker` could not run: the preview DB has no Site Tracker seed (0 sections/steps), no categories and no AppSetting rows (never seeded); they fail on that, not on this change. (4) With the import gone nothing on the website can create vendors, categories or item photos, and the default `mode` is `SHEET_LIVE` (Site BOQ item/site/vendor edits blocked until an Admin flips Settings → mode): follow-up decision needed. (5) Existing `origin = SHEET` dashboard sites stay read-only forever. (6) Pre-existing, not touched: in `next dev`, `/site-boq/items` in `WEBSITE_LIVE` can crash because `ItemFormDialog` does `cloneElement(trigger)` on an element that React Flight delivers as `react.lazy` (seen in dev; fine in a production build). (7) `stash@{0}` / `stash@{1}` (phone-OTP, item-photo-sync) touch files deleted or edited here (`lib/sheet-sync/schema.ts`, `push-boq-fixture.ts` deleted; `boq-data.ts`, `storage.ts` edited): popping them will conflict; the photo-sync half is obsolete. (8) `site-tracker-plan.md` still describes `/api/import/tracker` (T6). (9) Not committed, not pushed.

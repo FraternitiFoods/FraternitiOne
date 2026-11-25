@@ -28,8 +28,7 @@ export type SiteSlots = {
 /**
  * One parallel round trip: is `name` free, and what are the next sortOrders.
  * Case/whitespace-insensitive across ALL DashboardSite rows (including archived
- * sheet sites) because the sheet sync matches by the same normalised name; the
- * shared Site table has its own unique name. A lost race only means two sites
+ * sheet sites); the shared Site table has its own unique name. A lost race only means two sites
  * share a sortOrder (harmless) or hits the unique index (caller handles P2002).
  */
 export async function findSiteSlots(name: string): Promise<SiteSlots> {
@@ -91,7 +90,7 @@ export type CreatedWebsiteSite = {
  * Creates the site + ~466 steps + shared Site row + Ops BOQ rows inside the
  * caller's transaction. The caller owns the audit event and the transaction
  * timeout (use `{ timeout: 30_000, maxWait: 10_000 }` — the step createMany is
- * the heavy part). `origin: WEBSITE` keeps the sheet sync's hands off it.
+ * the heavy part). `origin: WEBSITE` marks it website-owned (editable here).
  */
 export async function createWebsiteSiteInTx(
   tx: Prisma.TransactionClient,

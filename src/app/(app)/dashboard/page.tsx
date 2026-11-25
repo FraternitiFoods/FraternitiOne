@@ -4,8 +4,6 @@ import { requireUser } from "@/lib/auth";
 import { canViewAllDashboardSites, canCreateDashboardSite } from "@/lib/permissions";
 import { getDashboardRanking, getAssignedSiteName } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
-import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CreateSiteDialog } from "./_components/create-site-dialog";
@@ -40,12 +38,7 @@ export default async function DashboardHomePage() {
         title="Dashboard"
         subtitle="Site-wise progress across all 13 stages."
         isFranchisee={isFranchisee}
-        action={
-          <>
-            {canCreate && <CreateSiteDialog trigger={<Button size="sm">New site</Button>} />}
-            <UnifiedSyncSlot user={user} />
-          </>
-        }
+        action={canCreate ? <CreateSiteDialog trigger={<Button size="sm">New site</Button>} /> : undefined}
       />
 
       {ranking.length === 0 && (
@@ -66,14 +59,7 @@ export default async function DashboardHomePage() {
                   <span className="w-6 shrink-0 text-sm font-medium text-muted-foreground">#{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-medium">{site.name}</span>
-                        {site.origin === "WEBSITE" && (
-                          <Badge variant="outline" className="shrink-0 text-muted-foreground">
-                            Not synced with sheet
-                          </Badge>
-                        )}
-                      </span>
+                      <span className="min-w-0 truncate font-medium">{site.name}</span>
                       <span className="shrink-0 text-sm font-semibold">{pct}%</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-muted">

@@ -23,7 +23,7 @@ export function isWriteAllowedInMode(mode: ImportMode, area: BoqWriteArea): bool
 
 export type WriteGuardResult = { ok: true } | { ok: false; error: string };
 
-const SHEET_LIVE_MESSAGE = "Sheet is live — editing is disabled until an Admin switches the mode in Settings.";
+const SHEET_LIVE_MESSAGE = "Editing is disabled (SHEET_LIVE mode) until an Admin switches the mode in Settings.";
 
 export async function checkModeAllowsWrite(area: BoqWriteArea): Promise<WriteGuardResult> {
   const { mode } = await getAppSettings();

@@ -145,7 +145,7 @@ export async function getAllSites() {
 /**
  * Categories are a closed, rarely-changing list (plan.md section 1) — no
  * is_active to filter on, and no Server Action ever writes db.category
- * (sheet-sync refuses to create them). Cached with a defensive time-based
+ * (only the seed does). Cached with a defensive time-based
  * ceiling rather than tag-based invalidation since there's no write path to
  * invalidate against.
  */
@@ -161,10 +161,6 @@ export async function getVendorsGroupedByCategory() {
     relationLoadStrategy: "join",
     include: { categoryVendors: { include: { category: true } } },
   });
-}
-
-export async function getLatestImportRun() {
-  return db.importRun.findFirst({ orderBy: { startedAt: "desc" } });
 }
 
 const BOQ_AUDIT_ENTITY_TYPES = ["SiteItem", "Item", "Vendor", "Site", "AppSetting", "OpsBoqRow"] as const;

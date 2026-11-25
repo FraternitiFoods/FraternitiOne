@@ -214,12 +214,6 @@ enum CategoryGroup {
   INTERIOR
 }
 
-enum ImportRunStatus {
-  IN_PROGRESS
-  COMMITTED
-  FAILED
-}
-
 enum PurchaseOrderStatus {
   DRAFT
   ISSUED
@@ -244,25 +238,13 @@ model Site {
   /// predates the tracker was a BOQ site); usedInTracker defaults false.
   usedInBoq     Boolean   @default(true)
   usedInTracker Boolean   @default(false)
-  /// Set to the current ImportRun.id on every chunk that touches this row;
-  /// finish() soft-deactivates any active Site whose lastSeenRunId doesn't
-  /// match the run that just completed (plan.md section 7, "finish").
-  lastSeenRunId String?
-  /// Site lock (plan.md section 3 "Site lock", milestone M5). Website-native
-  /// data — the import must never write these fields. While isLocked, every
-  /// SiteItem.qty/remarkSize/rateOverride/tracking-field edit is rejected for
-  /// every role, and the sheet import skips this site's qty/tracking fields
-  /// instead of overwriting them (with a warning).
+  /// Site lock (plan.md section 3 "Site lock", milestone M5). While isLocked,
+  /// every SiteItem.qty/remarkSize/rateOverride/tracking-field edit is rejected
+  /// for every role, Admin included, until an Admin unlocks it.
   isLocked      Boolean   @default(false)
   lockedAt      DateTime?
   lockedById    String?
   lockedBy      User?     @relation("SiteLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
-  /// Sheet-sync's own "order delivered/locked" flag from the TULSI sheet
-  /// (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 4: `lockedSites[]`) —
-  /// purely informational (shows a badge), NOT the website's isLocked above.
-  /// Unlike isLocked, this never blocks a sync from writing this site's
-  /// qty/tracking data; only sheet-sync itself ever sets it.
-  sheetLocked   Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -270,84 +252,6 @@ model Site {
   purchaseOrders   PurchaseOrder[]
   trackerSiteSteps TrackerSiteStep[]
   opsBoqRows       OpsBoqRow[]
-  aliases          SiteAlias[]
-}
-
-/// Alternate spellings of a site's name used by the sheets (e.g. "Tulsi Hissar"
-/// vs "Tulsi Hisar"). Keyed by the NORMALISED alias (src/lib/site-resolve.ts
-/// normalizeSiteName) so the unified sync resolves a sheet name to the right
-/// shared Site before it would otherwise auto-create a duplicate.
-model SiteAlias {
-  aliasNorm String   @id
-  siteId    String
-  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@index([siteId])
-}
-
-enum SyncLegKind {
-  STAGES
-  SITE_BOQ
-  OPS_BOQ
-}
-
-enum SyncLegStatus {
-  RUNNING
-  COMMITTED
-  FAILED
-}
-
-/// One press of the unified "Sync" button. Holds up to three legs (one per
-/// Google Sheet). finishedAt is set when no leg is RUNNING any more
-/// (src/lib/sync-batch/legs.ts). triggeredById is a plain column (no relation)
-/// so a deleted user never blocks history.
-model SyncBatch {
-  id            String    @id @default(cuid())
-  startedAt     DateTime  @default(now())
-  finishedAt    DateTime?
-  triggeredById String?
-  /// Re-sync every unit even if its content hash is unchanged.
-  force         Boolean   @default(false)
-
-  legs SyncLeg[]
-
-  @@index([startedAt])
-}
-
-/// One sheet's part of a SyncBatch. runId points at ImportRun.id (SITE_BOQ) or
-/// DashboardSyncRun.id (STAGES); null for OPS_BOQ, which commits in one call.
-model SyncLeg {
-  id           String        @id @default(cuid())
-  batchId      String
-  batch        SyncBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  leg          SyncLegKind
-  status       SyncLegStatus @default(RUNNING)
-  startedAt    DateTime      @default(now())
-  finishedAt   DateTime?
-  runId        String?
-  /// {units, changed, skipped, rows, trackerRows, ...} — shape is per leg.
-  counts       Json?
-  warnings     Json?
-  /// string[] of site names this leg auto-created (duplicate-spelling check).
-  createdSites Json?
-  errorMessage String?
-
-  @@unique([batchId, leg])
-  @@index([leg, startedAt])
-}
-
-/// Last committed content hash per sync unit (dashboard: site; site BOQ: tab
-/// category; ops BOQ: tab). A unit whose hash is unchanged is not rewritten.
-/// hash is stored as "<SERVER_SYNC_VERSION>:<scriptHash>" so bumping the
-/// server version invalidates every stored hash at once.
-model SyncContentHash {
-  leg       SyncLegKind
-  unitKey   String
-  hash      String
-  updatedAt DateTime    @updatedAt
-
-  @@id([leg, unitKey])
 }
 
 model Category {
@@ -410,8 +314,6 @@ model Item {
   note          String?
   isActive      Boolean  @default(true)
   sortOrder     Int      @default(0)
-  /// See Site.lastSeenRunId.
-  lastSeenRunId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -551,56 +453,6 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 }
 
-/// One row per import push (plan.md section 7's begin/chunk/photo/finish
-/// sequence, OR docs/sheet-sync/CLAUDE_CODE_HANDOFF.md's start/chunk/finish
-/// sequence). counts/warnings are only populated once finish() commits.
-model ImportRun {
-  id           String          @id @default(cuid())
-  status       ImportRunStatus @default(IN_PROGRESS)
-  startedAt    DateTime        @default(now())
-  finishedAt   DateTime?
-  counts       Json?
-  warnings     Json?
-  dryRun       Boolean         @default(false)
-  /// Sheet-sync additions (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md) — all null
-  /// for the old M2 push-import rows; set for every run created via
-  /// POST /api/sheet-sync/start. trigger is 'button'|'daily'|'menu';
-  /// requestId links back to the AppSetting "sheetSyncRequest" singleton
-  /// that spawned this run; errorMessage is the human-readable failure
-  /// reason shown by GET /status and the failure email.
-  trigger      String?
-  requestId    String?
-  errorMessage String?
-  /// start.sites[]/lockedSites[] — small (～17 rows today), kept directly on
-  /// the run rather than chunked into staging since finish only needs it
-  /// once, unlike the 21 per-category chunks below.
-  sitesPayload Json?
-  /// Unified sync: per-tab {category, hash} list the script sent at start.
-  /// Tabs whose hash is unchanged are not chunked; finish needs the full set
-  /// to keep their items active.
-  tabManifest  Json?
-
-  stagingChunks BoqSyncStagingChunk[]
-}
-
-/// Sheet-sync staging (docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 0):
-/// POST /api/sheet-sync/chunk writes here, keyed by (runId, category) so a
-/// retried chunk (the script retries on 5xx) replaces rather than
-/// duplicates. Live Site BOQ tables are untouched until finish reads every
-/// row for the run and commits in one transaction; fail (or a reaped,
-/// timed-out run) just deletes these rows, leaving live data exactly as it
-/// was before the run started.
-model BoqSyncStagingChunk {
-  id        String    @id @default(cuid())
-  runId     String
-  run       ImportRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  category  String
-  payload   Json
-  createdAt DateTime  @default(now())
-
-  @@unique([runId, category])
-}
-
 // ---------------------------------------------------------------------------
 // Site Tracker (site-tracker-plan.md section 3). Separate module from Site
 // BOQ above, sharing only the Site table (via usedInTracker). The seed
@@ -719,55 +571,9 @@ enum DashboardStepStatus {
   NOT_REQUIRED
 }
 
-/// One sync run (mirrors ImportRun's role, kept fully separate so a bug in
-/// one sync can't touch the other's rows). trigger is 'button'|'daily'; no
-/// 'menu' trigger for Dashboard (dashboard-sheet-sync-plan.md doesn't mention
-/// a sheet-menu option, unlike Site BOQ's).
-model DashboardSyncRun {
-  id               String          @id @default(cuid())
-  status           ImportRunStatus @default(IN_PROGRESS)
-  trigger          String?
-  requestId        String?
-  startedAt        DateTime        @default(now())
-  finishedAt       DateTime?
-  errorMessage     String?
-  counts           Json?
-  warnings         Json?
-  /// Per-site diff between our computed numbers and the sheet's own
-  /// Dashboard-tab sheetSummary (dashboard-sheet-sync-plan.md section 5),
-  /// shown to internal roles only.
-  mismatches       Json?
-  /// start.deptLinks[] (small — the whole Department Links tab) — held here
-  /// until finish() applies the full replace, same reasoning as ImportRun.
-  /// sitesPayload: a transaction can't span the separate start/chunk/finish
-  /// HTTP calls, so anything finish needs rides on the run row itself.
-  deptLinksPayload Json?
-  /// Unified sync: per-site {name, hash} list the script sent at start. Only
-  /// changed sites are chunked, but finish needs every seen site name so
-  /// unchanged ones are kept active (not archived).
-  manifestPayload  Json?
-
-  stagingChunks DashboardSyncStagingChunk[]
-}
-
-/// POST /api/dashboard-sync/chunk writes here, one row per (run, site) — a
-/// retried chunk (script retries on 5xx) replaces rather than duplicates.
-/// Live Dashboard tables are untouched until finish commits in one
-/// transaction; fail/reap just deletes these rows.
-model DashboardSyncStagingChunk {
-  id        String           @id @default(cuid())
-  runId     String
-  run       DashboardSyncRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  siteName  String
-  payload   Json
-  createdAt DateTime         @default(now())
-
-  @@unique([runId, siteName])
-}
-
 /// Where a DashboardSite row came from. WEBSITE sites are created by an admin
-/// on the website (src/app/(app)/dashboard/actions.ts) and are never touched by
-/// the sheet sync (commit.ts skips them); SHEET sites are sync-owned.
+/// on the website (src/app/(app)/dashboard/actions.ts) and are editable there;
+/// SHEET sites were loaded from the old sheet and are read-only.
 enum DashboardSiteOrigin {
   SHEET
   WEBSITE
@@ -778,27 +584,14 @@ model DashboardSite {
   name           String              @unique
   origin         DashboardSiteOrigin @default(SHEET)
   /// Free-text department links an admin typed in ("interiors --> https://...").
-  /// Website-owned (unlike DashboardDeptLink rows, which sync wipes each run).
   deptLinksText  String?
   sortOrder      Int                 @default(0)
   driveFolderUrl String?
-  /// Raw per-site numbers from the sheet's own Dashboard tab (dashboard-
-  /// sheet-sync-plan.md section 3): {total, completed, inProgress,
-  /// notStarted, pct, shared, notShared, perStagePct: number[13], notRequired}.
-  /// Stored as-is for the mismatch check in commit(); never used to render
-  /// the website's own numbers, which are always recomputed from DashboardStep.
-  sheetSummary   Json?
-  lastSyncedAt   DateTime?
   isActive       Boolean             @default(true)
-  /// Set to the current DashboardSyncRun.id on every chunk that touches this
-  /// row; finish() soft-deactivates any active site whose lastSeenRunId
-  /// doesn't match the run that just completed.
-  lastSeenRunId  String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
   steps       DashboardStep[]
-  deptLinks   DashboardDeptLink[]
   assignments DashboardSiteAssignment[]
   onboarding  StoreOnboarding?
 }
@@ -857,23 +650,6 @@ model DashboardStepAssignment {
   @@index([stepId])
 }
 
-/// Department Links tab (dashboard-sheet-sync-plan.md section 3): Department |
-/// Site | Stage | Folder link, read as plain values. siteId is resolved by
-/// matching siteName at commit time (null if no DashboardSite matches yet).
-model DashboardDeptLink {
-  id              String         @id @default(cuid())
-  department      String
-  siteName        String
-  siteId          String?
-  site            DashboardSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  stageFolderName String
-  url             String
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-
-  @@index([siteId])
-}
-
 /// Admin-assigned mapping of a franchisee user to exactly one Dashboard site
 /// (dashboard-sheet-sync-plan.md section 2: "no mapping in the sheet").
 /// Website-native data — never touched by sync.
@@ -895,9 +671,7 @@ model DashboardSiteAssignment {
 // Operations BOQ (operations-boq-handoff.md). Website-owned procurement
 // tracker: 11 fixed rows per site (src/lib/ops-boq-seed.ts, created by
 // ensureOpsBoqRows when a site is created) plus user-added rows for that site
-// only. Website-owned; the unified Sync button (src/lib/ops-boq-sync/) refreshes
-// SHEET-origin sites from Suraj's "OPERATIONAL BOQ STATUS LIST" (fromSheet marks
-// rows it added). "Link" columns are plain pasted URLs, not Site BOQ links.
+// only. "Link" columns are plain pasted URLs, not Site BOQ links.
 // Pending Amount is never stored (amount - advanceGiven, computed on read).
 // ---------------------------------------------------------------------------
 
@@ -914,10 +688,6 @@ model OpsBoqRow {
   sno             String
   name            String
   isFixed         Boolean      @default(false)
-  /// Added row created by the unified sync (not by a website user). Only these
-  /// are removed when they disappear from the sheet; website-added rows
-  /// (false) are never deleted by a sync.
-  fromSheet       Boolean      @default(false)
   /// Stable key of a seeded row (src/lib/ops-boq-seed.ts); null for user-added
   /// rows. The unique index below makes ensureOpsBoqRows idempotent and
   /// race-safe (Postgres allows many NULLs, so added rows are unconstrained).

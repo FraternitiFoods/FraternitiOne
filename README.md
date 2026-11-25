@@ -64,7 +64,6 @@ Copy `.env.production.example` → set these in Vercel's Project Settings → En
 | `DATABASE_URL` | Neon → Connection Details → pooled connection string | Yes |
 | `DIRECT_URL` | Neon → Connection Details → direct connection string | Yes |
 | `SESSION_SECRET` | Generate: `openssl rand -base64 32`. App refuses to start in production without a real (non-placeholder) value. | Yes |
-| `IMPORT_SECRET` | Generate: `openssl rand -base64 32`. Shared secret the sheet's Apps Script sends as `Authorization: Bearer <IMPORT_SECRET>`. App refuses to start in production without it. | Yes |
 | `APP_URL` | The app's real URL, no trailing slash (e.g. `https://app.fraterniti.one`). Update when the domain changes. | Yes |
 | `B2_ENDPOINT` | Backblaze B2 console → your bucket → bucket details (e.g. `s3.us-west-004.backblazeb2.com`) | Yes (once anyone uploads a photo/document/evidence file — the app errors clearly on that action if missing, it doesn't block startup) |
 | `B2_KEY_ID` | Backblaze B2 console → App Keys → create a key scoped to the bucket | Yes (same as above) |
@@ -115,14 +114,9 @@ Before your domain exists yet, add your temporary `https://<project>.vercel.app`
 
 If something's wrong after the domain swap, point the domain's DNS back at the **old** Vercel project (the one still serving `main`/`dev`). This new project and its Neon database are entirely separate from the old production app, so rolling back the domain doesn't touch or lose anything on either side.
 
-### 8. Rollout day (flipping the sheet → website switch)
+### 8. Rollout day (enabling Site BOQ editing)
 
-The Google Sheet is the live source of truth until rollout (`app_settings.mode = SHEET_LIVE`); the website is a read-only copy kept in sync by the sheet's Apps Script push. At rollout:
-
-1. Confirm the latest sheet push has landed (Settings page shows the last import time/status).
-2. **First-import check**: compare the website Overview page's grand total against the sheet's own Dashboard tab total — they must match before you flip anything.
-3. As Admin, flip Settings → mode to `WEBSITE_LIVE`. From this moment the website accepts edits per the role matrix, and `/api/import/boq/*` starts rejecting the sheet's pushes with 403 (by design — nothing should overwrite website data once it's live).
-4. Tell whoever owns the Apps Script to stop its scheduled push (or just let it keep failing with 403 — it's harmless, but better to turn it off).
+There is no sheet sync or import any more — the website is the source of truth for all data. Site BOQ edits are still gated by `app_settings.mode`: while it is `SHEET_LIVE` the Site BOQ item/site/vendor screens are read-only. To switch editing on, an Admin flips Settings → mode to `WEBSITE_LIVE` (vendor contact details, Settings and Purchase Orders work in either mode). Edits then follow the role matrix and are written to the audit log.
 
 ### 9. Health check
 
