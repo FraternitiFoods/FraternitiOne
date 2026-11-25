@@ -20,7 +20,6 @@ const DEV_PLACEHOLDER_VALUES = new Set([
   "replace-with-a-generated-32-byte-secret",
   "replace-with-a-local-dev-password",
   "ci-only-session-secret-0000000000000000",
-  "ci-only-import-secret-0000000000000000",
 ]);
 
 const MIN_SECRET_LENGTH = 20;
@@ -45,5 +44,4 @@ export function validateProductionEnv(): void {
   if (process.env.NODE_ENV !== "production") return;
 
   requireProductionSecret("SESSION_SECRET");
-  requireProductionSecret("IMPORT_SECRET");
 }

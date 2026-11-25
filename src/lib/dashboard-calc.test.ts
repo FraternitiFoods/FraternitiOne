@@ -21,7 +21,7 @@ describe("deriveParentStatus (dashboard-sheet-sync-plan.md section 3)", () => {
 });
 
 describe("computeSiteStats (dashboard-sheet-sync-plan.md section 5 percentage rules)", () => {
-  it("matches the hand-computed numbers in scripts/fixtures/dashboard-sync-fixture.json for Fixture Site A", () => {
+  it("matches the hand-computed numbers for a mixed-status site", () => {
     const steps: LeafStepLike[] = [
       { stageNo: 1, isParent: false, status: "COMPLETED", shared: false },
       { stageNo: 1, isParent: false, status: "IN_PROGRESS", shared: true },

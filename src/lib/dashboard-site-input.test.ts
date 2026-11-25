@@ -11,7 +11,7 @@ import {
 } from "./dashboard-site-input";
 
 describe("site name rules", () => {
-  it("collapses whitespace and normalises case the same way the sync does", () => {
+  it("collapses whitespace and normalises case", () => {
     expect(collapseSpaces("  Tulsi   Pune ")).toBe("Tulsi Pune");
     expect(normalizeSiteName("  Tulsi   PUNE ")).toBe("tulsi pune");
   });

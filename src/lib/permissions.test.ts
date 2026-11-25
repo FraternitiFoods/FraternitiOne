@@ -14,7 +14,6 @@ import {
   canEditDashboardSite,
   canDeleteDashboardSite,
   canAssignDashboardTasks,
-  canTriggerUnifiedSync,
   canViewSiteTracker,
   canEditSiteTracker,
   canViewOpsBoq,
@@ -95,7 +94,6 @@ describe("permissions — plan.md section 12 role matrix", () => {
       canEditDashboardSite,
       canDeleteDashboardSite,
       canAssignDashboardTasks,
-      canTriggerUnifiedSync,
     ]) {
       expectOnly(check, ["ADMIN"]);
     }

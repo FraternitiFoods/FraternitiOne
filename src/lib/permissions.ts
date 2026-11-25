@@ -97,21 +97,6 @@ export function canLockSite(user: Pick<CurrentUser, "role">): boolean {
   return user.role === "ADMIN";
 }
 
-/** docs/sheet-sync/CLAUDE_CODE_HANDOFF.md section 3: "admin button (session auth, admin role only)" for POST /api/sheet-sync/request. */
-export function canTriggerSheetSync(user: Pick<CurrentUser, "role">): boolean {
-  return user.role === "ADMIN";
-}
-
-/**
- * The unified "Sync" button (Dashboard, Site Tracker, Site BOQ, Operations
- * BOQ): refreshes all four pages from the three Google Sheets at once, and can
- * overwrite sheet-origin data — so Admin only, button only (owner decision 4).
- * The old per-sheet triggers above are retired (their /request routes are 410).
- */
-export function canTriggerUnifiedSync(user: Pick<CurrentUser, "role">): boolean {
-  return user.role === "ADMIN";
-}
-
 /**
  * SiteItem.rateOverride — the per-site rate override plan.md section 3 called
  * out as "the UI/data model must support a site-specific override later."
@@ -161,16 +146,6 @@ export function canDeleteTrackerEvidence(user: Pick<CurrentUser, "role">): boole
  * assignment yet sees an empty state, not a 403).
  */
 export function canViewAllDashboardSites(user: Pick<CurrentUser, "role">): boolean {
-  return user.role !== "FRANCHISEE";
-}
-
-/**
- * "Sync with sheet" button — dashboard-sheet-sync-plan.md section 6/0:
- * "internal roles only", unlike Site BOQ's sync button which is Admin-only
- * (canTriggerSheetSync). Kept as its own function since the role set
- * genuinely differs between the two modules' sync buttons.
- */
-export function canTriggerDashboardSync(user: Pick<CurrentUser, "role">): boolean {
   return user.role !== "FRANCHISEE";
 }
 

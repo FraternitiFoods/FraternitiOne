@@ -85,13 +85,3 @@ export async function getAppSettings(): Promise<AppSettingsValues> {
   ) as Partial<AppSettingsValues>;
   return { ...DEFAULT_APP_SETTINGS, ...overrides };
 }
-
-/**
- * Just the one field the import endpoints gate on (plan.md section 7: reject
- * with 403 when mode = WEBSITE_LIVE) — avoids reading/validating every
- * setting on every import request.
- */
-export async function getImportMode(): Promise<ImportMode> {
-  const row = await db.appSetting.findUnique({ where: { key: "mode" } });
-  return row?.value === "WEBSITE_LIVE" ? "WEBSITE_LIVE" : "SHEET_LIVE";
-}

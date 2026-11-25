@@ -4,7 +4,6 @@ import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq
 import { getAppSettings } from "@/lib/app-settings";
 import { canEditItems, canEditSiteItemTracking, canEditRateOverride } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
-import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -49,11 +48,10 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
           title="Site BOQ"
           subtitle="Rate sheet, quantities and purchase orders."
           isFranchisee={false}
-          action={<UnifiedSyncSlot user={user} />}
         />
         <SiteBoqSubNav active="items" />
         <div className="rounded-xl bg-card p-8 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
-          No sites or categories yet — import from the sheet first.
+          No sites or categories yet.
         </div>
       </div>
     );
@@ -107,7 +105,6 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
           title="Site BOQ"
           subtitle="Rate sheet, quantities and purchase orders."
           isFranchisee={false}
-          action={<UnifiedSyncSlot user={user} />}
         />
       <SiteBoqSubNav active="items" />
 
@@ -146,7 +143,7 @@ export default async function ItemsPage(props: PageProps<"/site-boq/items">) {
 
       {settings.mode === "SHEET_LIVE" ? (
         <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Sheet is live — data syncs from the sheet. Editing is disabled until an Admin switches the mode in Settings.
+          Editing is disabled (mode is SHEET_LIVE) until an Admin switches the mode in Settings.
         </p>
       ) : selectedSite.isLocked ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">

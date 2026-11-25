@@ -11,10 +11,8 @@ import {
 import { openableStageNos } from "@/lib/dashboard-access";
 import { getSiteDetail, getAssignedSiteName, getAssignedStageNos } from "@/lib/dashboard-data";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDateTime } from "@/lib/format";
 import { linkifyText } from "@/lib/dashboard-site-input";
 import { EditSiteDialog } from "../_components/edit-site-dialog";
 import { DeleteSiteDialog } from "../_components/delete-site-dialog";
@@ -60,15 +58,6 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
     <div className="space-y-6">
       <PageHeader
         title={site.name}
-        subtitle={
-          isWebsiteSite ? (
-            <Badge variant="outline">Not synced with sheet</Badge>
-          ) : site.lastSyncedAt ? (
-            `Last synced ${formatDateTime(site.lastSyncedAt)}`
-          ) : (
-            "Not yet synced"
-          )
-        }
         isFranchisee={isFranchisee}
         action={
           site.driveFolderUrl || canEdit || canDelete || canAssign ? (
@@ -199,27 +188,6 @@ export default async function DashboardSitePage(props: PageProps<"/dashboard/[si
                 )
               )}
             </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {site.deptLinks.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Department links</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {site.deptLinks.map((link, i) => (
-              <a
-                key={i}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-sm text-primary hover:underline"
-              >
-                {link.department} — {link.stageFolderName}
-              </a>
-            ))}
           </CardContent>
         </Card>
       )}

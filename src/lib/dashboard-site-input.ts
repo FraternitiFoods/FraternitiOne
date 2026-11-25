@@ -17,10 +17,7 @@ export function collapseSpaces(value: string): string {
 }
 
 /**
- * Same rule as normalizeName in src/lib/dashboard-sync/commit.ts (trim,
- * collapse whitespace, lowercase) — the sync matches sheet sites to rows by
- * this, so the duplicate check here must use the identical rule or a
- * website site could collide with a later sheet site unnoticed.
+ * Site-name key for duplicate checks (trim, collapse whitespace, lowercase).
  */
 export function normalizeSiteName(name: string): string {
   return collapseSpaces(name).toLowerCase();

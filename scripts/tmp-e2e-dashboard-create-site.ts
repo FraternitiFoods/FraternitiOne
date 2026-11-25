@@ -114,8 +114,7 @@ async function adminFlow(page: Page) {
   check("site A has 402 leaf steps, all NOT_STARTED", a?.steps.filter((s) => !s.isParent && s.status === "NOT_STARTED").length === 402);
   check("every step assigned to Admin", a?.steps.every((s) => s.assignedTo === "Admin") === true);
   check("parents have no status", a?.steps.filter((s) => s.isParent).every((s) => s.status === null) === true);
-  check("site A is not marked synced", a?.lastSyncedAt === null && a?.lastSeenRunId === null);
-  check("site page shows 'Not synced with sheet'", await page.getByText("Not synced with sheet").first().isVisible());
+  check("site page shows the site name", await page.getByText(SITE_A).first().isVisible());
   check("site page shows 0%", await page.getByText("0%", { exact: true }).first().isVisible());
   check("audit CREATE event written", (await db.auditEvent.count({ where: { entityType: "DashboardSite", entityId: a?.id, action: "CREATE" } })) === 1);
 
@@ -146,9 +145,9 @@ async function adminFlow(page: Page) {
   check("edited dept links render", await appears(page, page.locator('a[href="https://example.com/accounts"]')));
   check("old dept link gone after edit", (await page.locator('a[href="https://example.com/interiors"]').count()) === 0);
 
-  // ---- ranking badge ----
+  // ---- ranking lists the new sites ----
   await page.goto(`${BASE}/dashboard`);
-  check("ranking shows 'Not synced with sheet' badges", (await page.getByText("Not synced with sheet").count()) >= 2);
+  check("ranking lists both new sites", (await page.getByText(SITE_A).count()) >= 1 && (await page.getByText(SITE_B).count()) >= 1);
 
   // ---- step status edit (optimistic + persisted + % updates) ----
   await page.goto(`${BASE}/dashboard/${encodeURIComponent(SITE_A)}/1`);
@@ -176,7 +175,7 @@ async function otherRolesFlow(page: Page) {
   await page.goto(`${BASE}/dashboard`);
   check("non-admin has no New site button", (await page.getByRole("button", { name: "New site" }).count()) === 0);
   await page.goto(`${BASE}/dashboard/${encodeURIComponent(SITE_A)}`);
-  check("non-admin can view the site", await page.getByText("Not synced with sheet").first().isVisible());
+  check("non-admin can view the site", await page.getByText("Overall progress").first().isVisible());
   check("non-admin has no Edit details", (await page.getByRole("button", { name: "Edit details" }).count()) === 0);
   await page.goto(`${BASE}/dashboard/${encodeURIComponent(SITE_A)}/1`);
   check("non-admin sees no step editors", (await page.locator('select[aria-label^="Status of"]').count()) === 0);
@@ -188,40 +187,8 @@ async function franchiseeFlow(page: Page) {
   await page.waitForLoadState("networkidle");
   // The status code can be 200 when the route streams behind (app)/loading.tsx (pre-existing); what matters is that no site data is rendered.
   const body = (await page.locator("body").innerText()).toLowerCase();
-  check("unassigned franchisee sees no site data", !body.includes("overall progress") && !body.includes("not synced with sheet"));
+  check("unassigned franchisee sees no site data", !body.includes("overall progress"));
   check("unassigned franchisee sees a 403/forbidden page", res?.status() === 403 || body.includes("403") || body.includes("forbidden"), `status ${res?.status()}`);
-}
-
-/**
- * Sync must leave website sites alone. A real sync archives every sheet site
- * missing from its payload, so this only runs on a DB with no sheet-synced
- * sites (e.g. a fresh local Postgres) — never on the preview copy of prod.
- */
-async function syncGuardCheck() {
-  const secret = process.env.DASHBOARD_SYNC_SECRET;
-  if (!secret) return console.log("SKIP - sync guard check (DASHBOARD_SYNC_SECRET not set)");
-  if ((await db.dashboardSite.count({ where: { origin: "SHEET" } })) > 0) {
-    return console.log("SKIP - sync guard check (DB has sheet-synced sites; a sync would archive them)");
-  }
-  const before = await db.dashboardSite.findUnique({ where: { name: SITE_A }, include: { _count: { select: { steps: true } } } });
-  const call = async (p: string, body: unknown) => {
-    const res = await fetch(`${BASE}${p}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` }, body: JSON.stringify(body) });
-    return { ok: res.ok, json: (await res.json().catch(() => ({}))) as Record<string, unknown> };
-  };
-  const start = await call("/api/dashboard-sync/start", { requestId: null, trigger: "button", sheetName: "e2e", sheetId: "e2e", siteCount: 1, deptLinks: [] });
-  const runId = start.json.runId as string;
-  const collide = {
-    name: "tmp e2e  site A",
-    sortOrder: 0,
-    stages: [{ stageNo: 1, stageName: "S1", steps: [{ stepKey: "2", label: "from sheet", sortOrder: 1, isParent: false, status: "Completed", shared: false, deliverables: [] }] }],
-  };
-  await call("/api/dashboard-sync/chunk", { runId, site: collide });
-  const finish = await call("/api/dashboard-sync/finish", { runId, expected: { sites: 1 } });
-  const after = await db.dashboardSite.findUnique({ where: { name: SITE_A }, include: { _count: { select: { steps: true } } } });
-  check("sync finished OK", finish.ok);
-  check("sync left the website site's steps untouched", before?._count.steps === after?._count.steps && after?.origin === "WEBSITE");
-  check("sync did not create a duplicate site", (await db.dashboardSite.count({ where: { name: { equals: "tmp e2e site a", mode: "insensitive" } } })) === 1);
-  check("sync reported a skip warning", JSON.stringify(finish.json).includes("created on the website"));
 }
 
 async function main() {
@@ -236,7 +203,6 @@ async function main() {
       await flow(page);
       await ctx.close();
     }
-    await syncGuardCheck();
   } finally {
     await browser.close();
     await cleanup();

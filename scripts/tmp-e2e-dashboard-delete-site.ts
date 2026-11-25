@@ -181,12 +181,12 @@ async function main() {
     const sheetDash = await db.dashboardSite.create({ data: { name: SHEET_SITE, origin: "SHEET" } });
     await admin.goto(`${BASE}/dashboard/${encodeURIComponent(SHEET_SITE)}`);
     await admin.getByText("Overall progress").waitFor({ timeout: 60000 });
-    check("sheet-synced site has no Delete site button", (await admin.getByRole("button", { name: "Delete site" }).count()) === 0);
+    check("sheet-origin site has no Delete site button", (await admin.getByRole("button", { name: "Delete site" }).count()) === 0);
     const sheetRes = await adminCtx.request.post(call!.url, {
       headers: call!.headers,
       data: call!.body.replace(wrongDash.id, sheetDash.id).replace("Delete site Something Else", `Delete site ${SHEET_SITE}`),
     });
-    check("server refuses to delete a sheet-synced site", /website-created/i.test(await sheetRes.text()) && (await db.dashboardSite.count({ where: { id: sheetDash.id } })) === 1);
+    check("server refuses to delete a sheet-origin site", /website-created/i.test(await sheetRes.text()) && (await db.dashboardSite.count({ where: { id: sheetDash.id } })) === 1);
 
     // ---------- Purchase orders block the delete ----------
     const category = await db.category.findFirstOrThrow({ select: { id: true } });

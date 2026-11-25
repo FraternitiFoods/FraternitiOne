@@ -1,10 +1,8 @@
 import "dotenv/config";
-import "./lib/require-fixture-opt-in";
 import { createThrowawayAdmin, deleteThrowawayAdmin, THROWAWAY_ADMIN_PASSWORD } from "./lib/throwaway-admin";
+import { seedBoqFixture, removeBoqFixture, countBoqFixtureLeftovers, readSetting, restoreSetting } from "./lib/boq-fixture";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 
 /**
  * Site lock (plan.md section 3 "Site lock" + section 5's own row), the part
@@ -14,9 +12,9 @@ import path from "node:path";
  * site's fields, and the per-site rate_override edit. Run with
  * `npx tsx scripts/tmp-e2e-m5-site-lock.ts` against a running `pnpm dev`.
  *
- * Reuses scripts/fixtures/boq-import-fixture.json (same fixture as the M3/M5
- * scripts) — re-pushes it at the start AND in `finally` so this is
- * self-sufficient regardless of what another script last did to the dev DB.
+ * Seeds the throwaway fixture from scripts/lib/boq-fixture.ts (same one as the
+ * M3/M5/M6 scripts) and removes it in `finally`, so this is self-sufficient
+ * regardless of what another script last did to the dev DB.
  *
  * Covers: locking via the Sites page button + confirmation dialog; the
  * locked_rate snapshot freezing a site's amount even after the item's final
@@ -32,8 +30,6 @@ import path from "node:path";
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
 const ADMIN_EMAIL = "tmp-e2e-m5-lock-admin@example.com"; // throwaway ADMIN, deleted in `finally` (not the real admin: its password is rotated)
-const IMPORT_SECRET = process.env.IMPORT_SECRET!;
-if (!IMPORT_SECRET) throw new Error("IMPORT_SECRET not set");
 
 let failures = 0;
 function check(label: string, cond: boolean) {
@@ -46,34 +42,8 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10000, waitUntil: "commit" });
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60000, waitUntil: "commit" });
   await page.waitForLoadState("networkidle");
-}
-
-async function callImportApi(pathSuffix: string, body: unknown) {
-  const res = await fetch(`${BASE}${pathSuffix}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${IMPORT_SECRET}` },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${pathSuffix} failed (${res.status}): ${JSON.stringify(json)}`);
-  return json as { runId?: string };
-}
-
-async function pushFixture() {
-  const fixture = JSON.parse(
-    readFileSync(path.join(process.cwd(), "scripts/fixtures/boq-import-fixture.json"), "utf-8")
-  ) as { sites: unknown[]; vendors: unknown[]; categories: { category: string }[] };
-
-  const begin = await callImportApi("/api/import/boq/begin", { dryRun: false });
-  const runId = begin.runId!;
-  await callImportApi("/api/import/boq/chunk", { runId, type: "sites", data: fixture.sites });
-  await callImportApi("/api/import/boq/chunk", { runId, type: "vendors", data: fixture.vendors });
-  for (const category of fixture.categories) {
-    await callImportApi("/api/import/boq/chunk", { runId, type: "category", data: category });
-  }
-  await callImportApi("/api/import/boq/finish", { runId });
 }
 
 async function setMode(mode: "SHEET_LIVE" | "WEBSITE_LIVE") {
@@ -81,17 +51,17 @@ async function setMode(mode: "SHEET_LIVE" | "WEBSITE_LIVE") {
 }
 
 async function main() {
+  const originalMode = await readSetting(db, "mode"); // put back exactly as found in `finally`
   await createThrowawayAdmin(db, ADMIN_EMAIL);
-  await setMode("SHEET_LIVE"); // pushFixture requires SHEET_LIVE (the import endpoints 403 in WEBSITE_LIVE).
-  await pushFixture();
+  await seedBoqFixture(db);
 
   const siteA = await db.site.findUnique({ where: { sourceKey: "S-FIX-001" } }); // "Fixture Site A"
   const siteB = await db.site.findUnique({ where: { sourceKey: "S-FIX-002" } }); // "Fixture Site B"
   const siteC = await db.site.findUnique({ where: { sourceKey: "S-FIX-003" } }); // "Fixture Site C"
   const kitchenSmallware = await db.category.findUnique({ where: { name: "Kitchen Smallware" } });
-  const gogia = await db.vendor.findFirst({ where: { name: "Gogia" } });
+  const gogia = await db.vendor.findFirst({ where: { name: "Gogia FIXTURE" } });
   if (!siteA || !siteB || !siteC || !kitchenSmallware || !gogia) {
-    throw new Error("Fixture data not found after pushFixture() — check scripts/fixtures/boq-import-fixture.json.");
+    throw new Error("Fixture data not found after seedBoqFixture() — check scripts/lib/boq-fixture.ts.");
   }
   const itemsUrlFor = (siteId: string) => `${BASE}/site-boq/items?site=${siteId}&category=${kitchenSmallware.id}`;
   const siteViewUrlFor = (siteId: string) => `${BASE}/site-boq/site-view?site=${siteId}`;
@@ -116,7 +86,7 @@ async function main() {
       lockDialogText.includes("frozen") && lockDialogText.includes("will not change this site's amounts")
     );
     await lockDialog.getByRole("button", { name: "Lock site" }).click();
-    await lockDialog.waitFor({ state: "hidden", timeout: 5000 });
+    await lockDialog.waitFor({ state: "hidden", timeout: 20000 });
     check("After locking: 'Locked' badge shown on the Sites page", (await siteARow.getByText("Locked").count()) === 1);
     check("After locking: the button now reads 'Unlock'", (await siteARow.getByRole("button", { name: "Unlock" }).count()) === 1);
 
@@ -139,15 +109,15 @@ async function main() {
     check("Items & Qty shows the locked-site banner", lockedBodyText.includes("is locked") && lockedBodyText.includes("rate override"));
 
     // ---- Locked site: qty/remark read-only with a "Site is locked" tooltip; the server guard backs this up either way. ----
-    const gnPanRow = page.locator("tr", { hasText: "GN Pan" });
-    check("Locked site: no qty input rendered for GN Pan", (await gnPanRow.locator('input[name="qty"]').count()) === 0);
+    const gnPanRow = page.locator("tr", { hasText: "GN Pan FIXTURE" });
+    check("Locked site: no qty input rendered for GN Pan FIXTURE", (await gnPanRow.locator('input[name="qty"]').count()) === 0);
     const qtyTitle = await gnPanRow.locator("td").nth(2).locator("span").first().getAttribute("title");
     check('Locked site: qty cell tooltip says "Site is locked"', qtyTitle === "Site is locked");
     const remarkTitle = await gnPanRow.locator("td").nth(1).locator("span").first().getAttribute("title");
     check('Locked site: remark cell tooltip says "Site is locked"', remarkTitle === "Site is locked");
 
     const amountBeforeRateChange = (await gnPanRow.locator("td").nth(5).innerText()).trim();
-    check("GN Pan's amount at Site A before the rate change is recorded", amountBeforeRateChange.includes("4,840"));
+    check("GN Pan FIXTURE's amount at Site A before the rate change is recorded", amountBeforeRateChange.includes("4,840"));
 
     await gnPanRow.getByRole("button", { name: "Tracking" }).click();
     const trackingDialog = page.getByRole("dialog", { name: /Order tracking/i });
@@ -165,30 +135,34 @@ async function main() {
 
     // ---- Change the item's final rate while Site A is locked. ----
     await gnPanRow.getByRole("button", { name: "Edit" }).click();
-    const itemDialog = page.getByRole("dialog", { name: /Edit GN Pan/i });
+    const itemDialog = page.getByRole("dialog", { name: /Edit GN Pan FIXTURE/i });
     const rateInput = itemDialog.locator(`input[name="rate_${gogia.id}"]`);
     await rateInput.fill("900");
     await itemDialog.getByRole("button", { name: "Save changes" }).click();
-    await itemDialog.waitFor({ state: "hidden", timeout: 5000 });
+    // Generous: the save is several Neon round trips (~0.2s each from a dev machine). If it still hasn't closed, show why.
+    await itemDialog.waitFor({ state: "hidden", timeout: 20000 }).catch(async () => {
+      console.error("Edit-item dialog did not close; its text:", (await itemDialog.innerText().catch(() => "?")).replace(/\n+/g, " | "));
+      throw new Error("Edit-item dialog did not close after Save changes");
+    });
 
     await page.reload();
-    const gnPanRowAfter = page.locator("tr", { hasText: "GN Pan" });
+    const gnPanRowAfter = page.locator("tr", { hasText: "GN Pan FIXTURE" });
     check("Final rate column reflects the new catalog rate (₹900)", (await gnPanRowAfter.locator("td").nth(4).innerText()).includes("900"));
     const amountAfterRateChange = (await gnPanRowAfter.locator("td").nth(5).innerText()).trim();
     check("Locked Site A's amount is frozen — unchanged by the rate change", amountAfterRateChange === amountBeforeRateChange);
 
     // ---- An unlocked site (B) follows the new rate. ----
     await page.goto(itemsUrlFor(siteB.id));
-    const gnPanAtSiteB = page.locator("tr", { hasText: "GN Pan" });
+    const gnPanAtSiteB = page.locator("tr", { hasText: "GN Pan FIXTURE" });
     check(
-      "Unlocked Site B's GN Pan amount follows the new rate (qty 4 × 900 = 3,600)",
+      "Unlocked Site B's GN Pan FIXTURE amount follows the new rate (qty 4 × 900 = 3,600)",
       (await gnPanAtSiteB.locator("td").nth(5).innerText()).includes("3,600")
     );
 
-    // ---- Per-site rate override (Admin, WEBSITE_LIVE, not locked) on Tongs at Site B. ----
-    const tongsRowB = page.locator("tr", { hasText: "Tongs" });
+    // ---- Per-site rate override (Admin, WEBSITE_LIVE, not locked) on Tongs FIXTURE at Site B. ----
+    const tongsRowB = page.locator("tr", { hasText: "Tongs FIXTURE" });
     const amountBeforeOverride = (await tongsRowB.locator("td").nth(5).innerText()).trim();
-    check("Tongs at Site B starts with no 'Override' marker", (await tongsRowB.getByText("Override").count()) === 0);
+    check("Tongs FIXTURE at Site B starts with no 'Override' marker", (await tongsRowB.getByText("Override").count()) === 0);
 
     await tongsRowB.getByRole("button", { name: "Tracking" }).click();
     const tongsDrawer = page.getByRole("dialog", { name: /Order tracking/i });
@@ -198,14 +172,14 @@ async function main() {
     await tongsOverrideInput.fill("50");
     // The rate-override form is the first <form> in the drawer (rendered above the tracking-fields form), so scope to it — both forms have a "Save" button.
     await tongsDrawer.locator("form").first().getByRole("button", { name: "Save" }).click();
-    await tongsDrawer.waitFor({ state: "hidden", timeout: 5000 });
+    await tongsDrawer.waitFor({ state: "hidden", timeout: 20000 });
 
     await page.reload();
-    const tongsRowBAfter = page.locator("tr", { hasText: "Tongs" });
-    check("Tongs at Site B now shows the 'Override' marker on the Amount cell", (await tongsRowBAfter.getByText("Override").count()) === 1);
+    const tongsRowBAfter = page.locator("tr", { hasText: "Tongs FIXTURE" });
+    check("Tongs FIXTURE at Site B now shows the 'Override' marker on the Amount cell", (await tongsRowBAfter.getByText("Override").count()) === 1);
     const amountAfterOverride = (await tongsRowBAfter.locator("td").nth(5).innerText()).trim();
     check(
-      "Tongs amount reflects the override (qty 6 × 50 = 300), different from before",
+      "Tongs FIXTURE amount reflects the override (qty 6 × 50 = 300), different from before",
       amountAfterOverride.includes("300.00") && amountAfterOverride !== amountBeforeOverride
     );
     await tongsRowBAfter.getByRole("button", { name: "Tracking" }).click();
@@ -223,15 +197,15 @@ async function main() {
       unlockDialogText.includes("editable again") && !unlockDialogText.includes("will not change this site's amounts")
     );
     await unlockDialog.getByRole("button", { name: "Unlock site" }).click();
-    await unlockDialog.waitFor({ state: "hidden", timeout: 5000 });
+    await unlockDialog.waitFor({ state: "hidden", timeout: 20000 });
     check("After unlocking: no 'Locked' badge on Site view", (await page.locator("h2", { hasText: "By category" }).getByText("Locked").count()) === 0);
 
     // ---- Unlocked Site A: edits resume, and its amount now follows the live rate again (no override of its own). ----
     await page.goto(itemsUrlFor(siteA.id));
-    const gnPanRowUnlocked = page.locator("tr", { hasText: "GN Pan" });
+    const gnPanRowUnlocked = page.locator("tr", { hasText: "GN Pan FIXTURE" });
     check("Unlocked Site A: qty input is rendered again", (await gnPanRowUnlocked.locator('input[name="qty"]').count()) === 1);
     check(
-      "Unlocked Site A: GN Pan's amount now follows the live rate (qty 8 × 900 = 7,200)",
+      "Unlocked Site A: GN Pan FIXTURE's amount now follows the live rate (qty 8 × 900 = 7,200)",
       (await gnPanRowUnlocked.locator("td").nth(5).innerText()).includes("7,200")
     );
     await gnPanRowUnlocked.getByRole("button", { name: "Tracking" }).click();
@@ -253,12 +227,12 @@ async function main() {
     await siteCRow.getByRole("button", { name: "Lock" }).click();
     const siteCLockDialog = page.getByRole("dialog");
     await siteCLockDialog.getByRole("button", { name: "Lock site" }).click();
-    await siteCLockDialog.waitFor({ state: "hidden", timeout: 5000 });
+    await siteCLockDialog.waitFor({ state: "hidden", timeout: 20000 });
     check("SHEET_LIVE: locking Site C still works (lock bypasses the mode gate)", (await siteCRow.getByText("Locked").count()) === 1);
     await siteCRow.getByRole("button", { name: "Unlock" }).click();
     const siteCUnlockDialog = page.getByRole("dialog");
     await siteCUnlockDialog.getByRole("button", { name: "Unlock site" }).click();
-    await siteCUnlockDialog.waitFor({ state: "hidden", timeout: 5000 });
+    await siteCUnlockDialog.waitFor({ state: "hidden", timeout: 20000 });
     check("SHEET_LIVE: unlocking Site C still works too", (await siteCRow.getByText("Locked").count()) === 0);
 
     await page.close();
@@ -267,24 +241,19 @@ async function main() {
     failures++;
   } finally {
     await browser.close();
-    await setMode("SHEET_LIVE").catch((e) => {
-      console.error("Failed to restore mode to SHEET_LIVE:", e);
+    await removeBoqFixture(db, { actorEmails: [ADMIN_EMAIL] }).catch((e) => {
+      console.error("Failed to remove the fixture:", e);
       failures++;
     });
-    await db.site
-      .updateMany({ where: { id: { in: [siteA!.id, siteB!.id, siteC!.id] } }, data: { isLocked: false, lockedAt: null, lockedById: null } })
-      .catch(() => {});
-    await db.siteItem
-      .updateMany({ where: { siteId: { in: [siteA!.id, siteB!.id, siteC!.id] } }, data: { lockedRate: null, rateOverride: null } })
-      .catch(() => {});
-    await pushFixture().catch((e) => {
-      console.error("Failed to re-push the fixture during cleanup:", e);
+    await restoreSetting(db, "mode", originalMode).catch((e) => {
+      console.error("Failed to restore mode:", e);
       failures++;
     });
     await deleteThrowawayAdmin(db, ADMIN_EMAIL).catch((e) => {
       console.error("Failed to delete throwaway admin user:", e);
       failures++;
     });
+    console.log("Fixture leftovers after cleanup:", JSON.stringify(await countBoqFixtureLeftovers(db)));
   }
 
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);

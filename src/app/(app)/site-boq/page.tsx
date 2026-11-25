@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requireSiteBoqUser } from "@/lib/site-boq-access";
 import { getActiveSites, getActiveCategories, getComputedItems } from "@/lib/boq-data";
 import { PageHeader } from "@/components/page-header";
-import { UnifiedSyncSlot } from "@/components/sync/unified-sync-slot";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
@@ -12,7 +11,7 @@ import { SiteLockBadge } from "./_components/site-lock-badge";
 
 /** plan.md section 4.1 — Overview (the sheet's "Dashboard"). */
 export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">) {
-  const user = await requireSiteBoqUser();
+  await requireSiteBoqUser();
 
   const searchParams = await props.searchParams;
   const qParam = searchParams.q;
@@ -71,7 +70,6 @@ export default async function SiteBoqOverviewPage(props: PageProps<"/site-boq">)
         title="Site BOQ"
         subtitle="Rate sheet, quantities and purchase orders."
         isFranchisee={false}
-        action={<UnifiedSyncSlot user={user} />}
       />
       <SiteBoqSubNav active="overview" />
 

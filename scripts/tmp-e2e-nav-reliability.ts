@@ -32,7 +32,7 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: /log in|sign in/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10000, waitUntil: "commit" });
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 60000, waitUntil: "commit" });
   await page.waitForLoadState("networkidle");
 }
 
@@ -82,6 +82,22 @@ async function main() {
       );
     } else {
       console.log("SKIP - Site Tracker nav link not visible for this user, skipping its checks");
+    }
+
+    // ---- Sheet sync / import is gone (2026-11-25): no Sync button on any module header, and every page still renders. ----
+    const pageErrors: string[] = [];
+    page.on("pageerror", (e) => pageErrors.push(String(e)));
+    for (const route of ["/dashboard", "/site-tracker", "/site-boq", "/site-boq/items", "/site-boq/settings", "/operations-boq"]) {
+      await page.goto(`${BASE}${route}`);
+      await page.waitForLoadState("networkidle");
+      const text = await page.locator("body").innerText();
+      check(`${route} rendered without the crash screen`, !text.includes("This page couldn't load") && !text.includes("Something went wrong"));
+      check(`${route} has no Sync button`, (await page.getByRole("button", { name: /^sync/i }).count()) === 0);
+    }
+    check("no uncaught page errors on those pages", pageErrors.length === 0);
+    for (const gone of ["/api/sync/status", "/api/import/boq/begin", "/api/sheet-sync/status", "/api/dashboard-sync/status", "/api/ops-boq-sync/commit"]) {
+      const res = await page.request.fetch(`${BASE}${gone}`, { method: gone.includes("begin") || gone.includes("commit") ? "POST" : "GET" });
+      check(`${gone} is gone (404)`, res.status() === 404);
     }
 
     await page.close();
