@@ -1,3 +1,10 @@
 {
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "redirects": [
+    {
+      "source": "/orders",
+      "destination": "https://script.google.com/a/macros/fraterniti.co.in/s/AKfycbwlDcYVdEdh6llYJF8v4GtO3jIQp7nNVOo2Qdg7Aoavfm-OtDbiJh9BwY0iRpA1BJidqg/exec",
+      "permanent": false
+    }
+  ]
 }
